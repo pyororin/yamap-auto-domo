@@ -260,7 +260,7 @@ def domo_activity(driver, activity_url):
     return False
 
 def get_my_activity_urls(driver, user_id, max_activities_to_check):
-    my_activities_url = f"{BASE_URL}/users/{user_id}/activities"; logger.info(f"自分の活動日記一覧 ({my_activities_url}) を取得します。")
+    my_activities_url = f"{BASE_URL}/users/{user_id}?tab=activities#tabs"; logger.info(f"自分の活動日記一覧 ({my_activities_url}) を取得します。")
     driver.get(my_activities_url); activity_urls = []
     try:
         # Updated selectors based on user-provided HTML: <article data-testid="activity-entry"><a href="/activities/..." class="css-192jaxu">
