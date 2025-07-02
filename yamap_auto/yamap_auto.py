@@ -139,7 +139,7 @@ def login(driver, email, password):
         return False
 
 def get_followed_users_profiles(driver, user_id):
-    followed_list_url = f"{BASE_URL}/users/{user_id}/follows"
+    followed_list_url = f"{BASE_URL}/users/{user_id}?tab=follows#tabs"
     logger.info(f"フォロー中ユーザーリスト ({followed_list_url}) を取得します。")
     driver.get(followed_list_url)
     user_links = []
@@ -415,7 +415,7 @@ def follow_back_users(driver, my_user_id):
     if not FOLLOW_SETTINGS.get("follow_users_who_followed_me"):
         logger.info("「フォローしてくれたユーザーへのフォローバック」はスキップされました。"); return
     logger.info(">>> フォローしてくれたユーザーへのフォローバックを開始します...")
-    followers_url = f"{BASE_URL}/users/{my_user_id}/followers"; logger.info(f"フォロワー一覧ページへアクセス: {followers_url}"); driver.get(followers_url)
+    followers_url = f"{BASE_URL}/users/{my_user_id}?tab=followers#tabs"; logger.info(f"フォロワー一覧ページへアクセス: {followers_url}"); driver.get(followers_url)
     max_to_follow_back = FOLLOW_SETTINGS.get("max_followers_to_follow_back", 10); followed_count = 0
     try:
         user_card_selector = "div[class*='UserListItem_root']"; WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.CSS_SELECTOR, user_card_selector))); time.sleep(2)
