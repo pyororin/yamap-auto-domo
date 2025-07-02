@@ -138,35 +138,6 @@ def login(driver, email, password):
         logger.error(f"ログイン処理中にエラーが発生しました。", exc_info=True)
         return False
 
-def get_followed_users_profiles(driver, user_id):
-    followed_list_url = f"{BASE_URL}/users/{user_id}?tab=follows#tabs"
-    logger.info(f"フォロー中ユーザーリスト ({followed_list_url}) を取得します。")
-    driver.get(followed_list_url)
-    user_links = []
-    try:
-        # Wait for user links to be present based on the new selector
-        user_link_selector = "a.css-e5vv35[href^='/users/']"
-        WebDriverWait(driver, 20).until(EC.presence_of_all_elements_located((By.CSS_SELECTOR, user_link_selector)))
-        time.sleep(DOMO_SETTINGS.get("short_wait_sec", 2)) # 描画安定待ち
-
-        candidate_links = driver.find_elements(By.CSS_SELECTOR, user_link_selector)
-        for link_el in candidate_links:
-            href = link_el.get_attribute('href')
-            if href:
-                if href.startswith("/"): href = BASE_URL + href
-                # Ensure it's a user profile link, not the current user, and not a sub-path like /follows or /followers
-                match = re.match(f"^{BASE_URL}/users/(\\d+)$", href)
-                if match and match.group(1) != MY_USER_ID:
-                    user_links.append(href)
-
-        user_links = sorted(list(set(user_links))) # Remove duplicates and sort
-        logger.info(f"フォロー中のユーザー {len(user_links)} 人が見つかりました。")
-    except TimeoutException:
-        logger.warning(f"フォロー中のユーザー一覧の読み込みに失敗しました（タイムアウト）: {followed_list_url}")
-    except Exception as e:
-        logger.error(f"フォロー中のユーザー一覧取得中にエラー。", exc_info=True)
-    return user_links
-
 def get_latest_activity_url(driver, user_profile_url):
     logger.info(f"プロフィール ({user_profile_url.split('/')[-1]}) の最新活動日記を取得します。")
     driver.get(user_profile_url)
@@ -287,25 +258,6 @@ def domo_activity(driver, activity_url):
     except Exception as e:
         logger.error(f"DOMO実行中に予期せぬエラー: {activity_url.split('/')[-1]}", exc_info=True)
     return False
-
-def domo_followed_users_latest_posts(driver, my_user_id):
-    if not DOMO_SETTINGS.get("domo_followed_users_posts"):
-        logger.info("「フォロー中のユーザーの投稿へDOMO」はスキップされました。")
-        return
-    logger.info(">>> フォロー中のユーザーの最新投稿へのDOMOを開始します...")
-    # (以降、loggerを使用するように修正)
-    followed_user_profiles = get_followed_users_profiles(driver, my_user_id)
-    if not followed_user_profiles: logger.info("DOMO対象のフォロー中ユーザーがいません。"); return
-    domo_count = 0; processed_users = 0; max_users_to_process = DOMO_SETTINGS.get("max_followed_users_to_process", len(followed_user_profiles))
-    for profile_url in followed_user_profiles:
-        if processed_users >= max_users_to_process: logger.info(f"処理上限 ({max_users_to_process}人) に達したためスキップします。"); break
-        latest_activity_url = get_latest_activity_url(driver, profile_url)
-        if latest_activity_url:
-            time.sleep(0.5)
-            if domo_activity(driver, latest_activity_url):
-                domo_count += 1
-        processed_users += 1; time.sleep(DOMO_SETTINGS.get("delay_between_users_sec", 3))
-    logger.info(f"<<< フォロー中のユーザーへのDOMO処理完了。 {processed_users}人中、合計 {domo_count} 件 DOMOしました。")
 
 def get_my_activity_urls(driver, user_id, max_activities_to_check):
     my_activities_url = f"{BASE_URL}/users/{user_id}/activities"; logger.info(f"自分の活動日記一覧 ({my_activities_url}) を取得します。")
@@ -719,8 +671,6 @@ if __name__ == "__main__":
             logger.info(f"現在の設定:\n{json.dumps(current_config_display, indent=2, ensure_ascii=False)}")
             logger.info(f"自分のユーザーID: {MY_USER_ID}"); time.sleep(2)
 
-            if DOMO_SETTINGS.get("domo_followed_users_posts"): domo_followed_users_latest_posts(driver, MY_USER_ID)
-            else: logger.info("「フォロー中のユーザーの投稿へDOMO」機能は設定で無効になっています。")
             if DOMO_SETTINGS.get("domo_users_who_domoed_my_posts"): domo_users_who_domoed_my_posts(driver, MY_USER_ID)
             else: logger.info("「自身の投稿にDOMOしてくれたユーザーへDOMO」機能は設定で無効になっています。")
             if DOMO_SETTINGS.get("domo_recommended_posts"): domo_recommended_posts(driver)
