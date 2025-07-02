@@ -209,8 +209,10 @@ def domo_followed_users_latest_posts(driver, my_user_id):
     for profile_url in followed_user_profiles:
         if processed_users >= max_users_to_process: logger.info(f"処理上限 ({max_users_to_process}人) に達したためスキップします。"); break
         latest_activity_url = get_latest_activity_url(driver, profile_url)
-        if latest_activity_url: time.sleep(0.5);
-            if domo_activity(driver, latest_activity_url): domo_count += 1
+        if latest_activity_url:
+            time.sleep(0.5)
+            if domo_activity(driver, latest_activity_url):
+                domo_count += 1
         processed_users += 1; time.sleep(DOMO_SETTINGS.get("delay_between_users_sec", 3))
     logger.info(f"<<< フォロー中のユーザーへのDOMO処理完了。 {processed_users}人中、合計 {domo_count} 件 DOMOしました。")
 
@@ -288,8 +290,10 @@ def domo_users_who_domoed_my_posts(driver, my_user_id):
             if profile_url in processed_domo_givers: continue
             logger.info(f"DOMOをくれたユーザー ({profile_url.split('/')[-1]}) の活動を確認します。")
             latest_activity_of_domo_giver = get_latest_activity_url(driver, profile_url)
-            if latest_activity_of_domo_giver: time.sleep(0.5);
-                if domo_activity(driver, latest_activity_of_domo_giver): total_domo_made_count +=1
+            if latest_activity_of_domo_giver:
+                time.sleep(0.5)
+                if domo_activity(driver, latest_activity_of_domo_giver):
+                    total_domo_made_count +=1
             processed_domo_givers.add(profile_url); time.sleep(DOMO_SETTINGS.get("delay_between_users_sec", 3))
         time.sleep(DOMO_SETTINGS.get("delay_between_domo_check_sec", 2))
     logger.info(f"<<< 自身の投稿へDOMOしてくれたユーザーへのDOMO処理完了。合計 {total_domo_made_count} 件 DOMOしました。")
