@@ -115,7 +115,7 @@ def login(driver, email, password):
         password_field.send_keys(password)
         login_button = driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
         login_button.click()
-        WebDriverWait(driver, 15).until(EC.not_(EC.url_contains("login")))
+        WebDriverWait(driver, 15).until_not(EC.url_contains("login"))
         current_url_lower = driver.current_url.lower()
         page_title_lower = driver.title.lower()
         if "login" not in current_url_lower and ("yamap" in current_url_lower or MY_USER_ID in current_url_lower or "timeline" in current_url_lower or "home" in current_url_lower or "discover" in current_url_lower): # discoverも追加
