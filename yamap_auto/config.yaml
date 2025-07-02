@@ -1,9 +1,6 @@
-# --- YAMAP認証情報 ---
-email: "your_yamap_email@example.com"  # 【必須】あなたのYAMAPログインメールアドレス
-password: "your_yamap_password"        # 【必須】あなたのYAMAPログインパスワード
-user_id: "1234567"                     # 【必須】あなたのYAMAPユーザーID (例: プロフィールURLが https://yamap.com/users/1234567 の場合は "1234567")
-
 # --- DOMO関連の設定 ---
+# YAMAP認証情報 (email, password, user_id) は yamap_auto/credentials.yaml ファイルに記述してください。
+
 domo_settings:
   headless_mode: false                 # trueにするとブラウザを非表示で実行 (デバッグ時はfalse推奨)、falseでブラウザを表示
   implicit_wait_sec: 7                 # Seleniumが要素を見つけるまでの全体的な暗黙的な最大待機時間 (秒)

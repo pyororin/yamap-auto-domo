@@ -137,6 +137,7 @@ celerybeat.pid
 # Environments
 .env
 .envrc
+yamap_auto/credentials.yaml # YAMAP認証情報ファイル
 .venv
 env/
 venv/

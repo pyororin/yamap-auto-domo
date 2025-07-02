@@ -34,27 +34,47 @@ except Exception as e:
 # --- Logger設定完了 ---
 
 # 設定ファイルのパス
-CONFIG_FILE = os.path.join(os.path.dirname(__file__), "config.yaml") # .yamlに変更
+CONFIG_FILE = os.path.join(os.path.dirname(__file__), "config.yaml")
+CREDENTIALS_FILE = os.path.join(os.path.dirname(__file__), "credentials.yaml") # 認証情報ファイル
 
 # --- 設定ファイルの読み込み ---
 try:
-    with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
-        config = yaml.safe_load(f) # yaml.safe_load に変更
-    YAMAP_EMAIL = config.get("email", "YOUR_YAMAP_EMAIL")
-    YAMAP_PASSWORD = config.get("password", "YOUR_YAMAP_PASSWORD")
-    MY_USER_ID = config.get("user_id", "YOUR_YAMAP_USER_ID")
-    DOMO_SETTINGS = config.get("domo_settings", {})
-    FOLLOW_SETTINGS = config.get("follow_settings", {})
+    # まず credentials.yaml を読み込む
+    try:
+        with open(CREDENTIALS_FILE, 'r', encoding='utf-8') as f:
+            credentials_config = yaml.safe_load(f)
+        if not credentials_config: # ファイルが空の場合など
+            raise ValueError("認証ファイルが空か、内容を読み取れませんでした。")
+        YAMAP_EMAIL = credentials_config.get("email")
+        YAMAP_PASSWORD = credentials_config.get("password")
+        MY_USER_ID = str(credentials_config.get("user_id", "")) # user_id は文字列として扱う
 
-    if YAMAP_EMAIL == "YOUR_YAMAP_EMAIL" or YAMAP_PASSWORD == "YOUR_YAMAP_PASSWORD" or MY_USER_ID == "YOUR_YAMAP_USER_ID" or not MY_USER_ID:
-        logger.critical(f"設定ファイル ({CONFIG_FILE}) 内の email, password, または user_id が初期値のままか、設定されていません。")
-        logger.critical("正しい情報を設定してください。スクリプトを終了します。")
+        if not all([YAMAP_EMAIL, YAMAP_PASSWORD, MY_USER_ID]):
+             logger.critical(f"認証ファイル ({CREDENTIALS_FILE}) に email, password, user_id のいずれかが正しく設定されていません。")
+             logger.info(f"例:\nemail: your_email@example.com\npassword: your_password\nuser_id: '1234567'")
+             exit()
+    except FileNotFoundError:
+        logger.critical(f"認証ファイル ({CREDENTIALS_FILE}) が見つかりません。作成して認証情報を記述してください。")
+        logger.info(f"ファイルパス: {os.path.abspath(CREDENTIALS_FILE)}")
+        logger.info(f"例:\nemail: your_email@example.com\npassword: your_password\nuser_id: '1234567'")
         exit()
-except FileNotFoundError:
-    logger.critical(f"設定ファイル ({CONFIG_FILE}) が見つかりません。スクリプトを終了します。")
+    except (yaml.YAMLError, ValueError) as e_cred: # ValueErrorもキャッチ
+        logger.critical(f"認証ファイル ({CREDENTIALS_FILE}) の形式が正しくないか、内容に問題があります。エラー: {e_cred}")
+        exit()
+
+    # 次に config.yaml を読み込む
+    with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+        main_config = yaml.safe_load(f)
+        if not main_config: # ファイルが空の場合など
+             raise ValueError("メインの設定ファイル (config.yaml) が空か、内容を読み取れませんでした。")
+    DOMO_SETTINGS = main_config.get("domo_settings", {})
+    FOLLOW_SETTINGS = main_config.get("follow_settings", {})
+
+except FileNotFoundError: # config.yaml が見つからない場合
+    logger.critical(f"メインの設定ファイル ({CONFIG_FILE}) が見つかりません。スクリプトを終了します。")
     exit()
-except yaml.YAMLError as e: # yaml.YAMLError をキャッチ
-    logger.critical(f"設定ファイル ({CONFIG_FILE}) のYAML形式が正しくありません。エラー: {e} スクリプトを終了します。")
+except (yaml.YAMLError, ValueError) as e_main: # config.yaml のパースエラーや空ファイル
+    logger.critical(f"メインの設定ファイル ({CONFIG_FILE}) の形式が正しくないか、内容に問題があります。エラー: {e_main}")
     exit()
 except Exception as e:
     logger.critical(f"設定ファイルの読み込み中に予期せぬエラーが発生しました: {e}", exc_info=True)
