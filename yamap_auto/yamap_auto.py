@@ -9,6 +9,7 @@ import json
 import os
 import re
 import logging
+import yaml # YAMLをインポート
 
 # --- Loggerの設定 ---
 LOG_FILE_NAME = "yamap_auto.log"
@@ -33,12 +34,12 @@ except Exception as e:
 # --- Logger設定完了 ---
 
 # 設定ファイルのパス
-CONFIG_FILE = os.path.join(os.path.dirname(__file__), "config.json")
+CONFIG_FILE = os.path.join(os.path.dirname(__file__), "config.yaml") # .yamlに変更
 
 # --- 設定ファイルの読み込み ---
 try:
     with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
-        config = json.load(f)
+        config = yaml.safe_load(f) # yaml.safe_load に変更
     YAMAP_EMAIL = config.get("email", "YOUR_YAMAP_EMAIL")
     YAMAP_PASSWORD = config.get("password", "YOUR_YAMAP_PASSWORD")
     MY_USER_ID = config.get("user_id", "YOUR_YAMAP_USER_ID")
@@ -52,8 +53,8 @@ try:
 except FileNotFoundError:
     logger.critical(f"設定ファイル ({CONFIG_FILE}) が見つかりません。スクリプトを終了します。")
     exit()
-except json.JSONDecodeError:
-    logger.critical(f"設定ファイル ({CONFIG_FILE}) の形式が正しくありません。JSON形式を確認してください。スクリプトを終了します。")
+except yaml.YAMLError as e: # yaml.YAMLError をキャッチ
+    logger.critical(f"設定ファイル ({CONFIG_FILE}) のYAML形式が正しくありません。エラー: {e} スクリプトを終了します。")
     exit()
 except Exception as e:
     logger.critical(f"設定ファイルの読み込み中に予期せぬエラーが発生しました: {e}", exc_info=True)
