@@ -144,17 +144,22 @@ def get_followed_users_profiles(driver, user_id):
     driver.get(followed_list_url)
     user_links = []
     try:
-        user_card_selectors = ["div[class*='UserListItem_root__']", "a[class*='UserFollowRow_avatarLink__']", "li[class*='UserList__UserListItem__']" ]
-        WebDriverWait(driver, 20).until(EC.any_of(*[EC.presence_of_all_elements_located((By.CSS_SELECTOR, sel)) for sel in user_card_selectors]))
+        # Wait for user links to be present based on the new selector
+        user_link_selector = "a.css-e5vv35[href^='/users/']"
+        WebDriverWait(driver, 20).until(EC.presence_of_all_elements_located((By.CSS_SELECTOR, user_link_selector)))
         time.sleep(DOMO_SETTINGS.get("short_wait_sec", 2)) # 描画安定待ち
-        candidate_links = driver.find_elements(By.CSS_SELECTOR, "a[href^='/users/']")
+
+        candidate_links = driver.find_elements(By.CSS_SELECTOR, user_link_selector)
         for link_el in candidate_links:
             href = link_el.get_attribute('href')
             if href:
                 if href.startswith("/"): href = BASE_URL + href
-                if href.startswith(f"{BASE_URL}/users/") and href.split(f"{BASE_URL}/users/")[1].split("/")[0].isdigit() and f"/users/{MY_USER_ID}" not in href and "/follows" not in href and "/followers" not in href:
+                # Ensure it's a user profile link, not the current user, and not a sub-path like /follows or /followers
+                match = re.match(f"^{BASE_URL}/users/(\\d+)$", href)
+                if match and match.group(1) != MY_USER_ID:
                     user_links.append(href)
-        user_links = sorted(list(set(user_links)))
+
+        user_links = sorted(list(set(user_links))) # Remove duplicates and sort
         logger.info(f"フォロー中のユーザー {len(user_links)} 人が見つかりました。")
     except TimeoutException:
         logger.warning(f"フォロー中のユーザー一覧の読み込みに失敗しました（タイムアウト）: {followed_list_url}")
@@ -167,20 +172,36 @@ def get_latest_activity_url(driver, user_profile_url):
     driver.get(user_profile_url)
     latest_activity_url = None
     try:
-        activity_link_selectors = ["a[data-testid='activity-card-link']", "div[class*='ActivityCard_root'] a[href^='/activities/']", "article[class*='ActivityListItem'] a[href^='/activities/']", "a[href^='/activities/']"]
-        WebDriverWait(driver, 10).until(EC.any_of(*[EC.presence_of_all_elements_located((By.CSS_SELECTOR, sel)) for sel in activity_link_selectors[:2]]))
-        for selector in activity_link_selectors:
+        # Updated selectors based on user-provided HTML: <article data-testid="activity-entry"><a href="/activities/..." class="css-192jaxu">
+        primary_activity_selector = "article[data-testid='activity-entry'] a[href^='/activities/']"
+        secondary_activity_selector = "a.css-192jaxu[href^='/activities/']" # More specific class from snippet
+        fallback_activity_selector = "a[data-testid='activity-card-link']" # Keep old one as fallback
+
+        # Wait for the primary container of activities or a specific activity link
+        WebDriverWait(driver, 10).until(
+            EC.any_of(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "article[data-testid='activity-entry']")),
+                EC.presence_of_element_located((By.CSS_SELECTOR, primary_activity_selector)),
+                EC.presence_of_element_located((By.CSS_SELECTOR, fallback_activity_selector))
+            )
+        )
+        time.sleep(DOMO_SETTINGS.get("short_wait_sec", 1)) # Allow some time for rendering after presence
+
+        # Try selectors in order of expected reliability/specificity
+        for selector in [primary_activity_selector, secondary_activity_selector, fallback_activity_selector]:
             elements = driver.find_elements(By.CSS_SELECTOR, selector)
-            for element in elements:
-                href = element.get_attribute('href')
+            if elements:
+                # Assuming the first one is the latest, which is typical for activity feeds
+                href = elements[0].get_attribute('href')
                 if href:
                     full_href = href if href.startswith(BASE_URL) else (BASE_URL + href if href.startswith('/') else None)
                     if full_href and "/activities/" in full_href:
                         latest_activity_url = full_href
                         logger.debug(f"最新の活動日記URL候補: {latest_activity_url} (selector: {selector})")
-                        return latest_activity_url # 最初に見つかったものを採用
+                        return latest_activity_url
+
         if not latest_activity_url:
-            logger.info(f"ユーザー ({user_profile_url.split('/')[-1]}) の最新の活動日記が見つかりませんでした。")
+            logger.info(f"ユーザー ({user_profile_url.split('/')[-1]}) の最新の活動日記が見つかりませんでした。試行したセレクタ: {[primary_activity_selector, secondary_activity_selector, fallback_activity_selector]}")
     except TimeoutException:
         logger.warning(f"ユーザー ({user_profile_url.split('/')[-1]}) の活動日記読み込みでタイムアウトしました。")
     except Exception as e:
@@ -191,26 +212,76 @@ def domo_activity(driver, activity_url):
     logger.info(f"活動日記 ({activity_url.split('/')[-1]}) へDOMOを試みます。")
     driver.get(activity_url)
     try:
-        domo_button_selector = "button[data-testid='ActivityDomoButton']"
-        domo_button = WebDriverWait(driver, 15).until(EC.element_to_be_clickable((By.CSS_SELECTOR, domo_button_selector)))
+        # Updated selector based on user-provided HTML: <button id="DomoActionButton" ...>
+        # Fallback to the old data-testid if the ID is not found or doesn't work.
+        primary_domo_button_selector = "button#DomoActionButton"
+        fallback_domo_button_selector = "button[data-testid='ActivityDomoButton']"
+
+        domo_button = None
+        current_selector_used = ""
+
+        try:
+            logger.debug(f"DOMOボタン探索中 (プライマリセレクタ: {primary_domo_button_selector})")
+            domo_button = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.CSS_SELECTOR, primary_domo_button_selector)))
+            current_selector_used = primary_domo_button_selector
+            logger.debug(f"DOMOボタンをプライマリセレクタで発見: {primary_domo_button_selector}")
+        except TimeoutException:
+            logger.debug(f"DOMOボタンがプライマリセレクタで見つからず。フォールバックセレクタ試行: {fallback_domo_button_selector}")
+            try:
+                domo_button = WebDriverWait(driver, 5).until(EC.element_to_be_clickable((By.CSS_SELECTOR, fallback_domo_button_selector)))
+                current_selector_used = fallback_domo_button_selector
+                logger.debug(f"DOMOボタンをフォールバックセレクタで発見: {fallback_domo_button_selector}")
+            except TimeoutException:
+                logger.warning(f"DOMOボタンが見つからないかタイムアウト (試行セレクタ: {primary_domo_button_selector}, {fallback_domo_button_selector}): {activity_url.split('/')[-1]}")
+                return False
+
         aria_label_before = domo_button.get_attribute("aria-label"); is_domoed = False
+        # Check for 'is-active' class on the span as another indicator, if aria-label is unreliable
+        # The provided HTML shows: <span class="RidgeIcon DomoActionContainer__DomoIcon is-active">
+        # This 'is-active' might mean it's already domoed.
+        try:
+            icon_span = domo_button.find_element(By.CSS_SELECTOR, "span.RidgeIcon")
+            if "is-active" in icon_span.get_attribute("class"):
+                logger.info(f"DOMOボタンのアイコンが既にアクティブ状態です (class='is-active'): {activity_url.split('/')[-1]}")
+                # This could mean already DOMOed. Rely on aria-label if present, otherwise this is a strong hint.
+                if not aria_label_before : # If aria-label is empty, this might be the only indicator
+                     is_domoed = True
+        except NoSuchElementException:
+            logger.debug("DOMOボタン内のRidgeIcon spanが見つかりませんでした。")
+
+
         if aria_label_before and ("Domo済み" in aria_label_before or "domoed" in aria_label_before.lower() or "ドモ済み" in aria_label_before):
             is_domoed = True
+            logger.info(f"既にDOMO済みです (aria-label確認): {activity_url.split('/')[-1]} (aria-label: {aria_label_before})")
+
         if not is_domoed:
             logger.info(f"DOMOを実行します: {activity_url.split('/')[-1]}")
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", domo_button); time.sleep(0.5)
             domo_button.click()
-            WebDriverWait(driver, 10).until(lambda d: d.find_element(By.CSS_SELECTOR, domo_button_selector).get_attribute("aria-label") != aria_label_before or "Domo済み" in d.find_element(By.CSS_SELECTOR, domo_button_selector).get_attribute("aria-label"))
-            aria_label_after = driver.find_element(By.CSS_SELECTOR, domo_button_selector).get_attribute("aria-label")
-            if "Domo済み" in aria_label_after or "domoed" in aria_label_after.lower() or "ドモ済み" in aria_label_after:
-                logger.info(f"DOMOしました: {activity_url.split('/')[-1]} (aria-label: {aria_label_after})")
+
+            # Wait for aria-label change or for the icon to become active
+            WebDriverWait(driver, 10).until(
+                lambda d: (d.find_element(By.CSS_SELECTOR, current_selector_used).get_attribute("aria-label") != aria_label_before and \
+                           ("Domo済み" in d.find_element(By.CSS_SELECTOR, current_selector_used).get_attribute("aria-label") or \
+                            "domoed" in d.find_element(By.CSS_SELECTOR, current_selector_used).get_attribute("aria-label").lower() or \
+                            "ドモ済み" in d.find_element(By.CSS_SELECTOR, current_selector_used).get_attribute("aria-label"))) or \
+                          ("is-active" in d.find_element(By.CSS_SELECTOR, f"{current_selector_used} span.RidgeIcon").get_attribute("class"))
+            )
+
+            aria_label_after = driver.find_element(By.CSS_SELECTOR, current_selector_used).get_attribute("aria-label")
+            icon_is_active_after = "is-active" in driver.find_element(By.CSS_SELECTOR, f"{current_selector_used} span.RidgeIcon").get_attribute("class")
+
+            if ("Domo済み" in aria_label_after or "domoed" in aria_label_after.lower() or "ドモ済み" in aria_label_after) or icon_is_active_after:
+                logger.info(f"DOMOしました: {activity_url.split('/')[-1]} (aria-label: {aria_label_after}, icon active: {icon_is_active_after})")
             else:
-                logger.warning(f"DOMO実行しましたが状態変化が期待通りではありません: {activity_url.split('/')[-1]} (aria-label: {aria_label_after})")
+                logger.warning(f"DOMO実行しましたが状態変化が期待通りではありません: {activity_url.split('/')[-1]} (aria-label: {aria_label_after}, icon active: {icon_is_active_after})")
             time.sleep(DOMO_SETTINGS.get("delay_after_domo_action_sec", 1.5)); return True
         else:
-            logger.info(f"既にDOMO済みです: {activity_url.split('/')[-1]} (aria-label: {aria_label_before})"); return False
-    except TimeoutException:
-        logger.warning(f"DOMOボタンが見つからないかタイムアウト: {activity_url.split('/')[-1]}")
+            # If it was already domoed (either by aria-label or initial icon state)
+            logger.info(f"既にDOMO済みと判断されました: {activity_url.split('/')[-1]} (aria-label: {aria_label_before})"); return False
+
+    except TimeoutException: # This timeout is for the initial button find or the lambda wait
+        logger.warning(f"DOMO処理中にタイムアウトが発生: {activity_url.split('/')[-1]}")
     except NoSuchElementException:
         logger.warning(f"DOMOボタンの構成要素が見つかりません: {activity_url.split('/')[-1]}")
     except Exception as e:
@@ -240,9 +311,25 @@ def get_my_activity_urls(driver, user_id, max_activities_to_check):
     my_activities_url = f"{BASE_URL}/users/{user_id}/activities"; logger.info(f"自分の活動日記一覧 ({my_activities_url}) を取得します。")
     driver.get(my_activities_url); activity_urls = []
     try:
-        activity_link_selectors = ["a[data-testid='activity-card-link']", "div[class*='ActivityCard_root'] a[href^='/activities/']", "article[class*='ActivityListItem'] a[href^='/activities/']"]
-        WebDriverWait(driver, 15).until(EC.any_of(*[EC.presence_of_all_elements_located((By.CSS_SELECTOR, sel)) for sel in activity_link_selectors])); time.sleep(1.5)
-        candidate_elements = []; [candidate_elements.extend(driver.find_elements(By.CSS_SELECTOR, selector)) for selector in activity_link_selectors]
+        # Updated selectors based on user-provided HTML: <article data-testid="activity-entry"><a href="/activities/..." class="css-192jaxu">
+        primary_activity_selector = "article[data-testid='activity-entry'] a[href^='/activities/']"
+        secondary_activity_selector = "a.css-192jaxu[href^='/activities/']" # More specific class from snippet
+
+        # Wait for the primary container of activities or a specific activity link
+        WebDriverWait(driver, 15).until(
+            EC.any_of(
+                EC.presence_of_all_elements_located((By.CSS_SELECTOR, "article[data-testid='activity-entry']")), # Wait for any activity entry
+                EC.presence_of_all_elements_located((By.CSS_SELECTOR, primary_activity_selector))
+            )
+        )
+        time.sleep(DOMO_SETTINGS.get("short_wait_sec", 1.5)) # Allow some time for rendering after presence
+
+        candidate_elements = []
+        # Collect elements from both selectors if they exist
+        candidate_elements.extend(driver.find_elements(By.CSS_SELECTOR, primary_activity_selector))
+        # To avoid duplicates if primary and secondary selectors match same elements, ensure unique hrefs later
+        # For now, let's assume primary_activity_selector is the main one based on data-testid
+
         raw_urls = []
         for el in candidate_elements:
             href = el.get_attribute('href')
@@ -322,25 +409,68 @@ def get_recommended_activity_urls(driver, max_posts_to_get):
     logger.info(f"トップページ ({BASE_URL}/) でおすすめの活動日記を探します...")
     driver.get(BASE_URL + "/"); activity_urls = []
     try:
+        # Keep existing section selectors, as no new HTML was provided for the section itself
         recommended_section_selectors = ["section[aria-labelledby*='おすすめの活動日記']", "section[data-testid*='recommend-activities']", "//section[.//h2[contains(text(),'おすすめの活動日記') or contains(text(),'Recommended Activities')]]", "div[class*='HomeFeedSection_root'][.//h2[contains(text(),'おすすめ')]]"]
-        recommended_activity_card_link_selectors = ["a[data-testid='activity-card-link']", ".//a[contains(@href,'/activities/')]"]
+
+        # Update activity link selectors within the section to match new structure
+        # Using XPath for .// to search within the context of recommend_section_element
+        recommended_activity_card_link_selectors = [
+            ".//article[@data-testid='activity-entry']//a[starts-with(@href,'/activities/')]", # Preferred new structure
+            ".//a[@class='css-192jaxu' and starts-with(@href,'/activities/')]",             # Alternative new structure
+            ".//a[@data-testid='activity-card-link']",                                      # Old fallback
+            ".//a[starts-with(@href,'/activities/')]"                                       # Generic fallback
+        ]
+
         recommend_section_element = None; logger.debug("おすすめセクションを探索中...")
         for sel_idx, sel in enumerate(recommended_section_selectors):
             try:
-                wait_time = 10 if sel_idx < 2 else 5
-                if sel.startswith("//"): WebDriverWait(driver, wait_time).until(EC.presence_of_element_located((By.XPATH, sel))); recommend_section_element = driver.find_element(By.XPATH, sel)
-                else: WebDriverWait(driver, wait_time).until(EC.presence_of_element_located((By.CSS_SELECTOR, sel))); recommend_section_element = driver.find_element(By.CSS_SELECTOR, sel)
-                if recommend_section_element: logger.debug(f"おすすめ活動日記セクションを特定 ({sel})"); driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", recommend_section_element); time.sleep(1); break
-            except: continue
-        if not recommend_section_element: logger.info("おすすめの活動日記セクションが見つかりませんでした。"); return []
+                wait_time = 10 # Increased wait time slightly
+                logger.debug(f"おすすめセクション探索試行 {sel_idx+1}/{len(recommended_section_selectors)}: {sel}")
+                if sel.startswith("//"):
+                    WebDriverWait(driver, wait_time).until(EC.presence_of_element_located((By.XPATH, sel)))
+                    recommend_section_element = driver.find_element(By.XPATH, sel)
+                else:
+                    WebDriverWait(driver, wait_time).until(EC.presence_of_element_located((By.CSS_SELECTOR, sel)))
+                    recommend_section_element = driver.find_element(By.CSS_SELECTOR, sel)
+
+                if recommend_section_element:
+                    logger.info(f"おすすめ活動日記セクションを特定 ({sel})")
+                    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", recommend_section_element)
+                    time.sleep(DOMO_SETTINGS.get("short_wait_sec", 2)) # Wait for potential dynamic content loading within section
+                    break
+            except TimeoutException:
+                logger.debug(f"おすすめセクションセレクタ '{sel}' でタイムアウト。")
+            except Exception as e_sel:
+                 logger.debug(f"おすすめセクションセレクタ '{sel}' でエラー: {e_sel}")
+            continue
+
+        if not recommend_section_element:
+            logger.info("おすすめの活動日記セクションが見つかりませんでした。")
+            return []
+
         candidate_elements = []; logger.debug("セクション内のおすすめ活動日記リンクを探索中...")
-        for link_sel_idx, link_sel in enumerate(recommended_activity_card_link_selectors):
-            try:
-                if link_sel.startswith(".//"): elements = recommend_section_element.find_elements(By.XPATH, link_sel)
-                else: elements = recommend_section_element.find_elements(By.CSS_SELECTOR, link_sel)
-                if elements: logger.debug(f"リンク候補を {len(elements)} 件発見 (selector: {link_sel})"); candidate_elements.extend(elements)
-                if len(candidate_elements) >= max_posts_to_get and link_sel_idx < len(recommended_activity_card_link_selectors) -1 : break
-            except: continue
+        # Ensure recommend_section_element is not None before proceeding
+        if recommend_section_element:
+            for link_sel_idx, link_sel in enumerate(recommended_activity_card_link_selectors):
+                try:
+                    logger.debug(f"セクション内リンク探索試行 {link_sel_idx+1}/{len(recommended_activity_card_link_selectors)}: {link_sel}")
+                    elements = []
+                    if link_sel.startswith(".//"): # Indicates XPath
+                        elements = recommend_section_element.find_elements(By.XPATH, link_sel)
+                    else: # Assumes CSS selector if not starting with .// (though these are all XPath now)
+                        elements = recommend_section_element.find_elements(By.CSS_SELECTOR, link_sel)
+
+                    if elements:
+                        logger.debug(f"リンク候補を {len(elements)} 件発見 (selector: {link_sel})")
+                        candidate_elements.extend(elements)
+                    # Optimization: if we have enough posts from preferred selectors, maybe stop early
+                    # This might be too aggressive if later selectors are more accurate for some items
+                    # if len(set(el.get_attribute('href') for el in candidate_elements)) >= max_posts_to_get and link_sel_idx < 0: # Disabled for now
+                    #     break
+                except Exception as e_link_sel:
+                    logger.debug(f"セクション内リンクセレクタ '{link_sel}' でエラー: {e_link_sel}")
+                continue
+
         raw_urls = []
         for el in candidate_elements:
             href = el.get_attribute('href')
@@ -418,24 +548,41 @@ def follow_back_users(driver, my_user_id):
     followers_url = f"{BASE_URL}/users/{my_user_id}?tab=followers#tabs"; logger.info(f"フォロワー一覧ページへアクセス: {followers_url}"); driver.get(followers_url)
     max_to_follow_back = FOLLOW_SETTINGS.get("max_followers_to_follow_back", 10); followed_count = 0
     try:
-        user_card_selector = "div[class*='UserListItem_root']"; WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.CSS_SELECTOR, user_card_selector))); time.sleep(2)
-        user_cards = driver.find_elements(By.CSS_SELECTOR, user_card_selector); logger.info(f"フォロワー一覧から {len(user_cards)} 件のユーザーカードを検出しました。")
-        if not user_cards: logger.info("フォロワーが見つかりませんでした。"); return
-        for card_idx, user_card in enumerate(user_cards):
+        user_link_selector = "a.css-e5vv35[href^='/users/']"
+        WebDriverWait(driver, 15).until(EC.presence_of_all_elements_located((By.CSS_SELECTOR, user_link_selector))); time.sleep(2)
+
+        user_elements = driver.find_elements(By.CSS_SELECTOR, user_link_selector)
+        logger.info(f"フォロワー一覧から {len(user_elements)} 件のユーザー要素を検出しました。")
+        if not user_elements: logger.info("フォロワーが見つかりませんでした。"); return
+
+        for card_idx, user_link_el in enumerate(user_elements):
             if followed_count >= max_to_follow_back: logger.info(f"フォローバック上限 ({max_to_follow_back}人) に達しました。"); break
-            user_name = ""; profil_url = ""
+
+            user_name = ""; profile_url = ""
             try:
-                name_el = user_card.find_element(By.CSS_SELECTOR, "span[class*='UserListItem_name__'], span[class*='UserListItem_displayName__']")
+                # The link element itself is the main container for user info
+                profile_url = user_link_el.get_attribute("href")
+                if profile_url.startswith("/"): profile_url = BASE_URL + profile_url
+
+                # Try to find name within the link element
+                name_el = user_link_el.find_element(By.CSS_SELECTOR, "h2.css-o7x4kv") # Based on provided HTML: <h2 class="css-o7x4kv">とし</h2>
                 user_name = name_el.text.strip() if name_el else f"ユーザー{card_idx+1}"
-                link_el = user_card.find_element(By.CSS_SELECTOR, "a[href^='/users/']")
-                profil_url = link_el.get_attribute("href");
-                if profil_url.startswith("/"): profil_url = BASE_URL + profil_url
+            except NoSuchElementException:
+                user_name = f"ユーザー{card_idx+1} (名前特定不可)"
+                logger.debug(f"ユーザーカード {card_idx+1} の名前取得で要素見つからず (h2.css-o7x4kv)。")
             except Exception as e_card_parse:
                 user_name = f"ユーザー{card_idx+1}"
                 logger.debug(f"ユーザーカード {card_idx+1} の名前/URL取得で軽微なエラー: {e_card_parse}")
 
-            logger.info(f"フォロワー「{user_name}」(URL: {profil_url.split('/')[-1] if profil_url else 'N/A'}) のフォロー状態を確認中...")
-            follow_button = find_follow_button_for_user(user_card)
+            # Ensure it's a valid user profile URL and not the current user
+            match = re.match(f"^{BASE_URL}/users/(\\d+)$", profile_url)
+            if not match or (match and match.group(1) == MY_USER_ID):
+                logger.debug(f"スキップ: 自分自身または無効なフォロワーURL ({profile_url})")
+                continue
+
+            logger.info(f"フォロワー「{user_name}」(URL: {profile_url.split('/')[-1] if profile_url else 'N/A'}) のフォロー状態を確認中...")
+            # Pass the user_link_el (the <a> tag) as the context for finding the follow button
+            follow_button = find_follow_button_for_user(user_link_el)
             if follow_button:
                 if click_follow_button_and_verify(driver, follow_button, user_name): followed_count += 1
                 time.sleep(FOLLOW_SETTINGS.get("delay_between_follow_back_sec", 3))
