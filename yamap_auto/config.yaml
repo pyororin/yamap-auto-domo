@@ -54,7 +54,7 @@ search_and_follow_settings:
   max_pages_to_process_search: 3       # 検索結果を処理する最大ページ数
   max_users_to_process_per_page: 5     # 検索結果1ページあたりで処理する最大ユーザー数（活動記録数）
   min_followers_for_search_follow: 20  # フォロー対象とするユーザーの最低フォロワー数
-  follow_ratio_threshold_for_search: 0.9 # フォロー対象とするユーザーの「フォロー数/フォロワー数」の閾値 (この値未満のユーザーをフォロー)
+  follow_ratio_threshold_for_search: 0.9 # フォロー対象とするユーザーの「フォロー数/フォロワー数」の閾値 (この値以上のユーザーをフォロー)
   domo_latest_activity_after_follow: true # フォロー後に最新の活動記録へDOMOするかのフラグ
   delay_between_user_processing_in_search_sec: 5.0 # 検索結果でのユーザー処理間の待機時間 (秒)
   delay_after_pagination_sec: 3.0      # 検索結果のページネーション後の待機時間 (秒)
