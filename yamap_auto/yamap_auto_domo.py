@@ -984,28 +984,34 @@ def follow_back_users_new(driver, current_user_id):
         return
 
     logger.info(">>> フォローバック機能を開始します...")
-    followers_url = f"{BASE_URL}/users/{current_user_id}/followers" # フォロワー一覧ページのURL形式を確認・修正
+    # 正しいフォロワー一覧ページのURL形式に修正
+    followers_url = f"{BASE_URL}/users/{current_user_id}?tab=followers#tabs"
     logger.info(f"フォロワー一覧ページへアクセス: {followers_url}")
     driver.get(followers_url)
+
+    # --- フォローバック機能のデバッグコードは削除 ---
 
     max_to_follow_back = FOLLOW_BACK_SETTINGS.get("max_users_to_follow_back", 10)
     delay_between_actions = FOLLOW_BACK_SETTINGS.get("delay_after_follow_back_action_sec", 3.0) # ユーザー間の待機にも流用
 
     followed_count = 0
 
+    # --- セレクタ定義 ---
+    followers_list_container_selector = "ul.css-18aka15" # フォロワーリスト全体を囲むulタグ (HTMLから特定)
+    user_card_selector = "div[data-testid='user']"       # 各フォロワーカードのルートdiv (HTMLから特定)
+    user_link_in_card_selector = "a.css-e5vv35[href^='/users/']" # カード内のユーザープロフへのリンクaタグ (HTMLから特定)
+    name_element_css_selector_in_link = "h2.css-o7x4kv"      # 上記aタグ内のユーザー名h2タグ (HTMLから特定)
+
     try:
-        # フォロワーリストの各ユーザー要素を特定するセレクタ (YAMAPのHTML構造に依存)
-        # 例: <a href="/users/..." class="UserListItem_userNameLink__XXXXX"> のような構造を想定
-        # または、各ユーザーカードのルート要素
-        user_card_selector = "div[class*='UserListItem_root']" # 一般的なユーザーリストアイテムのルート
-        user_link_in_card_selector = "a[href*='/users/'][class*='UserListItem_userNameLink']" # カード内のユーザーリンク
-
-        WebDriverWait(driver, 15).until(
-            EC.presence_of_all_elements_located((By.CSS_SELECTOR, user_card_selector))
+        logger.info(f"フォロワーリストのコンテナ ({followers_list_container_selector}) の出現を待ちます...")
+        WebDriverWait(driver, 20).until( # 少し長めに待つ
+            EC.presence_of_element_located((By.CSS_SELECTOR, followers_list_container_selector))
         )
-        time.sleep(2) # 描画安定待ち
+        logger.info("フォロワーリストのコンテナを発見。")
 
-        user_cards = driver.find_elements(By.CSS_SELECTOR, user_card_selector)
+        # コンテナが見つかった後、改めてユーザーカードを取得
+        # user_card_selector は変更なし (div[data-testid='user'])
+        user_cards = driver.find_elements(By.CSS_SELECTOR, user_card_selector) # 親コンテナ内のユーザーカードを探す形にしても良いが、まずはこれで試す
         logger.info(f"フォロワー一覧から {len(user_cards)} 件のユーザー候補を検出しました。")
 
         if not user_cards:
