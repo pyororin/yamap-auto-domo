@@ -191,83 +191,86 @@ def find_follow_button_in_list_item(user_list_item_element):
             if following_button and following_button.is_displayed():
                 # テキストが「フォロー中」であることも確認 (より確実性のため)
                 try:
-                    button_text_span = following_button.find_element(By.CSS_SELECTOR, "span.c1hbtdj4") # 提供されたHTMLのspanクラス
-                    if "フォロー中" in button_text_span.text:
+                    # ボタン自身のテキスト、または内部のspan要素のテキストを確認
+                    button_text = following_button.text.strip()
+                    span_text = ""
+                    try:
+                        span_elements = following_button.find_elements(By.CSS_SELECTOR, "span")
+                        if span_elements: # 複数のspanがありうるので、主要なものを探すか、連結するか
+                            span_text = " ".join(s.text.strip() for s in span_elements if s.text.strip())
+                    except: pass # span がなくてもボタンテキストで判定試行
+
+                    if "フォロー中" in button_text or "フォロー中" in span_text:
                         logger.debug("「フォロー中」ボタン (aria-pressed='true' およびテキスト確認) を発見。既にフォロー済みと判断。")
                         return None
-                except NoSuchElementException: # spanが見つからなくてもaria-pressedだけで判断するケースも考慮
-                     logger.debug("「フォロー中」ボタン (aria-pressed='true') を発見したが、内部テキスト確認できず。フォロー済みと判断。")
-                     return None
+                    else:
+                        logger.debug(f"aria-pressed='true' ボタン発見もテキスト不一致。Button text: '{button_text}', Span text: '{span_text}'")
+                        # テキストが不一致でもaria-pressed='true'ならフォロー済みとみなすか、ここではNoneを返さないでおくか。
+                        # 現状はNoneを返して「フォロー済み」と判断させている。
+                        return None # aria-pressed='true'を優先
+                except Exception as e_text_check:
+                     logger.debug(f"aria-pressed='true' ボタンのテキスト確認中にエラー: {e_text_check}")
+                     return None # エラー時もフォロー済み扱い（安全策）
         except NoSuchElementException:
             logger.debug("aria-pressed='true' の「フォロー中」ボタンは見つかりませんでした。フォロー可能かもしれません。")
 
         # 「フォローする」ボタンの判定
-        # 未フォローの場合、ボタンは aria-pressed="false" か、または別の属性やテキストを持つと想定
-        # または、フォロー中ボタンが存在しないことで判定する
+        # data-testid検索はコメントアウト
+        # try:
+        #     follow_button_testid = user_list_item_element.find_element(By.CSS_SELECTOR, "button[data-testid='FollowButton']")
+        #     if follow_button_testid and follow_button_testid.is_displayed() and follow_button_testid.is_enabled():
+        #          logger.debug("リストアイテム内で「フォローする」ボタン (data-testid) を発見。")
+        #          return follow_button_testid
+        # except NoSuchElementException:
+        #     logger.debug("リストアイテム内で data-testid='FollowButton' のボタンは見つかりませんでした。")
 
-        # まず、汎用的な「フォローする」テキストを持つボタンを探す (XPathが有効)
+        # aria-pressed="false" のボタンを探し、テキストを確認 (こちらを優先)
+        try:
+            potential_follow_buttons = user_list_item_element.find_elements(By.CSS_SELECTOR, "button[aria-pressed='false']")
+            if not potential_follow_buttons:
+                logger.debug("リストアイテム内で aria-pressed='false' のボタン候補は見つかりませんでした。")
+            else:
+                for button_candidate in potential_follow_buttons:
+                    if button_candidate and button_candidate.is_displayed() and button_candidate.is_enabled():
+                        button_text = button_candidate.text.strip()
+                        span_text = ""
+                        try:
+                            span_elements = button_candidate.find_elements(By.CSS_SELECTOR, "span")
+                            if span_elements:
+                                span_text = " ".join(s.text.strip() for s in span_elements if s.text.strip())
+                        except: pass
+
+                        if "フォローする" in button_text or "フォローする" in span_text:
+                            logger.debug("リストアイテム内で「フォローする」ボタン (aria-pressed='false' かつテキスト確認) を発見。")
+                            return button_candidate
+                logger.debug("リストアイテム内の aria-pressed='false' ボタン群に「フォローする」テキストを持つものなし。")
+        except NoSuchElementException: # find_elements なので実際にはここは通らないはずだが念のため
+            logger.debug("リストアイテム内で aria-pressed='false' のボタン探索でエラー（通常発生しない）。")
+
+
+        # XPathによるテキストでのフォールバック
         try:
             follow_button_xpath = ".//button[normalize-space(.)='フォローする']"
             button_by_text = user_list_item_element.find_element(By.XPATH, follow_button_xpath)
             if button_by_text and button_by_text.is_displayed() and button_by_text.is_enabled():
-                logger.debug(f"「フォローする」ボタンをテキストで発見 (XPath: {follow_button_xpath})")
+                logger.debug(f"リストアイテム内で「フォローする」ボタンをテキストで発見 (XPath: {follow_button_xpath})")
                 return button_by_text
         except NoSuchElementException:
-            logger.debug(f"テキスト「フォローする」でのボタン発見試行失敗 (XPath: {follow_button_xpath})。")
+            logger.debug(f"リストアイテム内でテキスト「フォローする」でのボタン発見試行失敗 (XPath: {follow_button_xpath})。")
 
-        # 次に、aria-pressed="false" のボタンを探し、内部テキストが「フォローする」であることを確認
+        # aria-label によるフォールバック
         try:
-            # まず aria-pressed="false" のボタン候補を取得
-            potential_follow_buttons = user_list_item_element.find_elements(By.CSS_SELECTOR, "button[aria-pressed='false']")
-            if not potential_follow_buttons:
-                logger.debug("aria-pressed='false' のボタン候補は見つかりませんでした。")
-                raise NoSuchElementException # 次の探索ブロックへ
-
-            for button_candidate in potential_follow_buttons:
-                if button_candidate and button_candidate.is_displayed() and button_candidate.is_enabled():
-                    # 内部のspan.c1hbtdj4 のテキストを確認
-                    try:
-                        text_span = button_candidate.find_element(By.CSS_SELECTOR, "span.c1hbtdj4")
-                        if "フォローする" in text_span.text:
-                            logger.debug("「フォローする」ボタン (aria-pressed='false' かつ内部テキスト確認) を発見。")
-                            return button_candidate
-                    except NoSuchElementException:
-                        logger.debug(f"aria-pressed='false' ボタン内に期待するテキストspan (span.c1hbtdj4) が見つかりません。ボタン: {button_candidate.get_attribute('outerHTML')}")
-                        continue # 次の候補へ
-            logger.debug("aria-pressed='false' のボタン群の中に、テキスト「フォローする」を持つものは見つかりませんでした。")
+            follow_button_aria_label = user_list_item_element.find_element(By.CSS_SELECTOR, "button[aria-label*='フォローする']")
+            if follow_button_aria_label and follow_button_aria_label.is_displayed() and follow_button_aria_label.is_enabled():
+                 logger.debug(f"リストアイテム内で「フォローする」ボタン (aria-label) を発見。")
+                 return follow_button_aria_label
         except NoSuchElementException:
-            # この例外はキャッチして、次の探索ブロックに進むためにここでは何もしない
-            pass # logger.debug は上記 raise の前で出力済み
+            logger.debug("リストアイテム内で aria-label*='フォローする' のボタンは見つかりませんでした。")
 
-        # data-testid や特有のクラス名での探索 (以前の候補も残す) - 優先度低
-        # ただし、提供されたHTMLには FollowButton の data-testid は無かった
-        legacy_follow_button_selectors = [
-            "button[data-testid='FollowButton']",
-            "button[aria-label*='フォローする']",
-        ]
-        for sel in legacy_follow_button_selectors:
-            try:
-                button = None
-                if sel.startswith(".//"):
-                    button = user_list_item_element.find_element(By.XPATH, sel)
-                else:
-                    button = user_list_item_element.find_element(By.CSS_SELECTOR, sel)
-
-                if button and button.is_displayed() and button.is_enabled():
-                    # ボタンのテキストやaria-labelをさらに確認して誤判定を防ぐ
-                    button_text = button.text.strip()
-                    aria_label = button.get_attribute('aria-label')
-                    if "フォローする" in button_text or ("フォローする" in aria_label if aria_label else False):
-                         logger.debug(f"フォローボタン発見 (selector: {sel}, text: '{button_text}', aria-label: '{aria_label}')")
-                         return button
-                    else:
-                        logger.debug(f"ボタン発見だがテキスト/aria-labelが不一致 (selector: {sel}, text: '{button_text}', aria-label: '{aria_label}')")
-            except NoSuchElementException:
-                continue
         logger.debug("ユーザーリストアイテム内にクリック可能な「フォローする」ボタンが見つかりませんでした。")
         return None
     except Exception as e:
-        logger.error(f"ユーザーリストアイテム内のフォローボタン検索で予期せぬエラー", exc_info=True)
+        logger.error(f"ユーザーリストアイテム内のフォローボタン検索で予期せぬエラー: {e}", exc_info=True)
         return None
 
 def click_follow_button_and_verify(driver, follow_button_element, user_name_for_log=""):
@@ -678,16 +681,18 @@ def get_user_follow_counts(driver, user_profile_url):
             logger.debug(f"タブコンテナ ({tabs_container_selector}) を発見。")
         except TimeoutException:
             logger.warning(f"フォロー数/フォロワー数タブコンテナ ({tabs_container_selector}) の読み込みタイムアウト ({user_id_log})。")
-            # --- デバッグ用：タイムアウト時のページソース一部出力 (一時的に有効化) ---
-            try:
-                logger.debug(f"Page source on get_user_follow_counts timeout (tabs container, approx 2000 chars):\n{driver.page_source[:2000]}")
-            except Exception as e_debug:
-                logger.error(f"ページソース取得中のデバッグエラー: {e_debug}")
+            # --- デバッグ用：タイムアウト時のページソース一部出力 (コメントアウトに戻す) ---
+            # try:
+            #     logger.debug(f"Page source on get_user_follow_counts timeout (tabs container, approx 2000 chars):\n{driver.page_source[:2000]}")
+            # except Exception as e_debug:
+            #     logger.error(f"ページソース取得中のデバッグエラー: {e_debug}")
             # --- デバッグここまで ---
             return follows_count, followers_count # コンテナが見つからなければ早期リターン
 
-        follow_link_selector = "a[href$='/follows']"
-        follower_link_selector = "a[href$='/followers']"
+        follow_link_selector = "a[href*='tab=follows']"  # 末尾一致から部分一致に変更
+        follower_link_selector = "a[href*='tab=followers']" # 末尾一致から部分一致に変更
+        found_follows = False # 取得成功フラグ
+        found_followers = False # 取得成功フラグ
 
         # フォロー中の数
         try:
@@ -697,32 +702,50 @@ def get_user_follow_counts(driver, user_profile_url):
             num_str = "".join(filter(str.isdigit, full_text))
             if num_str:
                 follows_count = int(num_str)
+                found_follows = True
             else:
                 logger.warning(f"フォロー数のテキスト「{full_text}」から数値を抽出できませんでした ({user_id_log})。")
         except NoSuchElementException:
-            logger.warning(f"フォロー中の数を特定するリンク要素 ({follow_link_selector}) が見つかりませんでした ({user_id_log})。")
+            logger.warning(f"フォロー中の数を特定するリンク要素 ({follow_link_selector}) がタブコンテナ内に見つかりませんでした ({user_id_log})。")
+            # リンクが見つからない場合、タブコンテナのHTMLとページソースを出力 (コメントアウトに戻す)
+            # try:
+            #     if 'tabs_container_element' in locals() and tabs_container_element: # tabs_container_elementが定義されているか確認
+            #         logger.debug(f"Tabs container HTML (follow link not found for {user_id_log}):\n{tabs_container_element.get_attribute('innerHTML')[:1000]}...")
+            #     logger.debug(f"Page source (follow link not found for {user_id_log}, approx 2000 chars):\n{driver.page_source[:2000]}")
+            # except Exception as e_debug_nf:
+            #     logger.error(f"フォローリンク未発見時のデバッグHTML取得エラー ({user_id_log}): {e_debug_nf}")
         except Exception as e_follow_count:
             logger.error(f"フォロー数取得処理中に予期せぬエラー ({user_id_log}): {e_follow_count}", exc_info=True)
 
         # フォロワーの数
         try:
-            follower_link_element = driver.find_element(By.CSS_SELECTOR, follower_link_selector)
-            # リンク全体のテキスト (例: "フォロワー 19") から数値のみを抽出
+            # tabs_container_element を起点に検索
+            follower_link_element = tabs_container_element.find_element(By.CSS_SELECTOR, follower_link_selector)
             full_text = follower_link_element.text.strip()
             num_str = "".join(filter(str.isdigit, full_text))
             if num_str:
                 followers_count = int(num_str)
+                found_followers = True
             else:
                 logger.warning(f"フォロワー数のテキスト「{full_text}」から数値を抽出できませんでした ({user_id_log})。")
         except NoSuchElementException:
-            logger.warning(f"フォロワーの数を特定するリンク要素 ({follower_link_selector}) が見つかりませんでした ({user_id_log})。")
+            logger.warning(f"フォロワーの数を特定するリンク要素 ({follower_link_selector}) がタブコンテナ内に見つかりませんでした ({user_id_log})。")
+            # リンクが見つからない場合、タブコンテナのHTMLとページソースを出力 (コメントアウトに戻す)
+            # try:
+            #     if 'tabs_container_element' in locals() and tabs_container_element: # tabs_container_elementが定義されているか確認
+            #         logger.debug(f"Tabs container HTML (follow link not found for {user_id_log}):\n{tabs_container_element.get_attribute('innerHTML')[:1000]}...")
+            #     logger.debug(f"Page source (follow link not found for {user_id_log}, approx 2000 chars):\n{driver.page_source[:2000]}")
+            # except Exception as e_debug_nf:
+            #     logger.error(f"フォローリンク未発見時のデバッグHTML取得エラー ({user_id_log}): {e_debug_nf}")
         except Exception as e_follower_count:
             logger.error(f"フォロワー数取得処理中に予期せぬエラー ({user_id_log}): {e_follower_count}", exc_info=True)
 
         logger.info(f"ユーザー ({user_id_log}): フォロー中={follows_count}, フォロワー={followers_count}")
 
-    except TimeoutException:
-        logger.warning(f"フォロー数/フォロワー数リンク要素の読み込みタイムアウト ({user_id_log})。")
+    except TimeoutException: # これは tabs_container_element の取得に関する TimeoutException をキャッチするものではなくなった
+        # このブロックは、tabs_container_element の取得が成功した後の、予期せぬタイムアウトを指す。
+        # 通常は tabs_container_element.find_element で NoSuchElementException になるはず。
+        logger.warning(f"get_user_follow_countsのメインtryブロックで予期せぬTimeoutExceptionが発生 ({user_id_log})。")
         # --- デバッグ用：タイムアウト時のページソース一部出力 (通常はコメントアウト) ---
         # try:
         #     # プロフィール情報が含まれると期待される上位のコンテナ要素のセレクタ（例）
@@ -744,90 +767,138 @@ def find_follow_button_on_profile_page(driver):
     ユーザープロフィールページ上で「フォローする」ボタンを探す。
     既にフォロー中、またはボタンがない場合はNoneを返す。
     """
+    logger.info(f"find_follow_button_on_profile_page: Executing. URL: {driver.current_url}, Title: {driver.title}")
     try:
-        # プロフィールページの主要部分が表示されるまで少し待つ (タイムアウトを10秒に延長)
-        # 関連するボタン要素のいずれかが表示されることを期待
-        # css-1fsc5gw はフォローボタン等を囲むdivのクラス
-        # css-10rsfrr: プロフィール情報や活動日記タブを含む大きなコンテナ
-        # h1.css-jctfiw: ユーザー名
-        # div.css-1fsc5gw: フォローボタン等を直接囲むコンテナ
-        WebDriverWait(driver, 7).until(
-            EC.any_of(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "div.css-10rsfrr")),
-                EC.presence_of_element_located((By.CSS_SELECTOR, "h1.css-jctfiw")),
-                EC.presence_of_element_located((By.CSS_SELECTOR, "div.css-1fsc5gw")), # ボタンを直接囲むコンテナ
-                EC.presence_of_element_located((By.CSS_SELECTOR, "button[aria-pressed]")) # フォロー/フォロー中ボタン自体
-            )
-        )
+        # 呼び出し元でページの読み込み完了を待っているため、ここでのユーザー名H1の待機はコメントアウト
+        # username_h1_selector = "h1.css-jctfiw"
+        # try:
+        #     WebDriverWait(driver, 10).until(
+        #         EC.visibility_of_element_located((By.CSS_SELECTOR, username_h1_selector))
+        #     )
+        #     logger.debug(f"ユーザー名 ({username_h1_selector}) の表示を確認。")
+        # except TimeoutException:
+        #     logger.warning(f"プロフィールページのユーザー名 ({username_h1_selector}) が10秒以内に表示されませんでした。")
+        #     try:
+        #         logger.debug(f"Timeout context (H1 not found): URL={driver.current_url}, Title={driver.title}")
+        #         logger.debug(f"Page source on username H1 timeout (approx 2000 chars):\n{driver.page_source[:2000]}")
+        #     except Exception as e_debug:
+        #         logger.error(f"ユーザー名H1タイムアウト時のデバッグ情報取得エラー: {e_debug}")
+        #     return None
+
+        # 主要要素の存在確認ログ (ユーザー名確認後)
+        debug_elements_found = {
+            "div.css-1fsc5gw (フォローボタンコンテナ)": len(driver.find_elements(By.CSS_SELECTOR, "div.css-1fsc5gw")),
+            # "button[data-testid='FollowButton']": len(driver.find_elements(By.CSS_SELECTOR, "button[data-testid='FollowButton']")), # コメントアウト
+            # "button[data-testid='FollowingButton']": len(driver.find_elements(By.CSS_SELECTOR, "button[data-testid='FollowingButton']")), # コメントアウト
+            "button[aria-pressed='true'] (フォロー中候補)": len(driver.find_elements(By.CSS_SELECTOR, "button[aria-pressed='true']")),
+            "button[aria-pressed='false'] (フォローする候補)": len(driver.find_elements(By.CSS_SELECTOR, "button[aria-pressed='false']")),
+        }
+        logger.debug(f"プロフィールページのフォロー関連要素検出状況: {debug_elements_found}")
 
         # 1. 「フォロー中」ボタンの確認
-        #    プライマリ: div.css-1fsc5gw (または div.css-194f6e2) の中を限定検索
-        button_container_selectors = ["div.css-194f6e2", "div.css-1fsc5gw"]
-        for container_sel in button_container_selectors:
-            try:
-                button_container = driver.find_element(By.CSS_SELECTOR, container_sel)
-                following_buttons = button_container.find_elements(By.CSS_SELECTOR, "button[aria-pressed='true']")
-                for btn in following_buttons:
-                    if btn and btn.is_displayed():
-                        try:
-                            span = btn.find_element(By.CSS_SELECTOR, "span.c1hbtdj4")
-                            if "フォロー中" in span.text:
-                                logger.info(f"プロフィールページで「フォロー中」ボタン (コンテナ: {container_sel}, aria-pressed='true' + text) を発見。既にフォロー済みと判断。")
-                                return None
-                        except NoSuchElementException:
-                            logger.debug(f"コンテナ {container_sel} 内のaria-pressed='true' ボタンにspan.c1hbtdj4なし。")
-            except NoSuchElementException:
-                logger.debug(f"ボタンコンテナ {container_sel} が見つかりませんでした。")
-                continue
+        # data-testid検索はコメントアウト
+        # try:
+        #     # data-testid検索前のHTMLデバッグログ
+        #     try:
+        #         debug_button_container = driver.find_element(By.CSS_SELECTOR, "div.css-1fsc5gw")
+        #         if debug_button_container:
+        #             logger.debug(f"Debug HTML for FollowingButton (div.css-1fsc5gw):\n{debug_button_container.get_attribute('outerHTML')[:500]}...")
+        #     except NoSuchElementException:
+        #         logger.debug("Debug HTML: div.css-1fsc5gw not found before searching FollowingButton.")
+        #     except Exception as e_debug:
+        #         logger.error(f"Debug HTML (FollowingButton) logging error: {e_debug}")
+        #
+        #     following_button_testid = driver.find_element(By.CSS_SELECTOR, "button[data-testid='FollowingButton']")
+        #     if following_button_testid and following_button_testid.is_displayed():
+        #         logger.info("プロフィールページで「フォロー中」ボタン (data-testid) を発見。既にフォロー済みと判断。")
+        #         return None
+        # except NoSuchElementException:
+        #     logger.debug("data-testid='FollowingButton' の「フォロー中」ボタンは見つかりませんでした。")
 
-        # フォールバック（グローバル検索）: data-testid, XPath
+        # aria-pressed='true' とテキストで確認
         try:
-            if driver.find_elements(By.CSS_SELECTOR, "button[data-testid='FollowingButton']"):
-                logger.info("プロフィールページで「フォロー中」ボタン (data-testid, グローバル) を発見。既にフォロー済みと判断。")
-                return None
+            # ボタンを直接囲む可能性のあるコンテナから探索を試みる
+            button_container_candidates = driver.find_elements(By.CSS_SELECTOR, "div.css-1fsc5gw, div.css-194f6e2")
+            for container in button_container_candidates:
+                try:
+                    following_buttons_aria = container.find_elements(By.CSS_SELECTOR, "button[aria-pressed='true']")
+                    for btn in following_buttons_aria:
+                        if btn and btn.is_displayed():
+                            # span.c1hbtdj4 に依存せず、ボタン自身のテキストも確認する
+                            if "フォロー中" in btn.text or ("フォロー中" in btn.find_element(By.CSS_SELECTOR, "span").text if btn.find_elements(By.CSS_SELECTOR, "span") else False):
+                                logger.info(f"プロフィールページで「フォロー中」ボタン (aria-pressed='true' + text in container) を発見。")
+                                return None
+                except NoSuchElementException:
+                    continue # コンテナ内の探索で失敗しても次のコンテナ候補へ
+
+            # コンテナ指定なしでのグローバルな探索 (フォールバック)
+            following_buttons_aria_global = driver.find_elements(By.CSS_SELECTOR, "button[aria-pressed='true']")
+            for btn in following_buttons_aria_global:
+                if btn and btn.is_displayed():
+                    if "フォロー中" in btn.text or ("フォロー中" in btn.find_element(By.CSS_SELECTOR, "span").text if btn.find_elements(By.CSS_SELECTOR, "span") else False):
+                        logger.info("プロフィールページで「フォロー中」ボタン (aria-pressed='true' + text, global) を発見。")
+                        return None
+
+            # XPathによるテキスト一致 (最終フォールバック)
             if driver.find_elements(By.XPATH, ".//button[normalize-space(.)='フォロー中']"):
                  logger.info("プロフィールページで「フォロー中」ボタン (XPath text, グローバル) を発見。既にフォロー済みと判断。")
                  return None
-        except Exception as e_following_fallback:
-            logger.warning(f"「フォロー中」ボタンのフォールバック確認中にエラー: {e_following_fallback}", exc_info=True)
+        except Exception as e_following_check:
+            logger.warning(f"「フォロー中」ボタンの aria-pressed/XPath 確認中にエラー: {e_following_check}", exc_info=True)
 
 
         # 2. 「フォローする」ボタンの探索
-        #    プライマリ: div.css-1fsc5gw (または div.css-194f6e2) の中を限定検索
-        for container_sel in button_container_selectors:
-            try:
-                button_container = driver.find_element(By.CSS_SELECTOR, container_sel)
-                follow_buttons = button_container.find_elements(By.CSS_SELECTOR, "button[aria-pressed='false']")
-                for btn in follow_buttons:
-                    if btn and btn.is_displayed() and btn.is_enabled():
-                        try:
-                            span = btn.find_element(By.CSS_SELECTOR, "span.c1hbtdj4")
-                            if "フォローする" in span.text:
-                                logger.info(f"プロフィールページで「フォローする」ボタン (コンテナ: {container_sel}, aria-pressed='false' + text) を発見。")
+        # data-testid検索はコメントアウト
+        # try:
+        #     # data-testid検索前のHTMLデバッグログ
+        #     try:
+        #         debug_button_container = driver.find_element(By.CSS_SELECTOR, "div.css-1fsc5gw")
+        #         if debug_button_container:
+        #             logger.debug(f"Debug HTML for FollowButton (div.css-1fsc5gw):\n{debug_button_container.get_attribute('outerHTML')[:500]}...")
+        #     except NoSuchElementException:
+        #         logger.debug("Debug HTML: div.css-1fsc5gw not found before searching FollowButton.")
+        #     except Exception as e_debug:
+        #         logger.error(f"Debug HTML (FollowButton) logging error: {e_debug}")
+        #
+        #     follow_button_testid = driver.find_element(By.CSS_SELECTOR, "button[data-testid='FollowButton']")
+        #     if follow_button_testid and follow_button_testid.is_displayed() and follow_button_testid.is_enabled():
+        #         logger.info("プロフィールページで「フォローする」ボタン (data-testid) を発見。")
+        #         return follow_button_testid
+        # except NoSuchElementException:
+        #     logger.debug("data-testid='FollowButton' の「フォローする」ボタンは見つかりませんでした。")
+
+        # aria-pressed='false' とテキストで確認
+        try:
+            button_container_candidates = driver.find_elements(By.CSS_SELECTOR, "div.css-1fsc5gw, div.css-194f6e2")
+            for container in button_container_candidates:
+                try:
+                    follow_buttons_aria = container.find_elements(By.CSS_SELECTOR, "button[aria-pressed='false']")
+                    for btn in follow_buttons_aria:
+                        if btn and btn.is_displayed() and btn.is_enabled():
+                            if "フォローする" in btn.text or ("フォローする" in btn.find_element(By.CSS_SELECTOR, "span").text if btn.find_elements(By.CSS_SELECTOR, "span") else False):
+                                logger.info(f"プロフィールページで「フォローする」ボタン (aria-pressed='false' + text in container) を発見。")
                                 return btn
-                        except NoSuchElementException:
-                            logger.debug(f"コンテナ {container_sel} 内のaria-pressed='false' ボタンにspan.c1hbtdj4なし。")
-            except NoSuchElementException:
-                logger.debug(f"ボタンコンテナ {container_sel} が見つかりませんでした。")
-                continue
+                except NoSuchElementException:
+                    continue
 
-        # フォールバック（グローバル検索）: data-testid, XPath, aria-label
-        try:
-            button_testid = driver.find_element(By.CSS_SELECTOR, "button[data-testid='FollowButton']")
-            if button_testid and button_testid.is_displayed() and button_testid.is_enabled():
-                logger.info("プロフィールページで「フォローする」ボタン (data-testid, グローバル) を発見。")
-                return button_testid
-        except NoSuchElementException:
-            logger.debug("CSSセレクタ button[data-testid='FollowButton'] (グローバル) で「フォローする」ボタンが見つかりませんでした。")
+            follow_buttons_aria_global = driver.find_elements(By.CSS_SELECTOR, "button[aria-pressed='false']")
+            for btn in follow_buttons_aria_global:
+                 if btn and btn.is_displayed() and btn.is_enabled():
+                    if "フォローする" in btn.text or ("フォローする" in btn.find_element(By.CSS_SELECTOR, "span").text if btn.find_elements(By.CSS_SELECTOR, "span") else False):
+                        logger.info("プロフィールページで「フォローする」ボタン (aria-pressed='false' + text, global) を発見。")
+                        return btn
 
-        try:
+            # XPathによるテキスト一致 (最終フォールバック)
             button_xpath = driver.find_element(By.XPATH, ".//button[normalize-space(.)='フォローする']")
             if button_xpath and button_xpath.is_displayed() and button_xpath.is_enabled():
                 logger.info("プロフィールページで「フォローする」ボタン (XPath text, グローバル) を発見。")
                 return button_xpath
-        except NoSuchElementException:
-            logger.debug("XPath .//button[normalize-space(.)='フォローする'] (グローバル) で「フォローする」ボタンが見つかりませんでした。")
+        except NoSuchElementException: # XPathで見つからなかった場合の NoSuchElementException はここでキャッチ
+             logger.debug("XPath .//button[normalize-space(.)='フォローする'] (グローバル) で「フォローする」ボタンが見つかりませんでした。")
+        except Exception as e_follow_check:
+            logger.warning(f"「フォローする」ボタンの aria-pressed/XPath 確認中にエラー: {e_follow_check}", exc_info=True)
 
+        # aria-label によるフォールバック (グローバル検索)
         try:
             follow_button_aria_label = driver.find_element(By.CSS_SELECTOR, "button[aria-label*='フォローする']")
             if follow_button_aria_label and follow_button_aria_label.is_displayed() and follow_button_aria_label.is_enabled():
@@ -835,6 +906,7 @@ def find_follow_button_on_profile_page(driver):
                 return follow_button_aria_label
         except NoSuchElementException:
             logger.debug("CSSセレクタ button[aria-label*='フォローする'] (グローバル) で「フォローする」ボタンが見つかりませんでした。")
+
 
         logger.info("プロフィールページでクリック可能な「フォローする」ボタンが見つかりませんでした。")
         # デバッグ情報として関連エリアのHTMLを出力
@@ -851,12 +923,24 @@ def find_follow_button_on_profile_page(driver):
                     pass
             if not debug_html_output:
                 logger.debug("ボタン検索失敗時のデバッグHTML取得試行で、主要なコンテナ候補が見つかりませんでした。")
-
+            # else: # HTMLが見つかった場合は既に出力されている
+            #    pass
+            # さらに広範囲のHTMLを出力（最終手段）
+            try:
+                body_html = driver.find_element(By.CSS_SELECTOR, "body").get_attribute("outerHTML")
+                logger.debug(f"Body HTML (first 3000 chars) on button not found:\n{body_html[:3000]}...")
+            except Exception as e_body_debug:
+                logger.error(f"Body HTML取得中のデバッグエラー: {e_body_debug}")
         except Exception as e_debug_html:
             logger.debug(f"ボタン検索失敗時のデバッグHTML取得中にエラー: {e_debug_html}")
         return None
     except TimeoutException:
-        logger.warning("プロフィールページの主要コンテナまたはフォローボタン群の読み込みタイムアウト。")
+        logger.warning("プロフィールページの主要コンテナまたはフォローボタン群の読み込みタイムアウト。") # ここは username_h1_selector のタイムアウトを指すことになる
+        # タイムアウト時にもページソースの情報を少し出す (これは username_h1_selector のタイムアウト時に既に出力される)
+        # try:
+        #     logger.debug(f"Page source on WebDriverWait timeout (approx 2000 chars):\n{driver.page_source[:2000]}")
+        # except Exception as e_timeout_debug:
+        #     logger.error(f"タイムアウト時のページソース取得デバッグエラー: {e_timeout_debug}")
     except Exception as e:
         logger.error("プロフィールページのフォローボタン検索でエラー。", exc_info=True)
     return None
@@ -993,9 +1077,33 @@ def search_follow_and_domo_users(driver, current_user_id):
                                                                        # find_follow_button_on_profile_page は driver.get を内部で行わないので修正が必要
                                                                        # 先に遷移する
                 driver.get(user_profile_url)
-                WebDriverWait(driver,10).until(EC.url_contains(user_profile_url.split('/')[-1]))
-                follow_button_on_profile = find_follow_button_on_profile_page(driver)
+                try:
+                    # ページ遷移と主要コンテンツの読み込みをより確実に待つ
+                    WebDriverWait(driver, 20).until( # タイムアウトを20秒に設定
+                        EC.all_of(
+                            EC.url_contains(user_profile_url.split('/')[-1]),
+                            EC.visibility_of_element_located((By.CSS_SELECTOR, "h1.css-jctfiw")), # ユーザー名
+                            lambda d: d.execute_script("return document.readyState") == "complete",
+                            EC.presence_of_element_located((By.CSS_SELECTOR, "footer.css-1yg0z07")) # フッター要素
+                        )
+                    )
+                    logger.debug(f"ユーザープロフィールページ ({user_profile_url}) の主要コンテンツ読み込み完了を確認。")
+                except TimeoutException:
+                    logger.warning(f"ユーザープロフィールページ ({user_profile_url}) の読み込みタイムアウト（複合条件）。このユーザーの処理をスキップします。")
+                    logger.debug(f"Timeout context: URL={driver.current_url}, Title={driver.title}")
+                    # 元の検索ページに戻る処理をここにも入れる（エラーリカバリのため）
+                    driver.get(search_page_url_before_profile_visit)
+                    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, activity_card_selector)))
+                    continue # 次のカードへ
 
+                # find_follow_button_on_profile_page を呼び出す直前にURLを再確認 (念のため維持)
+                if user_profile_url not in driver.current_url:
+                    logger.error(f"URL不一致（待機後）: プロフィールページ ({user_profile_url}) にいるはずが、現在のURLは {driver.current_url} です。スキップします。")
+                    # driver.get(search_page_url_before_profile_visit) # 必要に応じて戻る処理
+                    # WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, activity_card_selector)))
+                    continue
+
+                follow_button_on_profile = find_follow_button_on_profile_page(driver)
 
                 if not follow_button_on_profile:
                     logger.info(f"ユーザー「{user_name_for_log}」は既にフォロー済みか、プロフィールにフォローボタンがありません。スキップ。")
@@ -1019,12 +1127,13 @@ def search_follow_and_domo_users(driver, current_user_id):
                     continue
 
                 current_ratio = (follows / followers) if followers > 0 else float('inf') # ゼロ除算回避
-                logger.info(f"ユーザー「{user_name_for_log}」: F中={follows}, Fワー={followers}, Ratio={current_ratio:.2f} (閾値: <{ratio_threshold})")
+                logger.info(f"ユーザー「{user_name_for_log}」: F中={follows}, Fワー={followers}, Ratio={current_ratio:.2f} (閾値: >= {ratio_threshold})")
 
-                if not (follows < followers and current_ratio < ratio_threshold):
-                    logger.info(f"Ratio条件または「F中 < Fワー」を満たしません。スキップ。")
+                # 条件: フォロー数がフォロワー数より多く、かつ、比率が閾値以上
+                if not (follows > followers and current_ratio >= ratio_threshold):
+                    logger.info(f"「F中 > Fワー」かつ「Ratio >= {ratio_threshold}」の条件を満たしません。スキップ。")
                     driver.get(search_page_url_before_profile_visit)
-                    time.sleep(1)
+                    time.sleep(1) # 元のページに戻った後の安定待機（これは後続のWebDriverWaitで代替可能か別途検討）
                     continue
 
                 # 3. 条件を満たせばフォロー実行
