@@ -34,3 +34,31 @@ follow_settings:
                                           #   (例: 0.7 なら、相手のこの比率が0.7未満の場合にフォロー候補となる)
                                           #   加えて「相手のフォロー中ユーザー数 < 相手のフォロワー数」もコード内でチェックされます。
   delay_between_ratio_follow_sec: 5     #   上記機能でユーザーを処理 (フォローまたはスキップ) した後に次のユーザーへ移るまでの待機時間 (秒)
+
+# --- 新しい yamap_auto_domo.py 用の設定 ---
+# これらの設定は主に yamap_auto_domo.py スクリプトから参照されます。
+
+follow_back_settings:
+  enable_follow_back: true             # true: フォローバック機能の有効/無効
+  max_users_to_follow_back: 15         # 一度にフォローバックする最大ユーザー数
+  delay_after_follow_back_action_sec: 3.0 # フォローバック操作後の待機時間 (秒)
+
+timeline_domo_settings:
+  enable_timeline_domo: true           # true: タイムラインDOMO機能の有効/無効
+  max_activities_to_domo_on_timeline: 10 # タイムラインでDOMOする最大の活動記録数 (新しいものから順に)
+  delay_between_timeline_domo_sec: 4.0   # タイムラインDOMO間の待機時間 (秒)
+
+search_and_follow_settings:
+  enable_search_and_follow: true       # true: 検索からのフォロー＆DOMO機能の有効/無効
+  search_activities_url: "https://yamap.com/search/activities" # 活動記録検索ページのURL
+  max_pages_to_process_search: 3       # 検索結果を処理する最大ページ数
+  max_users_to_process_per_page: 5     # 検索結果1ページあたりで処理する最大ユーザー数（活動記録数）
+  # フォロー条件:
+  # 1. 相手のフォロワー数が min_followers_for_search_follow 以上であること
+  # 2. 相手の (フォロー数 / フォロワー数) が follow_ratio_threshold_for_search 未満であること
+  # 3. かつ、相手のフォロー数がフォロワー数よりも少ないこと (これはコード内で別途チェック推奨)
+  min_followers_for_search_follow: 20  # フォロー対象とするユーザーの最低フォロワー数
+  follow_ratio_threshold_for_search: 0.9 # フォロー対象とするユーザーの「フォロー数/フォロワー数」の閾値 (この値未満のユーザーをフォロー)
+  domo_latest_activity_after_follow: true # フォロー後に最新の活動記録へDOMOするかのフラグ
+  delay_between_user_processing_in_search_sec: 5.0 # 検索結果でのユーザー処理間の待機時間 (秒)
+  delay_after_pagination_sec: 3.0      # 検索結果のページネーション後の待機時間 (秒)
