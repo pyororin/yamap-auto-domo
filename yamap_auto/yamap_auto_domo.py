@@ -109,8 +109,8 @@ SEARCH_ACTIVITIES_URL_DEFAULT = f"{BASE_URL}/search/activities" # 新機能で�
 
 def get_driver_options():
     options = webdriver.ChromeOptions()
-    # DOMO_SETTINGS はまだ新しい config を反映していないが、一旦既存のキーを参照する形でコピー
-    if DOMO_SETTINGS.get("headless_mode", False): # headless_mode は domo_settings から読む想定
+    # headless_mode は config.yaml のトップレベルから読むように変更
+    if main_config.get("headless_mode", False):
         logger.info("ヘッドレスモードで起動します。")
         options.add_argument('--headless')
         options.add_argument('--disable-gpu')
@@ -281,14 +281,15 @@ def click_follow_button_and_verify(driver, follow_button_element, user_name_for_
 
         # スクロールしてクリック、その後状態変化を待つ
         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", follow_button_element)
-        time.sleep(0.5) # スクロール後の描画待ち
+        time.sleep(0.3) # スクロール後の描画待ち (0.5秒から0.3秒に短縮)
         follow_button_element.click()
 
         # 状態変化の確認: ボタンのdata-testid, aria-label, またはテキストが変わることを期待
         # フォロー後は "FollowingButton" や "フォロー中" になることを想定
         # WebDriverWait を使って、要素の状態が変わるまで待機
-        delay_after_action = FOLLOW_BACK_SETTINGS.get("delay_after_follow_back_action_sec", # 新しい設定を参照
-                                               FOLLOW_SETTINGS.get("delay_after_follow_action_sec", 2.0))
+        # action_delays から読むように変更 (変更済みだが、キー名を再確認)
+        action_delays = main_config.get("action_delays", {}) # この行は既に存在
+        delay_after_action = action_delays.get("after_follow_action_sec", 2.0) # 変更なし
 
         WebDriverWait(driver, 10).until(
             lambda d: (
@@ -365,8 +366,9 @@ def domo_activity(driver, activity_url):
         for idx, selector in enumerate([primary_domo_button_selector, id_domo_button_selector]):
             try:
                 logger.debug(f"DOMOボタン探索試行 (セレクタ: {selector})")
-                # DOMOボタンが表示され、クリック可能になるまで待つ
-                domo_button = WebDriverWait(driver, 7 if idx == 0 else 3).until(
+                # DOMOボタンが表示され、クリック可能になるまで待つ (タイムアウト値を調整: プライマリ5秒, セカンダリ2秒)
+                wait_time = 5 if idx == 0 else 2
+                domo_button = WebDriverWait(driver, wait_time).until(
                     EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
                 )
                 current_selector_used = selector
@@ -403,15 +405,17 @@ def domo_activity(driver, activity_url):
         if not is_domoed:
             logger.info(f"DOMOを実行します: {activity_url.split('/')[-1]} (使用ボタン: {found_button_details})")
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", domo_button)
-            time.sleep(0.5) # スクロール安定待ち
+            time.sleep(0.3) # スクロール安定待ち (0.5秒から0.3秒に短縮)
             domo_button.click()
 
             # DOMO後の状態変化を待つ (aria-labelが "Domo済み" になるか、アイコンがis-activeになる)
-            # TIMELINE_DOMO_SETTINGS から delay を読むようにする (汎用DOMOなのでどちらでも良いが、新しい方を優先)
-            delay_after_action = TIMELINE_DOMO_SETTINGS.get("delay_between_timeline_domo_sec",
-                                                        DOMO_SETTINGS.get("delay_after_domo_action_sec", 1.5))
+            # action_delays から読むように変更
+            action_delays = main_config.get("action_delays", {})
+            delay_after_action = action_delays.get("after_domo_sec", 1.5)
+
             try:
-                WebDriverWait(driver, 10).until(
+                # DOMO後の状態確認のタイムアウトを5秒に短縮
+                WebDriverWait(driver, 5).until(
                     lambda d: ("Domo済み" in (d.find_element(By.CSS_SELECTOR, current_selector_used).get_attribute("aria-label") or "")) or \
                               ("is-active" in (d.find_element(By.CSS_SELECTOR, f"{current_selector_used} span[class*='DomoActionContainer__DomoIcon'], {current_selector_used} span.RidgeIcon").get_attribute("class") or ""))
                 )
@@ -451,17 +455,7 @@ def domo_timeline_activities(driver):
     timeline_page_url = TIMELINE_URL
     logger.info(f"タイムラインページへアクセス: {timeline_page_url}")
     driver.get(timeline_page_url)
-    # --- タイムラインDOMO機能のためのデバッグコード挿入 ---
-    logger.info("タイムラインページ読み込みのため10秒間待機します...")
-    time.sleep(10)
-    debug_timeline_file_name = f"debug_timeline_page_source_{time.strftime('%Y%m%d%H%M%S')}.html"
-    try:
-        with open(debug_timeline_file_name, "w", encoding="utf-8") as f:
-            f.write(driver.page_source)
-        logger.info(f"タイムラインページのHTMLソースを '{debug_timeline_file_name}' に出力しました。")
-    except Exception as e_dump_timeline:
-        logger.error(f"タイムラインHTMLソースのファイル出力中にエラー: {e_dump_timeline}")
-    # --- デバッグコード終了 ---
+    # --- デバッグ用HTML出力コードは削除されました ---
 
     max_activities_to_domo = TIMELINE_DOMO_SETTINGS.get("max_activities_to_domo_on_timeline", 10)
     domoed_count = 0
@@ -480,7 +474,7 @@ def domo_timeline_activities(driver):
             EC.presence_of_all_elements_located((By.CSS_SELECTOR, feed_item_selector))
         )
         logger.info("タイムラインのフィードアイテム群を発見。")
-        time.sleep(2.5) # スクロールや追加読み込みを考慮した描画安定待ち
+        time.sleep(1.5) # スクロールや追加読み込みを考慮した描画安定待ち (2.5秒から短縮)
 
         feed_items = driver.find_elements(By.CSS_SELECTOR, feed_item_selector)
         logger.info(f"タイムラインから {len(feed_items)} 件のフィードアイテム候補を検出しました。")
@@ -489,19 +483,30 @@ def domo_timeline_activities(driver):
             logger.info("タイムラインにフィードアイテムが見つかりませんでした。")
             return
 
-        for idx, feed_item_element in enumerate(feed_items):
+        initial_feed_item_count = len(feed_items) # 初期のアイテム数を保存
+        logger.info(f"処理対象の初期フィードアイテム数: {initial_feed_item_count}")
+
+        for idx in range(initial_feed_item_count):
             if domoed_count >= max_activities_to_domo:
                 logger.info(f"タイムラインDOMOの上限 ({max_activities_to_domo}件) に達しました。")
                 break
 
             activity_url = None
+            # 各反復処理の開始時に、現在のページからフィードアイテム要素を再取得する
+            # StaleElementReferenceException を避けるため
             try:
+                feed_items_on_page = driver.find_elements(By.CSS_SELECTOR, feed_item_selector)
+                if idx >= len(feed_items_on_page):
+                    logger.warning(f"フィードアイテムインデックス {idx} が現在のアイテム数 {len(feed_items_on_page)} を超えています。DOMが大きく変更された可能性があります。このアイテムの処理をスキップします。")
+                    continue
+                feed_item_element = feed_items_on_page[idx]
+
                 # このフィードアイテムが活動日記であるかを確認
                 # 活動日記特有の要素 (activity_item_indicator_selector) を探す
                 activity_indicator_elements = feed_item_element.find_elements(By.CSS_SELECTOR, activity_item_indicator_selector)
 
                 if not activity_indicator_elements:
-                    logger.debug(f"フィードアイテム {idx+1} は活動日記ではありません (indicator: '{activity_item_indicator_selector}' 見つからず)。スキップします。")
+                    logger.debug(f"フィードアイテム {idx+1}/{initial_feed_item_count} は活動日記ではありません (indicator: '{activity_item_indicator_selector}' 見つからず)。スキップします。")
                     continue
 
                 # 活動日記であれば、その中のリンクを取得
@@ -518,7 +523,7 @@ def domo_timeline_activities(driver):
                         activity_url = None # 無効化
 
                 if not activity_url:
-                    logger.warning(f"活動記録カード {idx+1} から有効な活動記録URLを取得できませんでした。スキップします。")
+                    logger.warning(f"活動記録カード {idx+1}/{initial_feed_item_count} から有効な活動記録URLを取得できませんでした。スキップします。")
                     continue
 
                 if activity_url in processed_activity_urls:
@@ -526,7 +531,8 @@ def domo_timeline_activities(driver):
                     continue
                 processed_activity_urls.add(activity_url)
 
-                logger.info(f"タイムライン活動記録 {idx+1}/{len(feed_items)} (URL: {activity_url.split('/')[-1]}) のDOMOを試みます。")
+                # ログ出力の母数を initial_feed_item_count に変更
+                logger.info(f"タイムライン活動記録 {idx+1}/{initial_feed_item_count} (URL: {activity_url.split('/')[-1]}) のDOMOを試みます。")
 
                 # 現在のページURLを保存
                 current_main_page_url = driver.current_url
@@ -539,16 +545,16 @@ def domo_timeline_activities(driver):
                 if driver.current_url != current_main_page_url:
                     logger.debug(f"DOMO処理後、元のページ ({current_main_page_url}) に戻ります。")
                     driver.get(current_main_page_url)
-                    # 戻った後、要素が再認識されるように少し待つ
-                    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, activity_card_selector)))
-                    time.sleep(1) # 追加の安定待ち
+                    # 戻った後、要素が再認識されるように少し待つ (セレクタを feed_item_selector に修正)
+                    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, feed_item_selector)))
+                    time.sleep(0.5) # 追加の安定待ち (1秒から短縮)
 
                 # 次の活動記録処理までの待機時間は domo_activity 内で考慮されているので、ここでは不要
 
             except NoSuchElementException:
-                logger.warning(f"活動記録カード {idx+1} 内で活動記録リンクが見つかりません。スキップします。")
-            except Exception as e_card_proc:
-                logger.error(f"活動記録カード {idx+1} (URL: {activity_url.split('/')[-1] if activity_url else 'N/A'}) の処理中にエラー: {e_card_proc}", exc_info=True)
+                logger.warning(f"活動記録カード {idx+1}/{initial_feed_item_count} 内で活動記録リンクが見つかりません。スキップします。")
+            except Exception as e_card_proc: # StaleElementReferenceException もここでキャッチされる可能性あり
+                logger.error(f"活動記録カード {idx+1}/{initial_feed_item_count} (URL: {activity_url.split('/')[-1] if activity_url else 'N/A'}) の処理中にエラー: {e_card_proc}", exc_info=True)
 
             # ループの最後に短いグローバルな待機を入れても良い (サーバー負荷軽減のため)
             # time.sleep(TIMELINE_DOMO_SETTINGS.get("delay_between_timeline_domo_sec", 2.0)) # これはdomo_activity内で実行されるので不要
@@ -600,13 +606,18 @@ def get_latest_activity_url(driver, user_profile_url):
             ".ActivityCard_card__link__XXXXX a[href^='/activities/']" # 特定のクラス名 (変わりやすい)
         ]
 
-        # ページが完全に読み込まれるのを待つために少し待機
-        time.sleep(DOMO_SETTINGS.get("short_wait_sec", 2)) # short_wait_secはdomo_settingsにある想定
+        # ページが完全に読み込まれるのを待つために少し待機 -> WebDriverWaitに置き換える
+        # time.sleep(DOMO_SETTINGS.get("short_wait_sec", 2)) # short_wait_secはdomo_settingsにある想定
 
         for selector in activity_link_selectors:
             try:
-                # ページが動的に読み込まれる場合、要素が見つかるまで少し待つ
-                WebDriverWait(driver, 5).until(EC.presence_of_element_located((By.CSS_SELECTOR, selector)))
+                # ページが動的に読み込まれる場合、要素が見つかるまで待つ (ここでしっかり待つ)
+                # action_delays から読むように変更
+                action_delays = main_config.get("action_delays", {})
+                wait_time_for_activity_link = action_delays.get("wait_for_activity_link_sec", 7)
+                WebDriverWait(driver, wait_time_for_activity_link).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                )
                 activity_link_element = driver.find_element(By.CSS_SELECTOR, selector) # 最初の一つが最新と仮定
                 href = activity_link_element.get_attribute('href')
                 if href:
@@ -658,58 +669,71 @@ def get_user_follow_counts(driver, user_profile_url):
     followers_count = -1
 
     try:
-        # フォロー数・フォロワー数が表示されているセクションを特定
-        # セレクタ例: YAMAPのHTML構造による
-        # <a href=".../follows" data-testid="profile-tab-follows"><span class="Count_count__XXXX">NUM</span>...</a>
-        # <a href=".../followers" data-testid="profile-tab-followers"><span class="Count_count__XXXX">NUM</span>...</a>
+        # フォロー数/フォロワー数を含むタブコンテナが表示されるまで待つ
+        tabs_container_selector = "div#tabs.css-1kw20l6" # または ul.css-7te929
+        try:
+            tabs_container_element = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, tabs_container_selector))
+            )
+            logger.debug(f"タブコンテナ ({tabs_container_selector}) を発見。")
+        except TimeoutException:
+            logger.warning(f"フォロー数/フォロワー数タブコンテナ ({tabs_container_selector}) の読み込みタイムアウト ({user_id_log})。")
+            # --- デバッグ用：タイムアウト時のページソース一部出力 (一時的に有効化) ---
+            try:
+                logger.debug(f"Page source on get_user_follow_counts timeout (tabs container, approx 2000 chars):\n{driver.page_source[:2000]}")
+            except Exception as e_debug:
+                logger.error(f"ページソース取得中のデバッグエラー: {e_debug}")
+            # --- デバッグここまで ---
+            return follows_count, followers_count # コンテナが見つからなければ早期リターン
 
-        stats_container_selector = "div[class*='UserProfileScreen_profileStats']" # この親要素の中にフォロー・フォロワー数がある想定
-        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, stats_container_selector)))
+        follow_link_selector = "a[href$='/follows']"
+        follower_link_selector = "a[href$='/followers']"
 
         # フォロー中の数
         try:
-            # data-testid を優先
-            follow_el_selector_testid = f"{stats_container_selector} a[data-testid='profile-tab-follows'] span[class*='Count_count']"
-            # href をフォールバック
-            follow_el_selector_href = f"{stats_container_selector} a[href$='/follows'] span[class*='Count_count']"
-
-            follow_el = None
-            try:
-                follow_el = driver.find_element(By.CSS_SELECTOR, follow_el_selector_testid)
-            except NoSuchElementException:
-                logger.debug(f"フォロー数要素(testid)が見つからず。hrefセレクタ試行: {follow_el_selector_href}")
-                follow_el = driver.find_element(By.CSS_SELECTOR, follow_el_selector_href)
-
-            count_text = follow_el.text.strip().replace(",", "")
-            num_str = "".join(filter(str.isdigit, count_text))
+            # tabs_container_element を起点に検索
+            follow_link_element = tabs_container_element.find_element(By.CSS_SELECTOR, follow_link_selector)
+            full_text = follow_link_element.text.strip()
+            num_str = "".join(filter(str.isdigit, full_text))
             if num_str:
                 follows_count = int(num_str)
+            else:
+                logger.warning(f"フォロー数のテキスト「{full_text}」から数値を抽出できませんでした ({user_id_log})。")
         except NoSuchElementException:
-            logger.warning(f"フォロー中の数を特定する要素が見つかりませんでした ({user_id_log})。")
+            logger.warning(f"フォロー中の数を特定するリンク要素 ({follow_link_selector}) が見つかりませんでした ({user_id_log})。")
+        except Exception as e_follow_count:
+            logger.error(f"フォロー数取得処理中に予期せぬエラー ({user_id_log}): {e_follow_count}", exc_info=True)
 
         # フォロワーの数
         try:
-            follower_el_selector_testid = f"{stats_container_selector} a[data-testid='profile-tab-followers'] span[class*='Count_count']"
-            follower_el_selector_href = f"{stats_container_selector} a[href$='/followers'] span[class*='Count_count']"
-
-            follower_el = None
-            try:
-                follower_el = driver.find_element(By.CSS_SELECTOR, follower_el_selector_testid)
-            except NoSuchElementException:
-                logger.debug(f"フォロワー数要素(testid)が見つからず。hrefセレクタ試行: {follower_el_selector_href}")
-                follower_el = driver.find_element(By.CSS_SELECTOR, follower_el_selector_href)
-
-            count_text = follower_el.text.strip().replace(",", "")
-            num_str = "".join(filter(str.isdigit, count_text))
+            follower_link_element = driver.find_element(By.CSS_SELECTOR, follower_link_selector)
+            # リンク全体のテキスト (例: "フォロワー 19") から数値のみを抽出
+            full_text = follower_link_element.text.strip()
+            num_str = "".join(filter(str.isdigit, full_text))
             if num_str:
                 followers_count = int(num_str)
+            else:
+                logger.warning(f"フォロワー数のテキスト「{full_text}」から数値を抽出できませんでした ({user_id_log})。")
         except NoSuchElementException:
-            logger.warning(f"フォロワーの数を特定する要素が見つかりませんでした ({user_id_log})。")
+            logger.warning(f"フォロワーの数を特定するリンク要素 ({follower_link_selector}) が見つかりませんでした ({user_id_log})。")
+        except Exception as e_follower_count:
+            logger.error(f"フォロワー数取得処理中に予期せぬエラー ({user_id_log}): {e_follower_count}", exc_info=True)
 
         logger.info(f"ユーザー ({user_id_log}): フォロー中={follows_count}, フォロワー={followers_count}")
 
     except TimeoutException:
-        logger.warning(f"フォロー数/フォロワー数セクションの読み込みタイムアウト ({user_id_log})。")
+        logger.warning(f"フォロー数/フォロワー数リンク要素の読み込みタイムアウト ({user_id_log})。")
+        # --- デバッグ用：タイムアウト時のページソース一部出力 (通常はコメントアウト) ---
+        # try:
+        #     # プロフィール情報が含まれると期待される上位のコンテナ要素のセレクタ（例）
+        #     # body_element = driver.find_element(By.CSS_SELECTOR, "body")
+        #     # profile_header_area = driver.find_element(By.CSS_SELECTOR, "div.css-10rsfrr") # プロフィールヘッダー付近
+        #     # stats_area = driver.find_element(By.CSS_SELECTOR, "div.css-6ej1p9") # タブリストの親
+        #     # logger.debug(f"Page source (stats_area) on timeout:\n{stats_area.get_attribute('outerHTML')}")
+        #     logger.debug(f"Page source on get_user_follow_counts timeout (approx 2000 chars):\n{driver.page_source[:2000]}")
+        # except Exception as e_debug:
+        #     logger.error(f"ページソース取得中のデバッグエラー: {e_debug}")
+        # --- デバッグここまで ---
     except Exception as e:
         logger.error(f"フォロー数/フォロワー数取得中にエラー ({user_id_log})。", exc_info=True)
 
@@ -721,62 +745,118 @@ def find_follow_button_on_profile_page(driver):
     既にフォロー中、またはボタンがない場合はNoneを返す。
     """
     try:
-        # 「フォロー中」ボタンのセレクタ (これがあればフォローしない)
-        following_button_selectors = [
-            "button[data-testid='FollowingButton']",
-            ".//button[normalize-space(.)='フォロー中']", # XPath
-            "button[aria-label*='フォロー中']"
-        ]
-        # プロフィールページの主要部分が表示されるまで少し待つ
+        # プロフィールページの主要部分が表示されるまで少し待つ (タイムアウトを10秒に延長)
+        # 関連するボタン要素のいずれかが表示されることを期待
+        # css-1fsc5gw はフォローボタン等を囲むdivのクラス
+        # css-10rsfrr: プロフィール情報や活動日記タブを含む大きなコンテナ
+        # h1.css-jctfiw: ユーザー名
+        # div.css-1fsc5gw: フォローボタン等を直接囲むコンテナ
         WebDriverWait(driver, 7).until(
-            EC.any_of( # どれか一つでもあれば良い
-                EC.presence_of_element_located((By.CSS_SELECTOR, following_button_selectors[0])),
-                EC.presence_of_element_located((By.XPATH, following_button_selectors[1])),
-                EC.presence_of_element_located((By.CSS_SELECTOR, "button[data-testid='FollowButton']")) # フォローするボタンも候補に
+            EC.any_of(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "div.css-10rsfrr")),
+                EC.presence_of_element_located((By.CSS_SELECTOR, "h1.css-jctfiw")),
+                EC.presence_of_element_located((By.CSS_SELECTOR, "div.css-1fsc5gw")), # ボタンを直接囲むコンテナ
+                EC.presence_of_element_located((By.CSS_SELECTOR, "button[aria-pressed]")) # フォロー/フォロー中ボタン自体
             )
         )
 
-        for sel in following_button_selectors:
+        # 1. 「フォロー中」ボタンの確認
+        #    プライマリ: div.css-1fsc5gw (または div.css-194f6e2) の中を限定検索
+        button_container_selectors = ["div.css-194f6e2", "div.css-1fsc5gw"]
+        for container_sel in button_container_selectors:
             try:
-                if sel.startswith(".//"):
-                    if driver.find_elements(By.XPATH, sel): return None # 発見したら既にフォロー中
-                else:
-                    if driver.find_elements(By.CSS_SELECTOR, sel): return None # 発見したら既にフォロー中
+                button_container = driver.find_element(By.CSS_SELECTOR, container_sel)
+                following_buttons = button_container.find_elements(By.CSS_SELECTOR, "button[aria-pressed='true']")
+                for btn in following_buttons:
+                    if btn and btn.is_displayed():
+                        try:
+                            span = btn.find_element(By.CSS_SELECTOR, "span.c1hbtdj4")
+                            if "フォロー中" in span.text:
+                                logger.info(f"プロフィールページで「フォロー中」ボタン (コンテナ: {container_sel}, aria-pressed='true' + text) を発見。既にフォロー済みと判断。")
+                                return None
+                        except NoSuchElementException:
+                            logger.debug(f"コンテナ {container_sel} 内のaria-pressed='true' ボタンにspan.c1hbtdj4なし。")
             except NoSuchElementException:
+                logger.debug(f"ボタンコンテナ {container_sel} が見つかりませんでした。")
                 continue
 
-        # 「フォローする」ボタンのセレクタ
-        follow_button_selectors = [
-            "button[data-testid='FollowButton']",
-            ".//button[normalize-space(.)='フォローする']", # XPath
-            "button[aria-label*='フォローする']",
-            # プロフィールページ特有のフォローボタンのクラスなど (例)
-            # "button.ProfileFollowButtonClass"
-        ]
-        for sel in follow_button_selectors:
-            try:
-                button = None
-                if sel.startswith(".//"):
-                    button = driver.find_element(By.XPATH, sel)
-                else:
-                    button = driver.find_element(By.CSS_SELECTOR, sel)
+        # フォールバック（グローバル検索）: data-testid, XPath
+        try:
+            if driver.find_elements(By.CSS_SELECTOR, "button[data-testid='FollowingButton']"):
+                logger.info("プロフィールページで「フォロー中」ボタン (data-testid, グローバル) を発見。既にフォロー済みと判断。")
+                return None
+            if driver.find_elements(By.XPATH, ".//button[normalize-space(.)='フォロー中']"):
+                 logger.info("プロフィールページで「フォロー中」ボタン (XPath text, グローバル) を発見。既にフォロー済みと判断。")
+                 return None
+        except Exception as e_following_fallback:
+            logger.warning(f"「フォロー中」ボタンのフォールバック確認中にエラー: {e_following_fallback}", exc_info=True)
 
-                if button and button.is_displayed() and button.is_enabled():
-                    # ボタンのテキストやaria-labelをさらに確認
-                    button_text = button.text.strip()
-                    aria_label = button.get_attribute('aria-label')
-                    if "フォローする" in button_text or ("フォローする" in aria_label if aria_label else False):
-                        logger.debug(f"プロフィールページで「フォローする」ボタンを発見 (selector: {sel}, text: '{button_text}', aria-label: '{aria_label}')")
-                        return button
-                    else:
-                         logger.debug(f"ボタン発見だがテキスト/aria-label不一致 (selector: {sel}, text: '{button_text}', aria-label: '{aria_label}')")
+
+        # 2. 「フォローする」ボタンの探索
+        #    プライマリ: div.css-1fsc5gw (または div.css-194f6e2) の中を限定検索
+        for container_sel in button_container_selectors:
+            try:
+                button_container = driver.find_element(By.CSS_SELECTOR, container_sel)
+                follow_buttons = button_container.find_elements(By.CSS_SELECTOR, "button[aria-pressed='false']")
+                for btn in follow_buttons:
+                    if btn and btn.is_displayed() and btn.is_enabled():
+                        try:
+                            span = btn.find_element(By.CSS_SELECTOR, "span.c1hbtdj4")
+                            if "フォローする" in span.text:
+                                logger.info(f"プロフィールページで「フォローする」ボタン (コンテナ: {container_sel}, aria-pressed='false' + text) を発見。")
+                                return btn
+                        except NoSuchElementException:
+                            logger.debug(f"コンテナ {container_sel} 内のaria-pressed='false' ボタンにspan.c1hbtdj4なし。")
             except NoSuchElementException:
+                logger.debug(f"ボタンコンテナ {container_sel} が見つかりませんでした。")
                 continue
 
-        logger.info("プロフィールページでフォロー可能な「フォローする」ボタンが見つかりませんでした。")
+        # フォールバック（グローバル検索）: data-testid, XPath, aria-label
+        try:
+            button_testid = driver.find_element(By.CSS_SELECTOR, "button[data-testid='FollowButton']")
+            if button_testid and button_testid.is_displayed() and button_testid.is_enabled():
+                logger.info("プロフィールページで「フォローする」ボタン (data-testid, グローバル) を発見。")
+                return button_testid
+        except NoSuchElementException:
+            logger.debug("CSSセレクタ button[data-testid='FollowButton'] (グローバル) で「フォローする」ボタンが見つかりませんでした。")
+
+        try:
+            button_xpath = driver.find_element(By.XPATH, ".//button[normalize-space(.)='フォローする']")
+            if button_xpath and button_xpath.is_displayed() and button_xpath.is_enabled():
+                logger.info("プロフィールページで「フォローする」ボタン (XPath text, グローバル) を発見。")
+                return button_xpath
+        except NoSuchElementException:
+            logger.debug("XPath .//button[normalize-space(.)='フォローする'] (グローバル) で「フォローする」ボタンが見つかりませんでした。")
+
+        try:
+            follow_button_aria_label = driver.find_element(By.CSS_SELECTOR, "button[aria-label*='フォローする']")
+            if follow_button_aria_label and follow_button_aria_label.is_displayed() and follow_button_aria_label.is_enabled():
+                logger.info("プロフィールページで「フォローする」ボタン (aria-label, グローバル) を発見。")
+                return follow_button_aria_label
+        except NoSuchElementException:
+            logger.debug("CSSセレクタ button[aria-label*='フォローする'] (グローバル) で「フォローする」ボタンが見つかりませんでした。")
+
+        logger.info("プロフィールページでクリック可能な「フォローする」ボタンが見つかりませんでした。")
+        # デバッグ情報として関連エリアのHTMLを出力
+        try:
+            debug_html_output = ""
+            for sel in ["div.css-1fsc5gw", "div.css-126zbgb", "div.css-kooiip"]: # 狭い範囲から試す
+                try:
+                    debug_element = driver.find_element(By.CSS_SELECTOR, sel)
+                    if debug_element:
+                        debug_html_output = debug_element.get_attribute('outerHTML')
+                        logger.debug(f"ボタンが見つからなかった関連エリアのHTML ({sel}):\n{debug_html_output[:1000]}...") # 長すぎる場合に省略
+                        break # 最初に見つかったものを出力
+                except NoSuchElementException:
+                    pass
+            if not debug_html_output:
+                logger.debug("ボタン検索失敗時のデバッグHTML取得試行で、主要なコンテナ候補が見つかりませんでした。")
+
+        except Exception as e_debug_html:
+            logger.debug(f"ボタン検索失敗時のデバッグHTML取得中にエラー: {e_debug_html}")
         return None
     except TimeoutException:
-        logger.warning("プロフィールページのフォローボタン群の読み込みタイムアウト。")
+        logger.warning("プロフィールページの主要コンテナまたはフォローボタン群の読み込みタイムアウト。")
     except Exception as e:
         logger.error("プロフィールページのフォローボタン検索でエラー。", exc_info=True)
     return None
@@ -842,7 +922,7 @@ def search_follow_and_domo_users(driver, current_user_id):
             WebDriverWait(driver, 15).until(
                 EC.presence_of_all_elements_located((By.CSS_SELECTOR, activity_card_selector))
             )
-            time.sleep(2) # 描画安定待ち
+            time.sleep(0.5) # 描画安定待ち (2秒から0.5秒に短縮)
         except TimeoutException:
             logger.warning(f"活動記録検索結果ページ ({current_url_to_load}) で活動記録カードの読み込みタイムアウト。このページの処理をスキップします。")
             continue
@@ -920,7 +1000,7 @@ def search_follow_and_domo_users(driver, current_user_id):
                 if not follow_button_on_profile:
                     logger.info(f"ユーザー「{user_name_for_log}」は既にフォロー済みか、プロフィールにフォローボタンがありません。スキップ。")
                     driver.get(search_page_url_before_profile_visit) # 元の検索ページに戻る
-                    time.sleep(1)
+                    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, activity_card_selector))) # 安定待ちをWebDriverWaitに
                     continue
 
                 # 2. フォロー数/フォロワー数を取得して条件判定
@@ -1127,10 +1207,8 @@ if __name__ == "__main__":
         driver_options = get_driver_options()
         driver = webdriver.Chrome(options=driver_options)
 
-        # implicit_wait_sec も DOMO_SETTINGS から読む想定だが、デフォルト値を設定するか、
-        # config.yaml の domo_settings に存在することを期待する。
-        # ここでは、後で config 更新時に domo_settings が必ず存在するようにするため、一旦そのまま。
-        implicit_wait = DOMO_SETTINGS.get("implicit_wait_sec", 7) # DOMO_SETTINGSが空ならデフォルト7秒
+        # implicit_wait_sec は config.yaml のトップレベルから読むように変更
+        implicit_wait = main_config.get("implicit_wait_sec", 7)
         driver.implicitly_wait(implicit_wait)
 
         logger.info(f"認証情報: email={YAMAP_EMAIL}, user_id={MY_USER_ID}") # パスワードはログ出力しない

@@ -1,39 +1,39 @@
-# --- DOMO関連の設定 ---
-# YAMAP認証情報 (email, password, user_id) は yamap_auto/credentials.yaml ファイルに記述してください。
+# --- 全体的な設定 ---
+headless_mode: false
+implicit_wait_sec: 7
 
-domo_settings:
-  headless_mode: false                 # trueにするとブラウザを非表示で実行 (デバッグ時はfalse推奨)、falseでブラウザを表示
-  implicit_wait_sec: 7                 # Seleniumが要素を見つけるまでの全体的な暗黙的な最大待機時間 (秒)
-  short_wait_sec: 2                    # スクリプト内で使用する短い追加の待機時間 (秒) - 主にページ描画の安定化のため
-  delay_after_domo_action_sec: 1.5     # DOMO操作（クリック）後の共通待機時間 (秒) - サーバー負荷軽減と確実な処理のため
+# --- アクション共通の遅延設定 ---
+action_delays:
+  after_domo_sec: 1.5                   # DOMO操作後の共通待機時間 (秒)
+  wait_for_activity_link_sec: 7         # プロフィールページ等で活動日記リンクが表示されるまでの待機時間 (秒)
+  after_follow_action_sec: 2.0          # フォロー操作後の共通待機時間 (秒)
 
-  # domo_followed_users_posts: true      # true: フォロー中のユーザーの最新投稿へDOMOする機能を有効にする (機能削除済み)
-  # max_followed_users_to_process: 10    #   上記機能で一度にDOMO処理をする最大ユーザー数 (フォロー中リストの上から順) (機能削除済み)
-  # delay_between_users_sec: 3           #   上記機能で各ユーザーのDOMO処理後に次のユーザーへ移るまでの待機時間 (秒) (機能削除済み)
+# --- YAMAP認証情報 (email, password, user_id) は yamap_auto/credentials.yaml ファイルに記述してください。
 
-  domo_users_who_domoed_my_posts: true # true: 自身の投稿にDOMOしてくれたユーザーの最新投稿へDOMOする機能を有効にする
-  max_my_activities_to_check_domo: 5   #   上記機能でDOMOユーザーを確認する自身の活動日記の最大数 (最新の日記から順に)
-  delay_between_domo_check_sec: 3    #   上記機能で自身の各活動日記のDOMOリスト確認後に次の日記へ移るまでの待機時間 (秒)
+# --- 旧 domo_settings で定義されていたが、現在は yamap_auto_domo.py では直接使用されていない項目 ---
+# 必要に応じて、これらの設定を参考に新しい機能設定セクションに値を移すか、
+# 独自にこれらの設定値を参照するカスタムロジックを yamap_auto_domo.py に実装してください。
+#
+# domo_users_who_domoed_my_posts: true # true: 自身の投稿にDOMOしてくれたユーザーの最新投稿へDOMOする機能を有効にする
+# max_my_activities_to_check_domo: 5   #   上記機能でDOMOユーザーを確認する自身の活動日記の最大数 (最新の日記から順に)
+# delay_between_domo_check_sec: 3    #   上記機能で自身の各活動日記のDOMOリスト確認後に次の日記へ移るまでの待機時間 (秒)
+#
+# domo_recommended_posts: true         # true: トップページの「おすすめ」投稿へDOMOする機能を有効にする
+# max_recommended_posts_to_domo: 5     #   上記機能でDOMOするおすすめ投稿の最大数 (トップページ表示順)
+# delay_between_recommended_domo_sec: 3 #   上記機能でおすすめ投稿をDOMOした後に次の投稿へ移るまでの待機時間 (秒)
 
-  domo_recommended_posts: true         # true: トップページの「おすすめ」投稿へDOMOする機能を有効にする
-  max_recommended_posts_to_domo: 5     #   上記機能でDOMOするおすすめ投稿の最大数 (トップページ表示順)
-  delay_between_recommended_domo_sec: 3 #   上記機能でおすすめ投稿をDOMOした後に次の投稿へ移るまでの待機時間 (秒)
+# --- 旧 follow_settings で定義されていたが、現在は yamap_auto_domo.py では直接使用されていない項目 ---
+#
+# follow_users_who_followed_me: true   # true: 自身をフォローしてくれた未フォローバックのユーザーをフォローする機能を有効にする
+# max_followers_to_follow_back: 10     #   上記機能で一度にフォローバックする最大ユーザー数 (フォロワーリストの上から順)
+# delay_between_follow_back_sec: 5   #   上記機能で各ユーザーをフォローバックした後に次のユーザーへ移るまでの待機時間 (秒) -> action_delays.after_follow_action_sec で代替
+#
+# follow_users_who_domoed_and_high_follow_ratio: true # true: DOMOをくれ、特定のRatio条件を満たすユーザーをフォローする機能を有効にする
+# max_domo_activities_for_ratio_follow: 5 #   上記機能でDOMOユーザーを探すためにチェックする自身の活動日記の最大数 (最新から)
+# min_followers_for_ratio_follow: 30      #   上記機能のRatioチェック対象とする相手の最低フォロワー数 (これ未満のユーザーはRatioチェック自体をスキップ)
+# follow_to_follower_ratio_threshold: 0.7 #   上記機能でフォローするための「相手のフォロー中ユーザー数 / 相手のフォロワー数」比率の上限
+# delay_between_ratio_follow_sec: 5     #   上記機能でユーザーを処理 (フォローまたはスキップ) した後に次のユーザーへ移るまでの待機時間 (秒)
 
-# --- フォロー関連の設定 ---
-follow_settings:
-  delay_after_follow_action_sec: 2.0 # フォロー操作（クリック）後の共通待機時間 (秒)
-
-  follow_users_who_followed_me: true   # true: 自身をフォローしてくれた未フォローバックのユーザーをフォローする機能を有効にする
-  max_followers_to_follow_back: 10     #   上記機能で一度にフォローバックする最大ユーザー数 (フォロワーリストの上から順)
-  delay_between_follow_back_sec: 5   #   上記機能で各ユーザーをフォローバックした後に次のユーザーへ移るまでの待機時間 (秒)
-
-  follow_users_who_domoed_and_high_follow_ratio: true # true: DOMOをくれ、特定のRatio条件を満たすユーザーをフォローする機能を有効にする
-  max_domo_activities_for_ratio_follow: 5 #   上記機能でDOMOユーザーを探すためにチェックする自身の活動日記の最大数 (最新から)
-  min_followers_for_ratio_follow: 30      #   上記機能のRatioチェック対象とする相手の最低フォロワー数 (これ未満のユーザーはRatioチェック自体をスキップ)
-  follow_to_follower_ratio_threshold: 0.7 #   上記機能でフォローするための「相手のフォロー中ユーザー数 / 相手のフォロワー数」比率の上限
-                                          #   (例: 0.7 なら、相手のこの比率が0.7未満の場合にフォロー候補となる)
-                                          #   加えて「相手のフォロー中ユーザー数 < 相手のフォロワー数」もコード内でチェックされます。
-  delay_between_ratio_follow_sec: 5     #   上記機能でユーザーを処理 (フォローまたはスキップ) した後に次のユーザーへ移るまでの待機時間 (秒)
 
 # --- 新しい yamap_auto_domo.py 用の設定 ---
 # これらの設定は主に yamap_auto_domo.py スクリプトから参照されます。
@@ -41,22 +41,18 @@ follow_settings:
 follow_back_settings:
   enable_follow_back: true             # true: フォローバック機能の有効/無効
   max_users_to_follow_back: 15         # 一度にフォローバックする最大ユーザー数
-  delay_after_follow_back_action_sec: 3.0 # フォローバック操作後の待機時間 (秒)
+  # delay_after_follow_back_action_sec は action_delays.after_follow_action_sec を参照します
 
 timeline_domo_settings:
   enable_timeline_domo: true           # true: タイムラインDOMO機能の有効/無効
   max_activities_to_domo_on_timeline: 10 # タイムラインでDOMOする最大の活動記録数 (新しいものから順に)
-  delay_between_timeline_domo_sec: 4.0   # タイムラインDOMO間の待機時間 (秒)
+  # delay_between_timeline_domo_sec は action_delays.after_domo_sec を参照します
 
 search_and_follow_settings:
   enable_search_and_follow: true       # true: 検索からのフォロー＆DOMO機能の有効/無効
   search_activities_url: "https://yamap.com/search/activities" # 活動記録検索ページのURL
   max_pages_to_process_search: 3       # 検索結果を処理する最大ページ数
   max_users_to_process_per_page: 5     # 検索結果1ページあたりで処理する最大ユーザー数（活動記録数）
-  # フォロー条件:
-  # 1. 相手のフォロワー数が min_followers_for_search_follow 以上であること
-  # 2. 相手の (フォロー数 / フォロワー数) が follow_ratio_threshold_for_search 未満であること
-  # 3. かつ、相手のフォロー数がフォロワー数よりも少ないこと (これはコード内で別途チェック推奨)
   min_followers_for_search_follow: 20  # フォロー対象とするユーザーの最低フォロワー数
   follow_ratio_threshold_for_search: 0.9 # フォロー対象とするユーザーの「フォロー数/フォロワー数」の閾値 (この値未満のユーザーをフォロー)
   domo_latest_activity_after_follow: true # フォロー後に最新の活動記録へDOMOするかのフラグ
