@@ -526,7 +526,7 @@ def domo_timeline_activities(driver):
                     continue
                 processed_activity_urls.add(activity_url)
 
-                logger.info(f"タイムライン活動記録 {idx+1}/{len(activity_cards)} (URL: {activity_url.split('/')[-1]}) のDOMOを試みます。")
+                logger.info(f"タイムライン活動記録 {idx+1}/{len(feed_items)} (URL: {activity_url.split('/')[-1]}) のDOMOを試みます。")
 
                 # 現在のページURLを保存
                 current_main_page_url = driver.current_url
