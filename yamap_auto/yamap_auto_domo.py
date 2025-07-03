@@ -131,50 +131,31 @@ def login(driver, email, password):
         # ログイン成功の判定: 提供された情報に基づき、特定の要素が表示されるかで判断
         # 例: <div class="css-16byi0r"><span class="css-1jdcqgw">ユーザー名</span><div class="css-18ctnpz">マイページを表示</div></div>
         # この構造から、例えば "マイページを表示" というテキストを持つ要素を探す
-        # yamap_auto.py のログイン成功判定ロジックを参考に修正
+        # --- ここから yamap_auto.py の login 関数のロジックをそのまま移植 ---
+        WebDriverWait(driver, 15).until_not(EC.url_contains("login"))
         current_url_lower = driver.current_url.lower()
         page_title_lower = driver.title.lower()
 
-        # MY_USER_ID が設定ファイルから読み込まれていることを確認
-        if not MY_USER_ID: # credentials.yaml から読み込まれる MY_USER_ID
-            logger.error("MY_USER_IDが設定ファイルから読み込まれていません。ログイン成功判定の精度が低下します。")
-            # MY_USER_IDがない場合、 user_id を含むURLのチェックはスキップされる
+        # MY_USER_ID は yamap_auto_domo.py のスコープで定義されているものを参照
+        # (credentials.yaml から読み込まれているはず)
+        if not MY_USER_ID:
+             logger.warning("MY_USER_IDが設定されていません。ログイン成功判定の一部が機能しません。")
 
-        # ログイン成功条件のチェック
-        # 1. URLに 'login' が含まれていない
-        # 2. かつ、以下のいずれかを満たす:
-        #    a. URLに 'yamap.com' が含まれ、かつ (MY_USER_IDがURLに含まれるか、または 'timeline', 'home', 'discover' のいずれかがURLに含まれる)
-        #       または、ページタイトルに「マイページ」が含まれる (日本語環境)
-        #       または、ページタイトルに「My Page」が含まれる (英語環境の可能性)
-        #    b. ページタイトルに「ようこそ」または「welcome」が含まれる (初回ログインなどの特殊ケース)
-
-        condition_not_login_page = "login" not in current_url_lower
-
-        condition_yamap_domain = "yamap.com" in current_url_lower # 基本的に常にTrueのはず
-        condition_user_id_in_url = MY_USER_ID and MY_USER_ID in current_url_lower # MY_USER_IDが設定されていれば
-        condition_specific_paths_in_url = any(path in current_url_lower for path in ["/timeline", "/home", "/discover", "/mypage"]) # 具体的なパス
-
-        # タイトルベースのチェックも追加（より広範囲に）
-        condition_mypage_in_title = "マイページ" in page_title_lower or "my page" in page_title_lower # マイページという単語
-        condition_welcome_in_title = "ようこそ" in page_title_lower or "welcome" in page_title_lower
-
-        # デバッグ用に各条件の評価結果をログに出力
-        logger.debug(f"ログイン判定条件: not_login_page={condition_not_login_page}, yamap_domain={condition_yamap_domain}, user_id_in_url={condition_user_id_in_url}, specific_paths_in_url={condition_specific_paths_in_url}, mypage_in_title={condition_mypage_in_title}, welcome_in_title={condition_welcome_in_title}")
-        logger.debug(f"現在のURL: {driver.current_url}, タイトル: {driver.title}")
-
-
-        if condition_not_login_page and \
-           ( (condition_yamap_domain and (condition_user_id_in_url or condition_specific_paths_in_url) ) or \
-             condition_mypage_in_title ):
-            logger.info("ログインに成功しました。(URLまたはタイトルによる判定)")
+        # yamap_auto.py と同じ判定ロジック
+        if "login" not in current_url_lower and \
+           ("yamap" in current_url_lower or \
+            (MY_USER_ID and MY_USER_ID in current_url_lower) or \
+            "timeline" in current_url_lower or \
+            "home" in current_url_lower or \
+            "discover" in current_url_lower):
+            logger.info("ログインに成功しました。(yamap_auto.py互換ロジック1)")
             return True
-        elif condition_welcome_in_title and condition_not_login_page: # 「ようこそ」系は login ページでないことも確認
-            logger.info("ログインに成功しました。(「ようこそ」系タイトルによる判定)")
-            return True
+        elif "ようこそ" in page_title_lower or "welcome" in page_title_lower:
+             logger.info("ログインに成功しました。(yamap_auto.py互換ロジック2: タイトル確認)")
+             return True
         else:
-            logger.error("ログインに失敗したか、予期せぬページに遷移しました。")
+            logger.error("ログインに失敗したか、予期せぬページに遷移しました。(yamap_auto.py互換ロジック)")
             logger.error(f"現在のURL: {driver.current_url}, タイトル: {driver.title}")
-            # ログイン失敗時のエラーメッセージ要素を探して表示する試み (既存ロジック)
             try:
                 error_message_element = driver.find_element(By.CSS_SELECTOR, "div[class*='ErrorText'], p[class*='error-message'], div[class*='FormError']")
                 if error_message_element and error_message_element.is_displayed():
@@ -182,9 +163,10 @@ def login(driver, email, password):
             except NoSuchElementException:
                 logger.debug("ページ上にログインエラーメッセージ要素は見つかりませんでした。")
             return False
+        # --- ここまで yamap_auto.py の login 関数のロジック移植 ---
 
     except Exception as e:
-        logger.error(f"ログイン処理中に予期せぬエラーが発生しました。", exc_info=True)
+        logger.error(f"ログイン処理中に予期せぬエラーが発生しました。", exc_info=True) # この部分は共通
         return False
 
 # --- DOMO関連補助関数 (yamap_auto.pyから移植・調整) ---
@@ -201,34 +183,69 @@ def find_follow_button_in_list_item(user_list_item_element):
     既にフォロー中、またはボタンがない場合はNoneを返す。
     """
     try:
-        # 「フォロー中」ボタンのセレクタ (これがあればフォローしない)
-        following_button_selectors = [
-            "button[data-testid='FollowingButton']", # Mypage > フォロー中リストのボタンなど
-            ".//button[normalize-space(.)='フォロー中']", # XPath, テキストで判定
-            "button[aria-label*='フォロー中']", # aria-labelで判定
-            # フォロワーリスト内での「フォロー中」状態は、ボタン自体が存在しないか、
-            # または「フォローする」ボタンではない別の状態になっていることが多い。
-            # より具体的には、フォローバック対象のフォロワーリストでは、
-            # フォローしていない人には「フォローする」ボタンがあり、
-            # フォロー済みの人にはボタンがないか、別の表示になっている。
-        ]
-        for sel in following_button_selectors:
-            try:
-                if sel.startswith(".//"):
-                    if user_list_item_element.find_elements(By.XPATH, sel): return None # 発見したら既にフォロー中とみなす
-                else:
-                    if user_list_item_element.find_elements(By.CSS_SELECTOR, sel): return None # 発見したら既にフォロー中とみなす
-            except NoSuchElementException:
-                continue
+        # 「フォロー中」ボタンの判定 (提供されたHTMLを参考)
+        # <button type="button" aria-pressed="true" class="bj9bow7 tfao701 syljt1l" ...><span class="c1hbtdj4">フォロー中</span></button>
+        try:
+            following_button = user_list_item_element.find_element(By.CSS_SELECTOR, "button[aria-pressed='true']")
+            # さらにクラス名やテキストで絞り込んでも良いが、aria-pressed='true' が強い指標と仮定
+            if following_button and following_button.is_displayed():
+                # テキストが「フォロー中」であることも確認 (より確実性のため)
+                try:
+                    button_text_span = following_button.find_element(By.CSS_SELECTOR, "span.c1hbtdj4") # 提供されたHTMLのspanクラス
+                    if "フォロー中" in button_text_span.text:
+                        logger.debug("「フォロー中」ボタン (aria-pressed='true' およびテキスト確認) を発見。既にフォロー済みと判断。")
+                        return None
+                except NoSuchElementException: # spanが見つからなくてもaria-pressedだけで判断するケースも考慮
+                     logger.debug("「フォロー中」ボタン (aria-pressed='true') を発見したが、内部テキスト確認できず。フォロー済みと判断。")
+                     return None
+        except NoSuchElementException:
+            logger.debug("aria-pressed='true' の「フォロー中」ボタンは見つかりませんでした。フォロー可能かもしれません。")
 
-        # 「フォローする」ボタンのセレクタ
-        follow_button_selectors = [
-            "button[data-testid='FollowButton']", # Mypage > フォロワーリストのボタンなど
-            ".//button[normalize-space(.)='フォローする']", # XPath, テキストで判定
-            "button[aria-label*='フォローする']", # aria-labelで判定
-            "button.Button_button__pVDEh.Button_primary__M0LdZ.Button_sizeMedium__Q8KSP" # フォロワー一覧画面のフォローするボタンのクラス (変わりやすいので注意)
+        # 「フォローする」ボタンの判定
+        # 未フォローの場合、ボタンは aria-pressed="false" か、または別の属性やテキストを持つと想定
+        # または、フォロー中ボタンが存在しないことで判定する
+
+        # まず、汎用的な「フォローする」テキストを持つボタンを探す (XPathが有効)
+        try:
+            follow_button_xpath = ".//button[normalize-space(.)='フォローする']"
+            button_by_text = user_list_item_element.find_element(By.XPATH, follow_button_xpath)
+            if button_by_text and button_by_text.is_displayed() and button_by_text.is_enabled():
+                logger.debug(f"「フォローする」ボタンをテキストで発見 (XPath: {follow_button_xpath})")
+                return button_by_text
+        except NoSuchElementException:
+            logger.debug(f"テキスト「フォローする」でのボタン発見試行失敗 (XPath: {follow_button_xpath})。")
+
+        # 次に、aria-pressed="false" のボタンを探し、内部テキストが「フォローする」であることを確認
+        try:
+            # まず aria-pressed="false" のボタン候補を取得
+            potential_follow_buttons = user_list_item_element.find_elements(By.CSS_SELECTOR, "button[aria-pressed='false']")
+            if not potential_follow_buttons:
+                logger.debug("aria-pressed='false' のボタン候補は見つかりませんでした。")
+                raise NoSuchElementException # 次の探索ブロックへ
+
+            for button_candidate in potential_follow_buttons:
+                if button_candidate and button_candidate.is_displayed() and button_candidate.is_enabled():
+                    # 内部のspan.c1hbtdj4 のテキストを確認
+                    try:
+                        text_span = button_candidate.find_element(By.CSS_SELECTOR, "span.c1hbtdj4")
+                        if "フォローする" in text_span.text:
+                            logger.debug("「フォローする」ボタン (aria-pressed='false' かつ内部テキスト確認) を発見。")
+                            return button_candidate
+                    except NoSuchElementException:
+                        logger.debug(f"aria-pressed='false' ボタン内に期待するテキストspan (span.c1hbtdj4) が見つかりません。ボタン: {button_candidate.get_attribute('outerHTML')}")
+                        continue # 次の候補へ
+            logger.debug("aria-pressed='false' のボタン群の中に、テキスト「フォローする」を持つものは見つかりませんでした。")
+        except NoSuchElementException:
+            # この例外はキャッチして、次の探索ブロックに進むためにここでは何もしない
+            pass # logger.debug は上記 raise の前で出力済み
+
+        # data-testid や特有のクラス名での探索 (以前の候補も残す) - 優先度低
+        # ただし、提供されたHTMLには FollowButton の data-testid は無かった
+        legacy_follow_button_selectors = [
+            "button[data-testid='FollowButton']",
+            "button[aria-label*='フォローする']",
         ]
-        for sel in follow_button_selectors:
+        for sel in legacy_follow_button_selectors:
             try:
                 button = None
                 if sel.startswith(".//"):
@@ -434,53 +451,63 @@ def domo_timeline_activities(driver):
     timeline_page_url = TIMELINE_URL
     logger.info(f"タイムラインページへアクセス: {timeline_page_url}")
     driver.get(timeline_page_url)
+    # --- タイムラインDOMO機能のためのデバッグコード挿入 ---
+    logger.info("タイムラインページ読み込みのため10秒間待機します...")
+    time.sleep(10)
+    debug_timeline_file_name = f"debug_timeline_page_source_{time.strftime('%Y%m%d%H%M%S')}.html"
+    try:
+        with open(debug_timeline_file_name, "w", encoding="utf-8") as f:
+            f.write(driver.page_source)
+        logger.info(f"タイムラインページのHTMLソースを '{debug_timeline_file_name}' に出力しました。")
+    except Exception as e_dump_timeline:
+        logger.error(f"タイムラインHTMLソースのファイル出力中にエラー: {e_dump_timeline}")
+    # --- デバッグコード終了 ---
 
     max_activities_to_domo = TIMELINE_DOMO_SETTINGS.get("max_activities_to_domo_on_timeline", 10)
-    # DOMO間の待機時間は domo_activity 内で処理されるため、ここでは不要
-
     domoed_count = 0
+    processed_activity_urls = set()
 
     try:
-        # タイムライン上の活動記録カードを特定するセレクタ (YAMAPのHTML構造に依存)
-        # 例: <article data-testid="activity-entry"> や、それに類する活動記録一つ一つを囲む要素
-        activity_card_selector = "article[data-testid='activity-entry']"
-        # 活動記録カード内の活動記録ページへのリンクを特定するセレクタ
-        # 例: <a href="/activities/XXXXX" class="css-XXXXX">
-        activity_link_selector = "a[href^='/activities/'][class*='TimelineScreen_activityLink']" # より具体的なクラス名があれば望ましい
-        # フォールバックとして、data-testidを持つ要素内の汎用的な活動記録リンク
-        activity_link_fallback_selector = f"{activity_card_selector} a[href^='/activities/']"
+        # タイムラインの各フィードアイテム（活動日記またはモーメント）を特定するセレクタ
+        feed_item_selector = "li.TimelineList__Feed"
+        # フィードアイテムが活動日記であることを示す内部のセレクタ
+        activity_item_indicator_selector = "div.TimelineActivityItem"
+        # 活動日記アイテム内の、実際の活動記録ページへのリンク
+        activity_link_in_item_selector = "a.TimelineActivityItem__BodyLink[href^='/activities/']"
 
-
-        WebDriverWait(driver, 15).until(
-            EC.presence_of_all_elements_located((By.CSS_SELECTOR, activity_card_selector))
+        logger.info(f"タイムラインのフィードアイテム ({feed_item_selector}) の出現を待ちます...")
+        WebDriverWait(driver, 20).until(
+            EC.presence_of_all_elements_located((By.CSS_SELECTOR, feed_item_selector))
         )
-        time.sleep(2.5) # 描画安定とコンテンツ読み込み待ち (長め)
+        logger.info("タイムラインのフィードアイテム群を発見。")
+        time.sleep(2.5) # スクロールや追加読み込みを考慮した描画安定待ち
 
-        activity_cards = driver.find_elements(By.CSS_SELECTOR, activity_card_selector)
-        logger.info(f"タイムラインから {len(activity_cards)} 件の活動記録候補を検出しました。")
+        feed_items = driver.find_elements(By.CSS_SELECTOR, feed_item_selector)
+        logger.info(f"タイムラインから {len(feed_items)} 件のフィードアイテム候補を検出しました。")
 
-        if not activity_cards:
-            logger.info("タイムラインに活動記録が見つかりませんでした。")
+        if not feed_items:
+            logger.info("タイムラインにフィードアイテムが見つかりませんでした。")
             return
 
-        processed_activity_urls = set() # 同じ活動記録を複数回処理しないため
-
-        for idx, card_element in enumerate(activity_cards):
+        for idx, feed_item_element in enumerate(feed_items):
             if domoed_count >= max_activities_to_domo:
                 logger.info(f"タイムラインDOMOの上限 ({max_activities_to_domo}件) に達しました。")
                 break
 
             activity_url = None
             try:
-                # まず具体的なリンクセレクタを試す
-                try:
-                    link_element = card_element.find_element(By.CSS_SELECTOR, activity_link_selector)
-                    activity_url = link_element.get_attribute("href")
-                except NoSuchElementException:
-                    # 見つからなければフォールバックセレクタを試す
-                    logger.debug(f"カード {idx+1} で通常リンクセレクタ '{activity_link_selector}' が見つからず。フォールバック試行。")
-                    link_element = card_element.find_element(By.CSS_SELECTOR, activity_link_fallback_selector)
-                    activity_url = link_element.get_attribute("href")
+                # このフィードアイテムが活動日記であるかを確認
+                # 活動日記特有の要素 (activity_item_indicator_selector) を探す
+                activity_indicator_elements = feed_item_element.find_elements(By.CSS_SELECTOR, activity_item_indicator_selector)
+
+                if not activity_indicator_elements:
+                    logger.debug(f"フィードアイテム {idx+1} は活動日記ではありません (indicator: '{activity_item_indicator_selector}' 見つからず)。スキップします。")
+                    continue
+
+                # 活動日記であれば、その中のリンクを取得
+                # activity_indicator_elements[0] をコンテキストとして使用
+                link_element = activity_indicator_elements[0].find_element(By.CSS_SELECTOR, activity_link_in_item_selector)
+                activity_url = link_element.get_attribute("href")
 
                 if activity_url:
                     if activity_url.startswith("/"):
@@ -781,12 +808,9 @@ def search_follow_and_domo_users(driver, current_user_id):
     total_domoed_count = 0
 
     # 活動記録検索結果ページからユーザープロフィールへの典型的なパスを想定
-    # 例: 活動記録カード -> 作成者リンク -> プロフィール
-    activity_card_selector = "article[data-testid='activity-entry']" # タイムラインと同様のカードを想定
-    # カード内のユーザー名やアイコンへのリンク (プロフィールへのリンクを含むことが多い)
-    # セレクタはYAMAPの構造に大きく依存するため、非常に注意が必要
-    user_profile_link_in_card_selector = "a[href^='/users/'][data-testid='activityUserProfileImageLink'], a[href^='/users/'][class*='UserInfo_userName']"
-    # 代替: カードフッターのユーザー名など "div[class*='ActivityCard_footer'] a[href^='/users/']"
+    activity_card_selector = "article[data-testid='activity-entry']" # タイムラインと同様のカードを想定 (要確認)
+    # ユーザー提供HTMLに基づく修正: <div class="css-1vh31zw"><a class="css-k2fvpp" href="/users/3122085">...</a></div>
+    user_profile_link_in_card_selector = "div.css-1vh31zw > a.css-k2fvpp[href^='/users/']"
 
     processed_profile_urls = set() # セッション内で同じユーザーを何度も処理しないため
 
@@ -967,32 +991,45 @@ def follow_back_users_new(driver, current_user_id):
         return
 
     logger.info(">>> フォローバック機能を開始します...")
-    followers_url = f"{BASE_URL}/users/{current_user_id}/followers" # フォロワー一覧ページのURL形式を確認・修正
+    # 正しいフォロワー一覧ページのURL形式に修正
+    followers_url = f"{BASE_URL}/users/{current_user_id}?tab=followers#tabs"
     logger.info(f"フォロワー一覧ページへアクセス: {followers_url}")
     driver.get(followers_url)
+
+    # --- フォローバック機能のデバッグコードは削除 ---
+    # (このコメント自体も、実際のコードでは time.sleep やファイル書き込み処理があった場所を示す)
 
     max_to_follow_back = FOLLOW_BACK_SETTINGS.get("max_users_to_follow_back", 10)
     delay_between_actions = FOLLOW_BACK_SETTINGS.get("delay_after_follow_back_action_sec", 3.0) # ユーザー間の待機にも流用
 
     followed_count = 0
 
+    # --- セレクタ定義 ---
+    followers_list_container_selector = "ul.css-18aka15" # フォロワーリスト全体を囲むulタグ (HTMLから特定)
+    user_card_selector = "div[data-testid='user']"       # 各フォロワーカードのルートdiv (HTMLから特定)
+    user_link_in_card_selector = "a.css-e5vv35[href^='/users/']" # カード内のユーザープロフへのリンクaタグ (HTMLから特定)
+    name_element_css_selector_in_link = "h2.css-o7x4kv"      # 上記aタグ内のユーザー名h2タグ (HTMLから特定)
+
     try:
-        # フォロワーリストの各ユーザー要素を特定するセレクタ (YAMAPのHTML構造に依存)
-        # 例: <a href="/users/..." class="UserListItem_userNameLink__XXXXX"> のような構造を想定
-        # または、各ユーザーカードのルート要素
-        user_card_selector = "div[class*='UserListItem_root']" # 一般的なユーザーリストアイテムのルート
-        user_link_in_card_selector = "a[href*='/users/'][class*='UserListItem_userNameLink']" # カード内のユーザーリンク
-
-        WebDriverWait(driver, 15).until(
-            EC.presence_of_all_elements_located((By.CSS_SELECTOR, user_card_selector))
+        logger.info(f"フォロワーリストのコンテナ ({followers_list_container_selector}) の出現を待ちます...")
+        WebDriverWait(driver, 20).until( # 少し長めに待つ
+            EC.presence_of_element_located((By.CSS_SELECTOR, followers_list_container_selector))
         )
-        time.sleep(2) # 描画安定待ち
+        logger.info("フォロワーリストのコンテナを発見。")
 
-        user_cards = driver.find_elements(By.CSS_SELECTOR, user_card_selector)
-        logger.info(f"フォロワー一覧から {len(user_cards)} 件のユーザー候補を検出しました。")
+        # コンテナが見つかった後、改めてユーザーカードを取得
+        user_cards_all = driver.find_elements(By.CSS_SELECTOR, user_card_selector)
+        logger.info(f"フォロワー一覧ページから {len(user_cards_all)} 件のユーザーカード候補を検出しました。")
+
+        if len(user_cards_all) > 3:
+            user_cards = user_cards_all[3:] # 最初の3件（レコメンドと仮定）を除外
+            logger.info(f"レコメンドを除いた {len(user_cards)} 件のフォロワー候補を処理対象とします。")
+        else:
+            user_cards = [] # 除外したら候補がいなくなる、または元々3件以下だった場合
+            logger.info("フォロワー一覧のユーザー候補が3件以下（レコメンドのみか、実際のフォロワーがいない可能性）。処理対象ユーザーがいません。")
 
         if not user_cards:
-            logger.info("フォロワーが見つかりませんでした。")
+            logger.info("処理対象となるフォロワーが見つかりませんでした。")
             return
 
         for card_idx, user_card_element in enumerate(user_cards):
