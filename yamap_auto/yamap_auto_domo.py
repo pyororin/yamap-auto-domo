@@ -451,53 +451,63 @@ def domo_timeline_activities(driver):
     timeline_page_url = TIMELINE_URL
     logger.info(f"タイムラインページへアクセス: {timeline_page_url}")
     driver.get(timeline_page_url)
+    # --- タイムラインDOMO機能のためのデバッグコード挿入 ---
+    logger.info("タイムラインページ読み込みのため10秒間待機します...")
+    time.sleep(10)
+    debug_timeline_file_name = f"debug_timeline_page_source_{time.strftime('%Y%m%d%H%M%S')}.html"
+    try:
+        with open(debug_timeline_file_name, "w", encoding="utf-8") as f:
+            f.write(driver.page_source)
+        logger.info(f"タイムラインページのHTMLソースを '{debug_timeline_file_name}' に出力しました。")
+    except Exception as e_dump_timeline:
+        logger.error(f"タイムラインHTMLソースのファイル出力中にエラー: {e_dump_timeline}")
+    # --- デバッグコード終了 ---
 
     max_activities_to_domo = TIMELINE_DOMO_SETTINGS.get("max_activities_to_domo_on_timeline", 10)
-    # DOMO間の待機時間は domo_activity 内で処理されるため、ここでは不要
-
     domoed_count = 0
+    processed_activity_urls = set()
 
     try:
-        # タイムライン上の活動記録カードを特定するセレクタ (YAMAPのHTML構造に依存)
-        # 例: <article data-testid="activity-entry"> や、それに類する活動記録一つ一つを囲む要素
-        activity_card_selector = "article[data-testid='activity-entry']"
-        # 活動記録カード内の活動記録ページへのリンクを特定するセレクタ
-        # 例: <a href="/activities/XXXXX" class="css-XXXXX">
-        activity_link_selector = "a[href^='/activities/'][class*='TimelineScreen_activityLink']" # より具体的なクラス名があれば望ましい
-        # フォールバックとして、data-testidを持つ要素内の汎用的な活動記録リンク
-        activity_link_fallback_selector = f"{activity_card_selector} a[href^='/activities/']"
+        # タイムラインの各フィードアイテム（活動日記またはモーメント）を特定するセレクタ
+        feed_item_selector = "li.TimelineList__Feed"
+        # フィードアイテムが活動日記であることを示す内部のセレクタ
+        activity_item_indicator_selector = "div.TimelineActivityItem"
+        # 活動日記アイテム内の、実際の活動記録ページへのリンク
+        activity_link_in_item_selector = "a.TimelineActivityItem__BodyLink[href^='/activities/']"
 
-
-        WebDriverWait(driver, 15).until(
-            EC.presence_of_all_elements_located((By.CSS_SELECTOR, activity_card_selector))
+        logger.info(f"タイムラインのフィードアイテム ({feed_item_selector}) の出現を待ちます...")
+        WebDriverWait(driver, 20).until(
+            EC.presence_of_all_elements_located((By.CSS_SELECTOR, feed_item_selector))
         )
-        time.sleep(2.5) # 描画安定とコンテンツ読み込み待ち (長め)
+        logger.info("タイムラインのフィードアイテム群を発見。")
+        time.sleep(2.5) # スクロールや追加読み込みを考慮した描画安定待ち
 
-        activity_cards = driver.find_elements(By.CSS_SELECTOR, activity_card_selector)
-        logger.info(f"タイムラインから {len(activity_cards)} 件の活動記録候補を検出しました。")
+        feed_items = driver.find_elements(By.CSS_SELECTOR, feed_item_selector)
+        logger.info(f"タイムラインから {len(feed_items)} 件のフィードアイテム候補を検出しました。")
 
-        if not activity_cards:
-            logger.info("タイムラインに活動記録が見つかりませんでした。")
+        if not feed_items:
+            logger.info("タイムラインにフィードアイテムが見つかりませんでした。")
             return
 
-        processed_activity_urls = set() # 同じ活動記録を複数回処理しないため
-
-        for idx, card_element in enumerate(activity_cards):
+        for idx, feed_item_element in enumerate(feed_items):
             if domoed_count >= max_activities_to_domo:
                 logger.info(f"タイムラインDOMOの上限 ({max_activities_to_domo}件) に達しました。")
                 break
 
             activity_url = None
             try:
-                # まず具体的なリンクセレクタを試す
-                try:
-                    link_element = card_element.find_element(By.CSS_SELECTOR, activity_link_selector)
-                    activity_url = link_element.get_attribute("href")
-                except NoSuchElementException:
-                    # 見つからなければフォールバックセレクタを試す
-                    logger.debug(f"カード {idx+1} で通常リンクセレクタ '{activity_link_selector}' が見つからず。フォールバック試行。")
-                    link_element = card_element.find_element(By.CSS_SELECTOR, activity_link_fallback_selector)
-                    activity_url = link_element.get_attribute("href")
+                # このフィードアイテムが活動日記であるかを確認
+                # 活動日記特有の要素 (activity_item_indicator_selector) を探す
+                activity_indicator_elements = feed_item_element.find_elements(By.CSS_SELECTOR, activity_item_indicator_selector)
+
+                if not activity_indicator_elements:
+                    logger.debug(f"フィードアイテム {idx+1} は活動日記ではありません (indicator: '{activity_item_indicator_selector}' 見つからず)。スキップします。")
+                    continue
+
+                # 活動日記であれば、その中のリンクを取得
+                # activity_indicator_elements[0] をコンテキストとして使用
+                link_element = activity_indicator_elements[0].find_element(By.CSS_SELECTOR, activity_link_in_item_selector)
+                activity_url = link_element.get_attribute("href")
 
                 if activity_url:
                     if activity_url.startswith("/"):
@@ -798,12 +808,9 @@ def search_follow_and_domo_users(driver, current_user_id):
     total_domoed_count = 0
 
     # 活動記録検索結果ページからユーザープロフィールへの典型的なパスを想定
-    # 例: 活動記録カード -> 作成者リンク -> プロフィール
-    activity_card_selector = "article[data-testid='activity-entry']" # タイムラインと同様のカードを想定
-    # カード内のユーザー名やアイコンへのリンク (プロフィールへのリンクを含むことが多い)
-    # セレクタはYAMAPの構造に大きく依存するため、非常に注意が必要
-    user_profile_link_in_card_selector = "a[href^='/users/'][data-testid='activityUserProfileImageLink'], a[href^='/users/'][class*='UserInfo_userName']"
-    # 代替: カードフッターのユーザー名など "div[class*='ActivityCard_footer'] a[href^='/users/']"
+    activity_card_selector = "article[data-testid='activity-entry']" # タイムラインと同様のカードを想定 (要確認)
+    # ユーザー提供HTMLに基づく修正: <div class="css-1vh31zw"><a class="css-k2fvpp" href="/users/3122085">...</a></div>
+    user_profile_link_in_card_selector = "div.css-1vh31zw > a.css-k2fvpp[href^='/users/']"
 
     processed_profile_urls = set() # セッション内で同じユーザーを何度も処理しないため
 
@@ -990,6 +997,7 @@ def follow_back_users_new(driver, current_user_id):
     driver.get(followers_url)
 
     # --- フォローバック機能のデバッグコードは削除 ---
+    # (このコメント自体も、実際のコードでは time.sleep やファイル書き込み処理があった場所を示す)
 
     max_to_follow_back = FOLLOW_BACK_SETTINGS.get("max_users_to_follow_back", 10)
     delay_between_actions = FOLLOW_BACK_SETTINGS.get("delay_after_follow_back_action_sec", 3.0) # ユーザー間の待機にも流用
@@ -1010,12 +1018,18 @@ def follow_back_users_new(driver, current_user_id):
         logger.info("フォロワーリストのコンテナを発見。")
 
         # コンテナが見つかった後、改めてユーザーカードを取得
-        # user_card_selector は変更なし (div[data-testid='user'])
-        user_cards = driver.find_elements(By.CSS_SELECTOR, user_card_selector) # 親コンテナ内のユーザーカードを探す形にしても良いが、まずはこれで試す
-        logger.info(f"フォロワー一覧から {len(user_cards)} 件のユーザー候補を検出しました。")
+        user_cards_all = driver.find_elements(By.CSS_SELECTOR, user_card_selector)
+        logger.info(f"フォロワー一覧ページから {len(user_cards_all)} 件のユーザーカード候補を検出しました。")
+
+        if len(user_cards_all) > 3:
+            user_cards = user_cards_all[3:] # 最初の3件（レコメンドと仮定）を除外
+            logger.info(f"レコメンドを除いた {len(user_cards)} 件のフォロワー候補を処理対象とします。")
+        else:
+            user_cards = [] # 除外したら候補がいなくなる、または元々3件以下だった場合
+            logger.info("フォロワー一覧のユーザー候補が3件以下（レコメンドのみか、実際のフォロワーがいない可能性）。処理対象ユーザーがいません。")
 
         if not user_cards:
-            logger.info("フォロワーが見つかりませんでした。")
+            logger.info("処理対象となるフォロワーが見つかりませんでした。")
             return
 
         for card_idx, user_card_element in enumerate(user_cards):
