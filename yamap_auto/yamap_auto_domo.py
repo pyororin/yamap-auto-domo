@@ -847,23 +847,40 @@ def search_follow_and_domo_users(driver, current_user_id):
             logger.warning(f"活動記録検索結果ページ ({current_url_to_load}) で活動記録カードの読み込みタイムアウト。このページの処理をスキップします。")
             continue
 
-        activity_cards_on_page = driver.find_elements(By.CSS_SELECTOR, activity_card_selector)
-        logger.info(f"{page_num}ページ目: {len(activity_cards_on_page)} 件の活動記録候補を検出。")
-        if not activity_cards_on_page:
+        initial_activity_cards_on_page = driver.find_elements(By.CSS_SELECTOR, activity_card_selector)
+        num_cards_to_process = len(initial_activity_cards_on_page)
+        logger.info(f"{page_num}ページ目: {num_cards_to_process} 件の活動記録候補を検出。")
+
+        if not initial_activity_cards_on_page:
             logger.info("このページには活動記録が見つかりませんでした。")
             continue
 
         processed_users_on_current_page = 0
-        for card_idx, card_element in enumerate(activity_cards_on_page):
+        # activity_cards_on_page はループ内で再取得するので、ここではインデックスの範囲だけを使用
+        for card_idx in range(num_cards_to_process):
             if processed_users_on_current_page >= max_users_per_page:
                 logger.info(f"このページでの処理上限 ({max_users_per_page}ユーザー) に達しました。")
                 break
 
             user_profile_url = None
-            user_name_for_log = f"活動記録{card_idx+1}のユーザー"
+            user_name_for_log = f"活動記録{card_idx+1}のユーザー" # ログ用のインデックスは0始まりを1始まりに
+
             try:
+                # ループの各反復でカード要素を再取得
+                # 元の検索ページに戻った後、要素が確実に存在するようにWebDriverWaitを挟む
+                # (既存のWebDriverWaitはページ全体のカード読み込みなので、ここでは個別のカード再取得)
+                current_activity_cards = driver.find_elements(By.CSS_SELECTOR, activity_card_selector)
+                if card_idx >= len(current_activity_cards):
+                    logger.warning(f"カードインデックス {card_idx} が現在のカード数 {len(current_activity_cards)} を超えています。DOM構造が変更された可能性があります。このカードの処理をスキップします。")
+                    continue
+                card_element = current_activity_cards[card_idx]
+
                 # カードからユーザープロフィールURLを取得
-                profile_link_el = card_element.find_element(By.CSS_SELECTOR, user_profile_link_in_card_selector)
+                # StaleElementReferenceException がここで発生していた
+                profile_link_el = WebDriverWait(card_element, 5).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, user_profile_link_in_card_selector))
+                )
+                # profile_link_el = card_element.find_element(By.CSS_SELECTOR, user_profile_link_in_card_selector) # 元のコード
                 href = profile_link_el.get_attribute("href")
                 if href:
                     if href.startswith("/"): user_profile_url = BASE_URL + href
