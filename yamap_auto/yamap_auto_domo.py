@@ -967,9 +967,9 @@ def search_follow_and_domo_users(driver, current_user_id):
     delay_user_processing = SEARCH_AND_FOLLOW_SETTINGS.get("delay_between_user_processing_in_search_sec", 5.0)
     delay_pagination = SEARCH_AND_FOLLOW_SETTINGS.get("delay_after_pagination_sec", 3.0)
 
-    processed_users_on_current_page = 0
     total_followed_count = 0
     total_domoed_count = 0
+    # processed_users_on_current_page はページループ内で初期化する
 
     # 活動記録検索結果ページからユーザープロフィールへの典型的なパスを想定
     activity_card_selector = "article[data-testid='activity-entry']" # タイムラインと同様のカードを想定 (要確認)
@@ -979,27 +979,79 @@ def search_follow_and_domo_users(driver, current_user_id):
     processed_profile_urls = set() # セッション内で同じユーザーを何度も処理しないため
 
     for page_num in range(1, max_pages + 1):
-        if page_num > 1: # 2ページ目以降はページネーションが必要
-            logger.info(f"{page_num-1}ページ目の処理完了。次のページへ遷移します。")
-            # TODO: ページネーション処理の実装
-            # YAMAPの検索結果ページで「次へ」やページ番号のボタンを見つけてクリックする
-            # 例: next_button_selector = "a[data-testid='pagination-next-button'], a.pagination-next"
-            # try:
-            #     next_button = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.CSS_SELECTOR, next_button_selector)))
-            #     driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", next_button)
-            #     next_button.click()
-            #     logger.info(f"{page_num}ページ目へ遷移しました。")
-            #     time.sleep(delay_pagination)
-            #     WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.CSS_SELECTOR, activity_card_selector))) # 新しいページのカード読み込み待ち
-            # except (TimeoutException, NoSuchElementException):
-            #     logger.info("次のページへのボタンが見つからないか、クリックできませんでした。処理を終了します。")
-            #     break
-            logger.warning("ページネーション処理は未実装です。複数ページ処理は現在スキップされます。")
-            break # 現状は1ページのみ対応
+        processed_users_on_current_page = 0 # 各ページの開始時にリセット
+        current_page_url_before_action = driver.current_url # ページ遷移の確認用
 
-        current_url_to_load = start_url if page_num == 1 else driver.current_url # 1ページ目はstart_url, 以降は現在のURLのまま(ページネーション後)
-        if driver.current_url != current_url_to_load and page_num == 1 : # 1ページ目のみ明示的にget
-             logger.info(f"{page_num}ページ目の活動記録検索結果 ({current_url_to_load}) にアクセスします。")
+        if page_num > 1: # 2ページ目以降はページネーションが必要
+            logger.info(f"{page_num-1}ページ目の処理完了。次のページ ({page_num}ページ目) へ遷移を試みます。")
+
+            next_button_selectors = [
+                "a[data-testid='pagination-next-button']", # data-testid があれば最優先
+                "a[rel='next']",
+                "a.next", # 一般的なクラス名
+                "a.pagination__next", # 一般的なクラス名
+                "button.next",
+                "button.pagination__next",
+                "a[aria-label*='次へ']:not([aria-disabled='true'])", # 無効化されていない次へボタン
+                "a[aria-label*='Next']:not([aria-disabled='true'])",
+                "button[aria-label*='次へ']:not([disabled])",
+                "button[aria-label*='Next']:not([disabled])",
+                # XPath for text (fallback, use if CSS selectors fail)
+                # "//a[contains(text(),'次へ') or contains(text(),'Next')]",
+                # "//button[contains(text(),'次へ') or contains(text(),'Next')]"
+            ]
+
+            next_button_found = False
+            for selector in next_button_selectors:
+                try:
+                    logger.debug(f"次のページボタン探索試行 (セレクタ: {selector})")
+                    # 要素が存在し、かつクリック可能であることを確認
+                    next_button = WebDriverWait(driver, 5).until(
+                        EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
+                    )
+                    if next_button.is_displayed() and next_button.is_enabled():
+                        logger.info(f"次のページボタンをセレクタ '{selector}' で発見。クリックします。")
+                        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", next_button)
+                        time.sleep(0.5) # スクロール安定待ち
+                        next_button.click()
+                        next_button_found = True
+                        break
+                    else:
+                        logger.debug(f"セレクタ '{selector}' でボタンは存在したが、表示されていないか無効でした。")
+                except TimeoutException:
+                    logger.debug(f"セレクタ '{selector}' で次のページボタンが見つからずタイムアウト。")
+                except Exception as e_click:
+                    logger.warning(f"セレクタ '{selector}' でボタンクリック試行中にエラー: {e_click}")
+                    # エラーが発生した場合も次のセレクタを試す
+
+            if not next_button_found:
+                logger.info("試行した全てのセレクタで、クリック可能な「次へ」ボタンが見つかりませんでした。検索結果のページネーション処理を終了します。")
+                break # ページネーションループを終了
+
+            # ページ遷移とコンテンツの読み込みを待つ
+            try:
+                WebDriverWait(driver, 15).until(
+                    EC.url_changes(current_page_url_before_action) # URLが変わることを期待
+                )
+                logger.info(f"{page_num}ページ目へ遷移しました。新しいURL: {driver.current_url}")
+                # 新しいページの主要コンテンツ（活動記録カード）が表示されるまで待つ
+                WebDriverWait(driver, 15).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, activity_card_selector))
+                )
+                logger.info(f"{page_num}ページ目の活動記録カードの読み込みを確認。")
+                time.sleep(delay_pagination) # 設定された追加の待機時間
+            except TimeoutException:
+                logger.warning(f"{page_num}ページ目への遷移後、URL変化または活動記録カードの読み込みタイムアウト。処理を終了します。")
+                break # ページネーションループを終了
+            except Exception as e_page_load:
+                logger.error(f"{page_num}ページ目への遷移または読み込み中に予期せぬエラー: {e_page_load}", exc_info=True)
+                break
+
+
+        # --- 1ページ目の処理、またはページネーション後の処理 ---
+        # current_url_to_load は1ページ目のみ使用し、それ以降はページネーションに任せる
+        if page_num == 1 and driver.current_url != start_url :
+             logger.info(f"{page_num}ページ目の活動記録検索結果 ({start_url}) にアクセスします。")
              driver.get(current_url_to_load)
 
         try:
