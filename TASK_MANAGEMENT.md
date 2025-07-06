@@ -7,8 +7,8 @@
 ## 🛠 仕掛中タスク
 
 *   [x] `yamap_auto_domo.py` のリファクタリング - 機能分割 (ログイン関連処理を `driver_utils.py` に分割完了) `[PREVIOUS_COMMIT_HASH_PLACEHOLDER]`
-*   [x] `yamap_auto_domo.py` のリファクタリング - 機能分割 (ユーザープロフィール関連処理を `user_profile_utils.py` に分割完了: `get_latest_activity_url`, `get_user_follow_counts`, `find_follow_button_on_profile_page`) `[THIS_COMMIT_HASH]`
-*   [ ] `yamap_auto_domo.py` のリファクタリング - 機能分割 (継続)
+*   [x] `yamap_auto_domo.py` のリファクタリング - 機能分割 (ユーザープロフィール関連処理を `user_profile_utils.py` に分割完了: `get_latest_activity_url`, `get_user_follow_counts`, `find_follow_button_on_profile_page`) `[PREVIOUS_COMMIT_HASH_PLACEHOLDER]`
+*   [ ] `yamap_auto_domo.py` のリファクタリング - 機能分割 (継続: DOMO関連処理を `domo_utils.py` に、リストアイテムからのフォロー関連処理を `follow_utils.py` に分割) `[THIS_COMMIT_HASH]`
 *   [ ] エラーハンドリング、ログ出力の強化 - 継続的に改善要
 *   [ ] 動作確認・デバッグ - 継続的に必要
 
@@ -28,6 +28,9 @@
     *   [ ] 検索＆フォロー機能への並列処理の導入検討（アカウントの安全性とYAMAPの規約を考慮）
     *   [ ] 検索＆フォロー機能におけるアクションのバッチ処理検討（YAMAPの規約範囲内）
 *   これらのスクリプトを管理しやすいよう分割するリファクタリング
+    *   [ ] `yamap_auto_domo.py` 内のタイムライン処理 (`domo_timeline_activities`, `domo_timeline_activities_parallel`) を `timeline_utils.py` 等に分割
+    *   [ ] `yamap_auto_domo.py` 内の検索結果処理 (`search_follow_and_domo_users`) を `search_utils.py` 等に分割
+    *   [ ] `yamap_auto_domo.py` 内のフォローバック処理 (`follow_back_users_new`) を `follow_back_utils.py` 等に分割
 (ここにメモや改善案を記述)
 
 ---
