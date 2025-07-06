@@ -61,9 +61,13 @@ from .domo_utils import (
 from .follow_utils import (
     find_follow_button_in_list_item,
     click_follow_button_and_verify,
-    search_follow_and_domo_users,
-    follow_back_users_new,
+    # search_follow_and_domo_users, # search_utils へ移動
+    # follow_back_users_new, # follow_back_utils へ移動
 )
+# search_utils から必要なものをインポート
+from .search_utils import search_follow_and_domo_users
+# follow_back_utils から必要なものをインポート
+from .follow_back_utils import follow_back_users_new
 
 
 # --- Loggerの設定 ---
