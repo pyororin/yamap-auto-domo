@@ -1,13 +1,11 @@
 # タスク管理
 
-最終更新日時: 2025/07/06
+最終更新日時: 2025/07/07
 
 ---
 
 ## 🛠 仕掛中タスク
 
-*   [ ] `yamap_auto_domo.py` 内のフォローバック処理 (`follow_back_users_new`) を `follow_back_utils.py` 等に分割 (現状 `follow_utils.py` に存在、これから `follow_back_utils.py` へ移動)
-*   [ ] `yamap_auto_domo.py` 内の検索結果処理 (`search_follow_and_domo_users`) を `search_utils.py` 等に分割 (現状 `follow_utils.py` に存在、これから `search_utils.py` へ移動)
 *   [ ] エラーハンドリング、ログ出力の強化 - 継続的に改善要
 *   [ ] 動作確認・デバッグ - 継続的に必要
 
@@ -101,6 +99,8 @@
 
 ## ✅ 完了タスク
 
+*   [x] `yamap_auto_domo.py` 内のフォローバック処理 (`follow_back_users_new`) を `follow_back_utils.py` 等に分割 (現状 `follow_utils.py` に存在、これから `follow_back_utils.py` へ移動、実際には既に `follow_back_utils.py` に存在することを確認) `[THIS_COMMIT_HASH]`
+*   [x] `yamap_auto_domo.py` 内の検索結果処理 (`search_follow_and_domo_users`) を `search_utils.py` 等に分割 (現状 `follow_utils.py` に存在、これから `search_utils.py` へ移動、実際には既に `search_utils.py` に存在することを確認) `[THIS_COMMIT_HASH]`
 *   [x] `yamap_auto_domo.py` 内のタイムライン処理 (`domo_timeline_activities`, `domo_timeline_activities_parallel`) を `timeline_utils.py` 等に分割 (実質 `domo_utils.py` へ分割済) `[THIS_COMMIT_HASH]`
 *   [x] `yamap_auto_domo.py` の基本構造作成 (ロガー設定、WebDriver設定、ログイン機能流用)
 *   [x] `config.yaml` に新機能用の設定項目を追加定義
