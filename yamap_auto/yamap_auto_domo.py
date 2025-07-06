@@ -1429,119 +1429,178 @@ def follow_back_users_new(driver, current_user_id):
     """
     自分をフォローしてくれたユーザーをフォローバックする機能。
     config.yaml の follow_back_settings に従って動作する。
+    ページネーションに対応し、複数のフォロワーページを確認する。
     """
     if not FOLLOW_BACK_SETTINGS.get("enable_follow_back", False):
         logger.info("フォローバック機能は設定で無効になっています。")
         return
 
     logger.info(">>> フォローバック機能を開始します...")
-    # 正しいフォロワー一覧ページのURL形式に修正
-    followers_url = f"{BASE_URL}/users/{current_user_id}?tab=followers#tabs"
-    logger.info(f"フォロワー一覧ページへアクセス: {followers_url}")
-    driver.get(followers_url)
+    # Initial followers page URL
+    base_followers_url = f"{BASE_URL}/users/{current_user_id}?tab=followers" # #tabs removed for cleaner page tracking
+    current_page_number = 1
 
-    # --- フォローバック機能のデバッグコードは削除 ---
-    # (このコメント自体も、実際のコードでは time.sleep やファイル書き込み処理があった場所を示す)
+    # Navigate to the initial followers page
+    logger.info(f"フォロワー一覧の初期ページへアクセス: {base_followers_url}#tabs")
+    driver.get(base_followers_url + "#tabs") # Initial load with #tabs
 
-    max_to_follow_back = FOLLOW_BACK_SETTINGS.get("max_users_to_follow_back", 10)
-    delay_between_actions = FOLLOW_BACK_SETTINGS.get("delay_after_follow_back_action_sec", 3.0) # ユーザー間の待機にも流用
+    max_to_follow_back_total = FOLLOW_BACK_SETTINGS.get("max_users_to_follow_back", 10)
+    # New setting for max pages to check, defaults to a high number if not set, effectively "all pages"
+    # For now, let's assume we'll add this to config later. For this implementation,
+    # we'll rely on max_to_follow_back_total and the absence of a "Next" button.
+    max_pages_to_check = FOLLOW_BACK_SETTINGS.get("max_pages_for_follow_back", 100) # Default to 100 pages if not in config
 
-    followed_count = 0
+    delay_between_actions = FOLLOW_BACK_SETTINGS.get("delay_after_follow_back_action_sec", 3.0)
+    delay_after_pagination = main_config.get("action_delays", {}).get("delay_after_pagination_sec", 3.0) # Use existing general pagination delay
+
+    total_followed_this_session = 0
+    processed_profile_urls_this_session = set() # Track users processed in this session to avoid re-processing on re-runs if script is restarted
 
     # --- セレクタ定義 ---
-    followers_list_container_selector = "ul.css-18aka15" # フォロワーリスト全体を囲むulタグ (HTMLから特定)
-    user_card_selector = "div[data-testid='user']"       # 各フォロワーカードのルートdiv (HTMLから特定)
-    user_link_in_card_selector = "a.css-e5vv35[href^='/users/']" # カード内のユーザープロフへのリンクaタグ (HTMLから特定)
-    name_element_css_selector_in_link = "h2.css-o7x4kv"      # 上記aタグ内のユーザー名h2タグ (HTMLから特定)
+    followers_list_container_selector = "ul.css-18aka15"
+    user_card_selector = "div[data-testid='user']"
+    user_link_in_card_selector = "a.css-e5vv35[href^='/users/']"
+    # name_element_css_selector_in_link = "h2.css-o7x4kv" # Not strictly needed for core logic here
 
-    try:
-        logger.info(f"フォロワーリストのコンテナ ({followers_list_container_selector}) の出現を待ちます...")
-        WebDriverWait(driver, 20).until( # 少し長めに待つ
-            EC.presence_of_element_located((By.CSS_SELECTOR, followers_list_container_selector))
-        )
-        logger.info("フォロワーリストのコンテナを発見。")
+    # Selectors for "Next" button, adapted from search_follow_and_domo_users
+    next_button_selectors = [
+        "a[data-testid='pagination-next-button']",
+        "a[rel='next']",
+        "a.next", "a.pagination__next", "button.next", "button.pagination__next",
+        "a[aria-label*='次へ']:not([aria-disabled='true'])", "a[aria-label*='Next']:not([aria-disabled='true'])",
+        "button[aria-label*='次へ']:not([disabled])", "button[aria-label*='Next']:not([disabled])"
+    ]
 
-        # コンテナが見つかった後、改めてユーザーカードを取得
-        user_cards_all = driver.find_elements(By.CSS_SELECTOR, user_card_selector)
-        logger.info(f"フォロワー一覧ページから {len(user_cards_all)} 件のユーザーカード候補を検出しました。")
+    while current_page_number <= max_pages_to_check:
+        logger.info(f"フォロワーリストの {current_page_number} ページ目を処理します。")
 
-        if len(user_cards_all) > 3:
-            user_cards = user_cards_all[3:] # 最初の3件（レコメンドと仮定）を除外
-            logger.info(f"レコメンドを除いた {len(user_cards)} 件のフォロワー候補を処理対象とします。")
-        else:
-            user_cards = [] # 除外したら候補がいなくなる、または元々3件以下だった場合
-            logger.info("フォロワー一覧のユーザー候補が3件以下（レコメンドのみか、実際のフォロワーがいない可能性）。処理対象ユーザーがいません。")
+        try:
+            logger.info(f"フォロワーリストのコンテナ ({followers_list_container_selector}) の出現を待ちます...")
+            WebDriverWait(driver, 20).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, followers_list_container_selector))
+            )
+            logger.info("フォロワーリストのコンテナを発見。")
+            time.sleep(1.0) # Allow dynamic content to settle after container appears
 
-        if not user_cards:
-            logger.info("処理対象となるフォロワーが見つかりませんでした。")
-            return
+            user_cards_all_on_page = driver.find_elements(By.CSS_SELECTOR, user_card_selector)
+            logger.info(f"{current_page_number} ページ目から {len(user_cards_all_on_page)} 件のユーザーカード候補を検出しました。")
 
-        for card_idx, user_card_element in enumerate(user_cards):
-            if followed_count >= max_to_follow_back:
-                logger.info(f"フォローバック上限 ({max_to_follow_back}人) に達しました。")
-                break
+            # Recommendation skipping logic (applied per page)
+            if current_page_number == 1 and len(user_cards_all_on_page) > 3: # Only skip on the very first page
+                user_cards_to_process_this_page = user_cards_all_on_page[3:]
+                logger.info(f"最初の3件（レコメンドと仮定）を除いた {len(user_cards_to_process_this_page)} 件のフォロワー候補を処理対象とします。")
+            else:
+                user_cards_to_process_this_page = user_cards_all_on_page
 
-            user_name = f"ユーザー{card_idx+1}" # デフォルト名
-            profile_url = ""
+            if not user_cards_to_process_this_page:
+                logger.info(f"{current_page_number} ページ目には処理対象となるフォロワーが見つかりませんでした。")
+                # This might mean it's the end of followers, or an empty page after recommendations
+                # Check for next button before breaking to be sure
 
-            try:
-                # ユーザー名とプロフィールURLの取得
-                user_link_element = user_card_element.find_element(By.CSS_SELECTOR, user_link_in_card_selector)
-                profile_url = user_link_element.get_attribute("href")
+            for card_idx, user_card_element in enumerate(user_cards_to_process_this_page):
+                if total_followed_this_session >= max_to_follow_back_total:
+                    logger.info(f"セッション中のフォローバック上限 ({max_to_follow_back_total}人) に達しました。")
+                    break # Break from user card loop
 
-                name_element_selectors = [
-                    "span[class*='UserListItem_name__']", # 名前が含まれる可能性のあるspan
-                    "h2", "h3" # ヘッダータグ
-                ]
-                for sel in name_element_selectors:
-                    try:
-                        name_el = user_link_element.find_element(By.CSS_SELECTOR, sel)
+                user_name = f"ユーザー{card_idx+1} (Page {current_page_number})"
+                profile_url = ""
+
+                try:
+                    user_link_element = user_card_element.find_element(By.CSS_SELECTOR, user_link_in_card_selector)
+                    profile_url = user_link_element.get_attribute("href")
+
+                    name_el_candidates = user_link_element.find_elements(By.CSS_SELECTOR, "h2, span[class*='UserListItem_name__']")
+                    for name_el in name_el_candidates:
                         if name_el.text.strip():
                             user_name = name_el.text.strip()
                             break
-                    except NoSuchElementException:
+
+                    if not profile_url:
+                        logger.warning(f"カード {card_idx+1} (Page {current_page_number}) からプロフィールURL取得失敗。スキップ。")
                         continue
-                if not profile_url: # URLが取れなければスキップ
-                    logger.warning(f"ユーザーカード {card_idx+1} からプロフィールURLを取得できませんでした。スキップします。")
+                    if profile_url.startswith("/"): profile_url = BASE_URL + profile_url
+                    if f"/users/{current_user_id}" in profile_url or not profile_url.startswith(f"{BASE_URL}/users/"):
+                        logger.debug(f"スキップ: 自分自身または無効なURL ({profile_url})")
+                        continue
+
+                    if profile_url in processed_profile_urls_this_session:
+                        logger.info(f"ユーザー「{user_name}」({profile_url.split('/')[-1]}) はこのセッションで既に処理済み。スキップ。")
+                        continue
+
+                except NoSuchElementException:
+                    logger.warning(f"カード {card_idx+1} (Page {current_page_number}) の必須要素が見つかりません。スキップ。")
+                    continue
+                except Exception as e_card_parse:
+                    logger.warning(f"カード {card_idx+1} (Page {current_page_number}) 解析エラー: {e_card_parse}。スキップ。")
                     continue
 
-                # URLが相対パスなら絶対パスに変換
-                if profile_url.startswith("/"):
-                    profile_url = BASE_URL + profile_url
+                processed_profile_urls_this_session.add(profile_url) # Mark as processed for this session
+                logger.info(f"フォロワー「{user_name}」(URL: {profile_url.split('/')[-1]}) のフォロー状態を確認中...")
+                follow_button = find_follow_button_in_list_item(user_card_element)
 
-                # 自分自身や無効なURLはスキップ
-                if f"/users/{current_user_id}" in profile_url or not profile_url.startswith(f"{BASE_URL}/users/"):
-                    logger.debug(f"スキップ: 自分自身または無効なフォロワーURL ({profile_url})")
-                    continue
+                if follow_button:
+                    logger.info(f"ユーザー「{user_name}」はまだフォローしていません。フォローバックを試みます。")
+                    if click_follow_button_and_verify(driver, follow_button, user_name):
+                        total_followed_this_session += 1
+                    time.sleep(delay_between_actions)
+                else:
+                    logger.info(f"ユーザー「{user_name}」は既にフォロー済みか、フォローボタンなし。スキップ。")
+                    time.sleep(0.5)
 
-            except NoSuchElementException:
-                logger.warning(f"ユーザーカード {card_idx+1} の名前またはURL特定に必要な要素が見つかりません。スキップします。")
-                continue
-            except Exception as e_card_parse:
-                logger.warning(f"ユーザーカード {card_idx+1} の情報解析中にエラー: {e_card_parse}。スキップします。")
-                continue
+            if total_followed_this_session >= max_to_follow_back_total:
+                logger.info("セッション中のフォローバック上限に達したため、ページネーションを停止します。")
+                break # Break from page loop
 
-            logger.info(f"フォロワー「{user_name}」(URL: {profile_url.split('/')[-1]}) のフォロー状態を確認中...")
+            # --- Attempt to navigate to the next page ---
+            next_button_found_on_page = False
+            current_url_before_pagination = driver.current_url
+            logger.info("現在のページのフォロワー処理完了。「次へ」ボタンを探します...")
 
-            # user_card_element をコンテキストとしてフォローボタンを探す
-            follow_button = find_follow_button_in_list_item(user_card_element)
+            for selector_idx, selector in enumerate(next_button_selectors):
+                try:
+                    # Use a shorter wait for the next button itself
+                    next_button = WebDriverWait(driver, 3).until(
+                        EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
+                    )
+                    if next_button.is_displayed() and next_button.is_enabled():
+                        logger.info(f"「次へ」ボタンをセレクタ '{selector}' で発見。クリックします。")
+                        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", next_button)
+                        time.sleep(0.5)
+                        next_button.click()
+                        next_button_found_on_page = True
+                        break
+                except TimeoutException:
+                    logger.debug(f"セレクタ '{selector}' で「次へ」ボタン見つからずタイムアウト ({selector_idx+1}/{len(next_button_selectors)}).")
+                except Exception as e_click_next:
+                    logger.warning(f"セレクタ '{selector}' で「次へ」ボタンクリック試行中にエラー: {e_click_next}")
 
-            if follow_button:
-                logger.info(f"ユーザー「{user_name}」はまだフォローしていません。フォローバックを試みます。")
-                if click_follow_button_and_verify(driver, follow_button, user_name):
-                    followed_count += 1
-                # 次のユーザー処理までの待機 (フォロー成否に関わらず)
-                time.sleep(delay_between_actions)
-            else:
-                logger.info(f"ユーザー「{user_name}」は既にフォロー済みか、フォローボタンが見つかりません。スキップします。")
-                time.sleep(0.5) # 短い待機
+            if not next_button_found_on_page:
+                logger.info("クリック可能な「次へ」ボタンが見つかりませんでした。フォロワーリストの最終ページと判断します。")
+                break # Break from page loop
 
-    except TimeoutException:
-        logger.warning("フォロワー一覧の読み込みでタイムアウトしました。")
-    except Exception as e:
-        logger.error(f"フォローバック処理中に予期せぬエラーが発生しました。", exc_info=True)
+            # Wait for page content to update (URL change or new content)
+            try:
+                WebDriverWait(driver, 15).until(
+                    EC.url_changes(current_url_before_pagination)
+                )
+                logger.info(f"次のフォロワーページ ({driver.current_url}) へ遷移成功。")
+                # Optionally, wait for the user list container to be present again on the new page
+                WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, followers_list_container_selector)))
+                time.sleep(delay_after_pagination) # General delay after pagination
+            except TimeoutException:
+                logger.warning("「次へ」クリック後、ページ遷移またはコンテンツ更新のタイムアウト。ページネーションを停止します。")
+                break # Break from page loop
 
-    logger.info(f"<<< フォローバック機能完了。合計 {followed_count} 人をフォローバックしました。")
+            current_page_number += 1
+
+        except TimeoutException:
+            logger.warning(f"{current_page_number} ページ目のフォロワー一覧読み込みでタイムアウト。")
+            break # Break from page loop if main container doesn't load
+        except Exception as e_page_process:
+            logger.error(f"{current_page_number} ページ目の処理中に予期せぬエラー: {e_page_process}", exc_info=True)
+            break # Break from page loop on unexpected error
+
+    logger.info(f"<<< フォローバック機能完了。合計 {total_followed_this_session} 人をフォローバックしました。")
 
 
 # --- mainブロック (テスト用) ---
