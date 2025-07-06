@@ -86,7 +86,7 @@
     *   [x] `config.yaml` から設定値を読み込み、動作を制御 - 実装済み
 *   [ ] エラーハンドリング、ログ出力の強化 - 継続的に改善要
 *   [x] main関数での各機能の呼び出し制御 - 実装済み
-*   [x] README.md の更新 (新機能の追加、config.yaml の説明更新など) - 今回対応済 (コミットハッシュ: `[PLACEHOLDER_FOR_COMMIT_HASH]`)
+*   [x] README.md の更新 (新機能の追加、config.yaml の説明更新など) - 今回対応済 (コミットハッシュ: `[NEEDS_ACTUAL_COMMIT_HASH_AFTER_MERGE]`)
 *   [ ] 動作確認・デバッグ - 継続的に必要
 
 **その他:**
@@ -121,7 +121,7 @@
     *   [x] フォローしたユーザーの最新活動記録を取得しDOMOする処理 (既存処理を参考に拡張)
     *   [x] `config.yaml` から設定値を読み込み、動作を制御
 *   [x] main関数での各機能の呼び出し制御
-*   [x] README.md の更新 (新機能の追加、config.yaml の説明更新、旧スクリプト記述削除) (コミットハッシュ: `[PLACEHOLDER_FOR_COMMIT_HASH]`)
+*   [x] README.md の更新 (新機能の追加、config.yaml の説明更新、旧スクリプト記述削除) (コミットハッシュ: `[NEEDS_ACTUAL_COMMIT_HASH_AFTER_MERGE]`)
 (ここに完了したタスクをチェックボックス付きで記述)
 <!-- - [x] 完了したタスク1 (コミットハッシュ or Issue番号) -->
 
