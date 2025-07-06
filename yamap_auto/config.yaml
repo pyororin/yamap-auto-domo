@@ -58,3 +58,10 @@ search_and_follow_settings:
   domo_latest_activity_after_follow: true # フォロー後に最新の活動記録へDOMOするかのフラグ
   delay_between_user_processing_in_search_sec: 5.0 # 検索結果でのユーザー処理間の待機時間 (秒)
   delay_after_pagination_sec: 3.0      # 検索結果のページネーション後の待機時間 (秒)
+
+# --- 並列処理設定 ---
+parallel_processing_settings:
+  enable_parallel_processing: true       # true: 並列処理を有効にする (全体的なスイッチ)
+  max_workers: 3                         # ThreadPoolExecutor の最大ワーカー数 (推奨: 2-5程度)
+  use_cookie_sharing: true               # true: ログインセッションのCookie共有を試みる
+  delay_between_thread_tasks_sec: 1.0    # 各並列タスクの開始前に挿入する基本的な遅延時間 (秒)

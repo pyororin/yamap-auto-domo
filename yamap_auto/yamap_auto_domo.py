@@ -11,6 +11,7 @@ import os
 import re
 import logging
 import yaml
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # --- Loggerの設定 ---
 LOG_FILE_NAME = "yamap_auto_domo.log" # ログファイル名を変更
@@ -80,12 +81,14 @@ try:
     FOLLOW_BACK_SETTINGS = main_config.get("follow_back_settings", {})
     TIMELINE_DOMO_SETTINGS = main_config.get("timeline_domo_settings", {})
     SEARCH_AND_FOLLOW_SETTINGS = main_config.get("search_and_follow_settings", {})
+    PARALLEL_PROCESSING_SETTINGS = main_config.get("parallel_processing_settings", {})
+
 
     # 新しい設定が空の場合のフォールバックや必須チェックは、各機能の実装時に行うか、
     # ここで基本的な構造だけ確認することもできる。
-    if not all([FOLLOW_BACK_SETTINGS, TIMELINE_DOMO_SETTINGS, SEARCH_AND_FOLLOW_SETTINGS]):
+    if not all([FOLLOW_BACK_SETTINGS, TIMELINE_DOMO_SETTINGS, SEARCH_AND_FOLLOW_SETTINGS, PARALLEL_PROCESSING_SETTINGS]):
         logger.warning(
-            "config.yamlに新しい機能（follow_back_settings, timeline_domo_settings, search_and_follow_settings）の"
+            "config.yamlに新しい機能（follow_back_settings, timeline_domo_settings, search_and_follow_settings, parallel_processing_settings）の"
             "一部または全ての設定セクションが見つからないか空です。デフォルト値で動作しようとしますが、"
             "意図した動作をしない可能性があります。config.yamlを確認してください。"
         )
@@ -168,6 +171,52 @@ def login(driver, email, password):
     except Exception as e:
         logger.error(f"ログイン処理中に予期せぬエラーが発生しました。", exc_info=True) # この部分は共通
         return False
+
+# --- WebDriver関連 ---
+def create_driver_with_cookies(cookies, base_url_to_visit_first="https://yamap.com/"):
+    """
+    指定されたCookieを設定済みの新しいWebDriverインスタンスを作成する。
+    Cookieを設定する前に、一度指定されたドメインにアクセスする必要がある。
+    """
+    logger.debug("新しいWebDriverインスタンスを作成し、Cookieを設定します...")
+    driver = None
+    try:
+        options = get_driver_options() # 既存のオプション取得関数を利用
+        driver = webdriver.Chrome(options=options)
+        implicit_wait = main_config.get("implicit_wait_sec", 7)
+        driver.implicitly_wait(implicit_wait)
+
+        # Cookieを設定するためには、まずそのドメインのページにアクセスする必要がある
+        logger.debug(f"Cookie設定のため、ベースURL ({base_url_to_visit_first}) にアクセスします。")
+        driver.get(base_url_to_visit_first)
+        time.sleep(0.5) # ページ読み込み安定待ち
+
+        for cookie in cookies:
+            # YAMAPのCookieはドメインが '.yamap.com' または 'yamap.com' であることを想定
+            # driver.add_cookie() がドメインの不一致でエラーになる場合があるので、
+            # 必要であればcookie辞書から 'domain' キーを削除するか、適切に設定する。
+            if 'domain' in cookie and not base_url_to_visit_first.endswith(cookie['domain'].lstrip('.')):
+                logger.warning(f"Cookieのドメイン '{cookie['domain']}' とアクセス先ドメインが一致しないため、このCookieのドメイン情報を削除して試みます: {cookie}")
+                del cookie['domain'] # ドメイン情報を削除して試行 (SameSite属性などに影響する可能性あり)
+
+            try:
+                driver.add_cookie(cookie)
+            except Exception as e_cookie_add:
+                logger.error(f"Cookie追加中にエラーが発生しました: {cookie}, エラー: {e_cookie_add}")
+                # 重要なCookieが設定できない場合は、このドライバーは使えないかもしれない
+
+        logger.debug(f"{len(cookies)}個のCookieを新しいWebDriverインスタンスに設定しました。")
+        # 設定後、再度ベースURLにアクセスしてセッションが有効か確認するのも良い
+        driver.get(base_url_to_visit_first) # Cookie設定後のリフレッシュ/再アクセス
+        time.sleep(0.5)
+        # ここでログイン状態になっているかどうかの簡易チェックを入れることも可能 (例: 特定要素の存在確認)
+        return driver
+    except Exception as e:
+        logger.error(f"Cookie付きWebDriver作成中にエラー: {e}", exc_info=True)
+        if driver:
+            driver.quit()
+        return None
+
 
 # --- DOMO関連補助関数 (yamap_auto.pyから移植・調整) ---
 # def domo_activity(driver, activity_url): pass
@@ -568,6 +617,143 @@ def domo_timeline_activities(driver):
         logger.error(f"タイムラインDOMO処理中に予期せぬエラーが発生しました。", exc_info=True)
 
     logger.info(f"<<< タイムラインDOMO機能完了。合計 {domoed_count} 件の活動記録にDOMOしました。")
+
+
+# --- 並列処理用タスク関数 ---
+def domo_activity_task(activity_url, shared_cookies, task_delay_sec):
+    """
+    単一の活動記録URLに対してDOMO処理を行うタスク。
+    ThreadPoolExecutor から呼び出されることを想定。
+    """
+    logger.info(f"[TASK] 活動記録 ({activity_url.split('/')[-1]}) のDOMOタスク開始。")
+    task_driver = None
+    domo_success = False
+    try:
+        time.sleep(task_delay_sec) # 他タスクとの実行タイミングをずらす
+        task_driver = create_driver_with_cookies(shared_cookies, BASE_URL)
+        if not task_driver:
+            logger.error(f"[TASK] DOMOタスク用WebDriver作成失敗 ({activity_url.split('/')[-1]})。")
+            return False
+
+        # ログイン状態の確認 (簡易) - create_driver_with_cookies内でYAMAPトップにアクセスしている前提
+        # 例: マイページへのリンクがあるかなど
+        # if not task_driver.find_elements(By.CSS_SELECTOR, "a[href*='/users/my_user_id']"): # MY_USER_IDを渡す必要がある
+        #     logger.error(f"[TASK] WebDriverがログイン状態ではありません ({activity_url.split('/')[-1]})。Cookie共有失敗の可能性。")
+        #     return False
+
+        domo_success = domo_activity(task_driver, activity_url) # 既存のDOMO関数を呼び出す
+        if domo_success:
+            logger.info(f"[TASK] 活動記録 ({activity_url.split('/')[-1]}) へのDOMO成功。")
+        else:
+            logger.info(f"[TASK] 活動記録 ({activity_url.split('/')[-1]}) へのDOMO失敗または既にDOMO済み。")
+        return domo_success
+    except Exception as e:
+        logger.error(f"[TASK] 活動記録 ({activity_url.split('/')[-1]}) のDOMOタスク中にエラー: {e}", exc_info=True)
+        return False
+    finally:
+        if task_driver:
+            task_driver.quit()
+        logger.debug(f"[TASK] 活動記録 ({activity_url.split('/')[-1]}) のDOMOタスク終了。")
+
+
+# --- タイムラインDOMO機能 (並列処理対応版) ---
+def domo_timeline_activities_parallel(driver, shared_cookies):
+    """
+    タイムライン上の活動記録にDOMOする機能 (並列処理版)。
+    config.yaml の timeline_domo_settings および parallel_processing_settings に従って動作する。
+    """
+    if not TIMELINE_DOMO_SETTINGS.get("enable_timeline_domo", False):
+        logger.info("タイムラインDOMO機能は設定で無効になっています。")
+        return
+    if not PARALLEL_PROCESSING_SETTINGS.get("enable_parallel_processing", False):
+        logger.info("並列処理が無効なため、タイムラインDOMOは逐次実行されます。")
+        return domo_timeline_activities(driver) # 元の逐次関数を呼び出す
+
+    logger.info(">>> [PARALLEL] タイムラインDOMO機能を開始します...")
+    timeline_page_url = TIMELINE_URL
+    logger.info(f"タイムラインページへアクセス: {timeline_page_url}")
+    driver.get(timeline_page_url) # URLリスト収集はメインドライバーで行う
+
+    max_activities_to_domo = TIMELINE_DOMO_SETTINGS.get("max_activities_to_domo_on_timeline", 10)
+    max_workers = PARALLEL_PROCESSING_SETTINGS.get("max_workers", 3)
+    task_delay_base = PARALLEL_PROCESSING_SETTINGS.get("delay_between_thread_tasks_sec", 1.0)
+
+    activity_urls_to_domo = []
+    processed_activity_urls_for_collection = set() # URL収集段階での重複排除用
+
+    try:
+        feed_item_selector = "li.TimelineList__Feed"
+        activity_item_indicator_selector = "div.TimelineActivityItem"
+        activity_link_in_item_selector = "a.TimelineActivityItem__BodyLink[href^='/activities/']"
+
+        logger.info(f"タイムラインのフィードアイテム ({feed_item_selector}) の出現を待ちます...")
+        WebDriverWait(driver, 20).until(
+            EC.presence_of_all_elements_located((By.CSS_SELECTOR, feed_item_selector))
+        )
+        logger.info("タイムラインのフィードアイテム群を発見。URL収集を開始します。")
+        time.sleep(1.5)
+
+        feed_items = driver.find_elements(By.CSS_SELECTOR, feed_item_selector)
+        if not feed_items:
+            logger.info("タイムラインにフィードアイテムが見つかりませんでした。")
+            return
+
+        for idx, feed_item_element in enumerate(feed_items):
+            if len(activity_urls_to_domo) >= max_activities_to_domo:
+                logger.info(f"DOMO対象URLの収集上限 ({max_activities_to_domo}件) に達しました。")
+                break
+            try:
+                # StaleElement回避のため、ループ内で要素を再取得するよりも、
+                # URL収集に特化し、メインドライバーで迅速にURLだけを抜き出す方が安定する可能性。
+                # ただし、ここでは元の構造を踏襲しつつ、URL収集部分を記述。
+                activity_indicator_elements = feed_item_element.find_elements(By.CSS_SELECTOR, activity_item_indicator_selector)
+                if not activity_indicator_elements:
+                    continue
+
+                link_element = activity_indicator_elements[0].find_element(By.CSS_SELECTOR, activity_link_in_item_selector)
+                activity_url = link_element.get_attribute("href")
+
+                if activity_url:
+                    if activity_url.startswith("/"): activity_url = BASE_URL + activity_url
+                    if not activity_url.startswith(f"{BASE_URL}/activities/"): continue
+                    if activity_url in processed_activity_urls_for_collection: continue
+
+                    activity_urls_to_domo.append(activity_url)
+                    processed_activity_urls_for_collection.add(activity_url)
+                    logger.debug(f"DOMO候補URL追加: {activity_url.split('/')[-1]} (収集済み: {len(activity_urls_to_domo)}件)")
+
+            except Exception as e_collect:
+                logger.warning(f"タイムラインからのURL収集中にエラー (アイテム {idx+1}): {e_collect}")
+                # Stale Element対策として、エラー時は一旦ループを抜けて再試行するなども考えられるが、
+                # ここではシンプルにスキップ。
+
+        logger.info(f"収集したDOMO対象URLは {len(activity_urls_to_domo)} 件です。")
+        if not activity_urls_to_domo:
+            logger.info("DOMO対象となる活動記録URLが収集できませんでした。")
+            return
+
+        total_domoed_count_parallel = 0
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = []
+            for i, url in enumerate(activity_urls_to_domo):
+                # 各タスクに少しずつ異なる遅延を与えることで、同時アクセスを緩和
+                delay_for_this_task = task_delay_base + (i * 0.1) # 例: 0.1秒ずつずらす
+                futures.append(executor.submit(domo_activity_task, url, shared_cookies, delay_for_this_task))
+
+            for future in as_completed(futures):
+                try:
+                    if future.result(): # domo_activity_task が True を返せば成功
+                        total_domoed_count_parallel += 1
+                except Exception as e_future:
+                    logger.error(f"並列DOMOタスクの実行結果取得中にエラー: {e_future}", exc_info=True)
+
+        logger.info(f"<<< [PARALLEL] タイムラインDOMO機能完了。合計 {total_domoed_count_parallel} 件の活動記録にDOMOしました (試行対象: {len(activity_urls_to_domo)}件)。")
+
+    except TimeoutException:
+        logger.warning("[PARALLEL] タイムライン活動記録のURL収集でタイムアウトしました。")
+    except Exception as e:
+        logger.error(f"[PARALLEL] タイムラインDOMO処理 (並列) 中に予期せぬエラーが発生しました。", exc_info=True)
+
 
 # --- ユーザープロフィール操作関連の補助関数 (yamap_auto.pyから移植・調整) ---
 def get_latest_activity_url(driver, user_profile_url):
@@ -1052,7 +1238,7 @@ def search_follow_and_domo_users(driver, current_user_id):
         # current_url_to_load は1ページ目のみ使用し、それ以降はページネーションに任せる
         if page_num == 1 and driver.current_url != start_url :
              logger.info(f"{page_num}ページ目の活動記録検索結果 ({start_url}) にアクセスします。")
-             driver.get(current_url_to_load)
+             driver.get(start_url) # current_url_to_load を start_url に修正
 
         try:
             WebDriverWait(driver, 15).until(
@@ -1376,24 +1562,45 @@ if __name__ == "__main__":
 
         if login(driver, YAMAP_EMAIL, YAMAP_PASSWORD):
             logger.info(f"ログイン成功。現在のURL: {driver.current_url}")
+            shared_cookies = None
+            if PARALLEL_PROCESSING_SETTINGS.get("enable_parallel_processing", False) and \
+               PARALLEL_PROCESSING_SETTINGS.get("use_cookie_sharing", True):
+                try:
+                    shared_cookies = driver.get_cookies()
+                    logger.info(f"ログイン後のCookieを {len(shared_cookies)} 個取得しました。並列処理で利用します。")
+                    # Cookieの内容をデバッグ表示 (注意: セッションIDなどが含まれるため本番では控える)
+                    # for cookie in shared_cookies:
+                    #     logger.debug(f"Cookie: {cookie.get('name')} = {cookie.get('value')}, Domain: {cookie.get('domain')}")
+                except Exception as e_cookie_get:
+                    logger.error(f"ログイン後のCookie取得に失敗しました: {e_cookie_get}", exc_info=True)
+                    shared_cookies = None # 失敗したらNoneに戻す
 
             # --- 各機能の呼び出し ---
             # MY_USER_ID はログイン処理前に設定ファイルから読み込まれている想定
             if MY_USER_ID:
                 # フォローバック機能
                 if FOLLOW_BACK_SETTINGS.get("enable_follow_back", False):
+                    # TODO: フォローバック機能の並列化対応 (domo_timeline_activities_parallel と同様の構造で)
+                    logger.info("現時点ではフォローバック機能は並列化未対応のため、逐次実行します。")
                     follow_back_users_new(driver, MY_USER_ID)
                 else:
                     logger.info("フォローバック機能は設定で無効です。")
 
                 # タイムラインDOMO機能
                 if TIMELINE_DOMO_SETTINGS.get("enable_timeline_domo", False):
-                    domo_timeline_activities(driver)
+                    if PARALLEL_PROCESSING_SETTINGS.get("enable_parallel_processing", False) and shared_cookies:
+                        domo_timeline_activities_parallel(driver, shared_cookies) # メインドライバーとCookieを渡す
+                    else:
+                        if PARALLEL_PROCESSING_SETTINGS.get("enable_parallel_processing", False) and not shared_cookies:
+                            logger.warning("並列処理が有効ですがCookie共有ができなかったため、タイムラインDOMOは逐次実行されます。")
+                        domo_timeline_activities(driver) # 従来の逐次実行
                 else:
                     logger.info("タイムラインDOMO機能は設定で無効です。")
 
                 # 検索結果からのフォロー＆DOMO機能
                 if SEARCH_AND_FOLLOW_SETTINGS.get("enable_search_and_follow", False):
+                    # TODO: 検索からのフォロー＆DOMO機能の並列化対応
+                    logger.info("現時点では検索からのフォロー＆DOMO機能は並列化未対応のため、逐次実行します。")
                     search_follow_and_domo_users(driver, MY_USER_ID)
                 else:
                     logger.info("検索結果からのフォロー＆DOMO機能は設定で無効です。")
