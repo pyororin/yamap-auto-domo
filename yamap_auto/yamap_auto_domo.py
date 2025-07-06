@@ -1367,15 +1367,15 @@ def search_follow_and_domo_users(driver, current_user_id):
                 current_ratio = (follows / followers) if followers > 0 else float('inf') # ゼロ除算回避
                 logger.info(f"ユーザー「{user_name_for_log}」: F中={follows}, Fワー={followers}, Ratio={current_ratio:.2f} (閾値: >= {ratio_threshold})")
 
-                # 条件: フォロー数がフォロワー数より多く、かつ、比率が閾値以上
-                if not (follows > followers and current_ratio >= ratio_threshold):
-                    logger.info(f"「F中 > Fワー」かつ「Ratio >= {ratio_threshold}」の条件を満たしません。スキップ。")
+                # 条件: 比率が閾値以上
+                if not (current_ratio >= ratio_threshold):
+                    logger.info(f"Ratio ({current_ratio:.2f}) が閾値 ({ratio_threshold}) 未満です。スキップ。")
                     driver.get(search_page_url_before_profile_visit)
                     time.sleep(1) # 元のページに戻った後の安定待機（これは後続のWebDriverWaitで代替可能か別途検討）
                     continue
 
                 # 3. 条件を満たせばフォロー実行
-                logger.info(f"フォロー条件を満たしました。ユーザー「{user_name_for_log}」をフォローします。")
+                logger.info(f"フォロー条件（Ratio >= {ratio_threshold}）を満たしました。ユーザー「{user_name_for_log}」をフォローします。")
                 if click_follow_button_and_verify(driver, follow_button_on_profile, user_name_for_log):
                     total_followed_count += 1
 
