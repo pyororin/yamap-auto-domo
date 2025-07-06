@@ -418,7 +418,9 @@ def click_follow_button_and_verify(driver, follow_button_element, user_name_for_
 
         # ボタンが画面内に表示されるようにスクロールし、クリック
         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", follow_button_element)
-        time.sleep(0.3) # スクロール後の描画安定待ち (以前は0.5秒)
+        time.sleep(0.1) # スクロール後の短い描画安定待ち (0.3秒から短縮)
+        # クリック前にボタンが有効であることを最終確認 (オプション)
+        # WebDriverWait(driver, 2).until(EC.element_to_be_clickable(follow_button_element))
         follow_button_element.click()
 
         # --- 状態変化の確認 ---
@@ -549,7 +551,7 @@ def domo_activity(driver, activity_url):
             logger.info(f"DOMOを実行します: {activity_id_for_log} (使用ボタンセレクタ: '{current_selector_used}')")
             # ボタンが画面内に表示されるようにスクロールし、クリック
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", domo_button)
-            time.sleep(0.3) # スクロール安定待ち (以前は0.5秒)
+            time.sleep(0.1) # スクロール後の短い描画安定待ち (0.3秒から短縮)
             domo_button.click()
 
             # DOMO後の状態変化を待つ (aria-labelが "Domo済み" になるか、アイコンがis-activeになる)
@@ -688,9 +690,15 @@ def domo_timeline_activities(driver):
                 if driver.current_url != current_main_page_url:
                     logger.debug(f"DOMO処理後、元のタイムラインページ ({current_main_page_url}) に戻ります。")
                     driver.get(current_main_page_url)
-                    # 戻った後、フィードアイテムが再認識されるように少し待つ
-                    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, feed_item_selector)))
-                    time.sleep(0.5) # 追加の安定待ち (以前は1秒)
+                    try:
+                        # 戻った後、フィードアイテムが再認識されるように待つ
+                        WebDriverWait(driver, 10).until(
+                            EC.presence_of_element_located((By.CSS_SELECTOR, feed_item_selector))
+                        )
+                        time.sleep(0.2) # 短い追加の安定待ち (0.5秒から短縮)
+                    except TimeoutException:
+                        logger.warning(f"タイムラインページ ({current_main_page_url}) に戻った後、フィードアイテムの再表示タイムアウト。")
+                        # 処理は続行を試みる
 
             except NoSuchElementException:
                 logger.warning(f"フィードアイテム {idx+1}/{initial_feed_item_count} 内で活動記録リンクが見つかりません。スキップします。")
@@ -1259,16 +1267,22 @@ def search_follow_and_domo_users(driver, current_user_id):
 
             # ページ遷移とコンテンツの読み込みを待つ
             try:
-                WebDriverWait(driver, 15).until(
-                    EC.url_changes(current_page_url_before_action) # URLが変わることを期待
+                # URLが変わり、かつ新しいページで活動記録カードが表示されるまで待つ
+                # タイムアウトは合計で最大20秒程度を見込む (URL変化10秒 + カード表示10秒など)
+                WebDriverWait(driver, 10).until(
+                    EC.url_changes(current_page_url_before_action)
                 )
                 logger.info(f"{page_num}ページ目へ遷移しました。新しいURL: {driver.current_url}")
-                # 新しいページの主要コンテンツ（活動記録カード）が表示されるまで待つ
-                WebDriverWait(driver, 15).until(
+
+                WebDriverWait(driver, 10).until(
                     EC.presence_of_element_located((By.CSS_SELECTOR, activity_card_selector))
                 )
                 logger.info(f"{page_num}ページ目の活動記録カードの読み込みを確認。")
-                time.sleep(delay_pagination) # 設定された追加の待機時間
+
+                # 設定ファイルから読み込んだ遅延、またはデフォルト値で待機
+                actual_delay_pagination = SEARCH_AND_FOLLOW_SETTINGS.get("delay_after_pagination_sec", 3.0)
+                time.sleep(actual_delay_pagination)
+
             except TimeoutException:
                 logger.warning(f"{page_num}ページ目への遷移後、URL変化または活動記録カードの読み込みタイムアウト。処理を終了します。")
                 break # ページネーションループを終了
@@ -1287,7 +1301,7 @@ def search_follow_and_domo_users(driver, current_user_id):
             WebDriverWait(driver, 15).until(
                 EC.presence_of_all_elements_located((By.CSS_SELECTOR, activity_card_selector))
             )
-            time.sleep(0.5) # 描画安定待ち (2秒から0.5秒に短縮)
+            # time.sleep(0.5) # 描画安定待ち (WebDriverWaitで十分なはず)
         except TimeoutException:
             logger.warning(f"活動記録検索結果ページ ({current_url_to_load}) で活動記録カードの読み込みタイムアウト。このページの処理をスキップします。")
             continue
@@ -1398,13 +1412,13 @@ def search_follow_and_domo_users(driver, current_user_id):
                 if follows == -1 or followers == -1:
                     logger.warning(f"ユーザー「{user_name_for_log}」のフォロー数/フォロワー数が取得できませんでした。スキップ。")
                     driver.get(search_page_url_before_profile_visit)
-                    time.sleep(1)
+                    # time.sleep(1) # WebDriverWaitに任せる
                     continue
 
                 if followers < min_followers:
                     logger.info(f"ユーザー「{user_name_for_log}」のフォロワー数 ({followers}) が閾値 ({min_followers}) 未満。スキップ。")
                     driver.get(search_page_url_before_profile_visit)
-                    time.sleep(1)
+                    # time.sleep(1) # WebDriverWaitに任せる
                     continue
 
                 current_ratio = (follows / followers) if followers > 0 else float('inf') # ゼロ除算回避
@@ -1414,7 +1428,7 @@ def search_follow_and_domo_users(driver, current_user_id):
                 if not (current_ratio >= ratio_threshold):
                     logger.info(f"Ratio ({current_ratio:.2f}) が閾値 ({ratio_threshold}) 未満です。スキップ。")
                     driver.get(search_page_url_before_profile_visit)
-                    time.sleep(1) # 元のページに戻った後の安定待機（これは後続のWebDriverWaitで代替可能か別途検討）
+                    # time.sleep(1) # WebDriverWaitに任せる
                     continue
 
                 # 3. 条件を満たせばフォロー実行
@@ -1439,8 +1453,14 @@ def search_follow_and_domo_users(driver, current_user_id):
                 # 元の検索結果ページに戻る
                 logger.debug(f"ユーザー処理後、検索結果ページ ({search_page_url_before_profile_visit}) に戻ります。")
                 driver.get(search_page_url_before_profile_visit)
-                WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, activity_card_selector))) # 戻り確認
-                time.sleep(delay_user_processing) # 次のユーザー処理までの待機
+                try:
+                    WebDriverWait(driver, 10).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, activity_card_selector))
+                    ) # 戻り確認とカード表示待ち
+                except TimeoutException:
+                    logger.warning(f"検索結果ページ ({search_page_url_before_profile_visit}) に戻った後、活動記録カードの再表示タイムアウト。")
+                    # この場合でも、次のユーザー処理に進む前に設定された遅延は実行する
+                time.sleep(delay_user_processing) # 次のユーザー処理までの意図的な待機
 
             except NoSuchElementException:
                 logger.warning(f"活動記録カード {card_idx+1} からユーザー情報取得に必要な要素が見つかりません。スキップ。")
@@ -1627,11 +1647,15 @@ def follow_back_users_new(driver, current_user_id):
                     EC.url_changes(current_url_before_pagination)
                 )
                 logger.info(f"次のフォロワーページ ({driver.current_url}) へ遷移成功。")
-                # Optionally, wait for the user list container to be present again on the new page
-                WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, followers_list_container_selector)))
-                time.sleep(delay_after_pagination) # General delay after pagination
+                # 新しいページでフォロワーリストコンテナが表示されるまで待つ
+                WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, followers_list_container_selector))
+                )
+                # 設定された遅延時間で待機
+                actual_delay_pagination_fb = main_config.get("action_delays", {}).get("delay_after_pagination_sec", 3.0)
+                time.sleep(actual_delay_pagination_fb)
             except TimeoutException:
-                logger.warning("「次へ」クリック後、ページ遷移またはコンテンツ更新のタイムアウト。ページネーションを停止します。")
+                logger.warning("「次へ」クリック後、ページ遷移またはフォロワーリストの再表示タイムアウト。ページネーションを停止します。")
                 break # Break from page loop
 
             current_page_number += 1
