@@ -6,9 +6,6 @@
 
 ## 🛠 仕掛中タスク
 
-*   [x] `yamap_auto_domo.py` のリファクタリング - 機能分割 (ログイン関連処理を `driver_utils.py` に分割完了) `[PREVIOUS_COMMIT_HASH_PLACEHOLDER]`
-*   [x] `yamap_auto_domo.py` のリファクタリング - 機能分割 (ユーザープロフィール関連処理を `user_profile_utils.py` に分割完了: `get_latest_activity_url`, `get_user_follow_counts`, `find_follow_button_on_profile_page`) `[PREVIOUS_COMMIT_HASH_PLACEHOLDER]`
-*   [ ] `yamap_auto_domo.py` のリファクタリング - 機能分割 (継続: DOMO関連処理を `domo_utils.py` に、リストアイテムからのフォロー関連処理を `follow_utils.py` に分割) `[THIS_COMMIT_HASH]`
 *   [ ] エラーハンドリング、ログ出力の強化 - 継続的に改善要
 *   [ ] 動作確認・デバッグ - 継続的に必要
 
@@ -131,6 +128,9 @@
 *   [x] フォロー条件の変更（レシオのみの判定） (コミットハッシュ: `[THIS_COMMIT_HASH]`)
 *   [x] スクリプトとconfigへのコメント付与するリファクタリング (コミットハッシュ: `[THIS_COMMIT_HASH]`)
 *   [x] 検索＆フォロー機能の待機時間見直しによる効率化 (コミットハッシュ: `[THIS_COMMIT_HASH]`)
+*   [x] `yamap_auto_domo.py` のリファクタリング - 機能分割 (ログイン関連処理を `driver_utils.py` に分割完了) `[PREVIOUS_COMMIT_HASH_PLACEHOLDER]`
+*   [x] `yamap_auto_domo.py` のリファクタリング - 機能分割 (ユーザープロフィール関連処理を `user_profile_utils.py` に分割完了: `get_latest_activity_url`, `get_user_follow_counts`, `find_follow_button_on_profile_page`) `[PREVIOUS_COMMIT_HASH_PLACEHOLDER]`
+*   [x] `yamap_auto_domo.py` のリファクタリング - 機能分割 (DOMO関連処理を `domo_utils.py` に、リストアイテムからのフォロー関連処理を `follow_utils.py` に分割) `[THIS_COMMIT_HASH]`
 <!-- - [x] 完了したタスク1 (コミットハッシュ or Issue番号) -->
 
 ---
