@@ -1,68 +1,156 @@
-# --- 全体的な設定 ---
+# === 全体的な設定 ===
+# スクリプト全体の基本的な動作モードや待機時間を設定します。
+
 headless_mode: false
+# ブラウザをヘッドレスモードで実行するかどうか (true: ヘッドレス, false: 通常モード)
+# ヘッドレスモードではブラウザウィンドウは表示されませんが、バックグラウンドで動作します。デバッグ時は false が推奨されます。
+
 implicit_wait_sec: 7
+# Selenium WebDriverが要素を見つけるまでの暗黙的な最大待機時間 (秒単位)
+# ページ要素の読み込みが遅い場合に、この時間まで待機します。
 
-# --- アクション共通の遅延設定 ---
+# === アクション共通の遅延設定 ===
+# DOMOやフォローなど、特定のアクション実行後や要素待機時の共通の遅延時間を設定します。
+# これらはサーバーへの負荷軽減や、UIの反応待ちを目的としています。
+
 action_delays:
-  after_domo_sec: 1.5                   # DOMO操作後の共通待機時間 (秒)
-  wait_for_activity_link_sec: 7         # プロフィールページ等で活動日記リンクが表示されるまでの待機時間 (秒)
-  after_follow_action_sec: 2.0          # フォロー操作後の共通待機時間 (秒)
+  after_domo_sec: 1.5
+  # DOMO操作を実行した後に挿入される共通の待機時間 (秒単位)
+  # DOMO後のUI反映や次のアクションへの移行をスムーズにするために使用されます。
 
-# --- YAMAP認証情報 (email, password, user_id) は yamap_auto/credentials.yaml ファイルに記述してください。
+  wait_for_activity_link_sec: 7
+  # ユーザープロフィールページなどで、最新の活動日記へのリンクが表示されるまでの最大待機時間 (秒単位)
+  # ページコンテンツの動的な読み込みに対応するために使用されます。
 
-# --- 旧 domo_settings で定義されていたが、現在は yamap_auto_domo.py では直接使用されていない項目 ---
-# 必要に応じて、これらの設定を参考に新しい機能設定セクションに値を移すか、
-# 独自にこれらの設定値を参照するカスタムロジックを yamap_auto_domo.py に実装してください。
+  after_follow_action_sec: 2.0
+  # フォロー/フォローバック操作を実行した後に挿入される共通の待機時間 (秒単位)
+  # フォロー状態のUI反映や、連続したフォロー操作間のインターバルとして機能します。
+
+# === YAMAP認証情報 ===
+# YAMAPへのログインに使用するメールアドレス、パスワード、および自身のユーザーIDは、
+# このファイル (config.yaml) ではなく、同じディレクトリにある `credentials.yaml` ファイルに記述してください。
+# `credentials.yaml` の例:
+# email: "your_email@example.com"
+# password: "your_password"
+# user_id: "1234567"  # 必ずシングルクォートまたはダブルクォートで囲ってください (数値の場合も)
+
+# === 旧スクリプト (yamap_auto.py) の設定項目 (参考情報) ===
+# 以下は、以前の `yamap_auto.py` スクリプトで使用されていた設定項目です。
+# 現在の `yamap_auto_domo.py` では直接参照されていませんが、機能の意図を理解する上での参考情報として残しています。
+# 必要に応じて、これらの設定を参考に新しい機能の設定セクションに値を移すか、
+# `yamap_auto_domo.py` にこれらの設定値を参照するカスタムロジックを実装することも可能です。
+
+# domo_settings: (旧設定)
+#   domo_users_who_domoed_my_posts: true # (旧) 自身の投稿にDOMOしてくれたユーザーの最新投稿へDOMOする機能
+#   max_my_activities_to_check_domo: 5   # (旧) 上記でDOMOユーザーを確認する自身の活動日記の最大数
+#   delay_between_domo_check_sec: 3    # (旧) 上記で各活動日記のDOMOリスト確認後の待機時間
 #
-# domo_users_who_domoed_my_posts: true # true: 自身の投稿にDOMOしてくれたユーザーの最新投稿へDOMOする機能を有効にする
-# max_my_activities_to_check_domo: 5   #   上記機能でDOMOユーザーを確認する自身の活動日記の最大数 (最新の日記から順に)
-# delay_between_domo_check_sec: 3    #   上記機能で自身の各活動日記のDOMOリスト確認後に次の日記へ移るまでの待機時間 (秒)
-#
-# domo_recommended_posts: true         # true: トップページの「おすすめ」投稿へDOMOする機能を有効にする
-# max_recommended_posts_to_domo: 5     #   上記機能でDOMOするおすすめ投稿の最大数 (トップページ表示順)
-# delay_between_recommended_domo_sec: 3 #   上記機能でおすすめ投稿をDOMOした後に次の投稿へ移るまでの待機時間 (秒)
+#   domo_recommended_posts: true         # (旧) トップページの「おすすめ」投稿へDOMOする機能
+#   max_recommended_posts_to_domo: 5     # (旧) 上記でDOMOするおすすめ投稿の最大数
+#   delay_between_recommended_domo_sec: 3 # (旧) 上記でおすすめ投稿DOMO後の待機時間
 
-# --- 旧 follow_settings で定義されていたが、現在は yamap_auto_domo.py では直接使用されていない項目 ---
+# follow_settings: (旧設定)
+#   follow_users_who_followed_me: true   # (旧) 自身をフォローしてくれた未フォローバックユーザーをフォローする機能
+#   max_followers_to_follow_back: 10     # (旧) 上記で一度にフォローバックする最大ユーザー数
+#   delay_between_follow_back_sec: 5   # (旧) 上記で各ユーザーフォローバック後の待機時間 (現在は action_delays.after_follow_action_sec で代替)
 #
-# follow_users_who_followed_me: true   # true: 自身をフォローしてくれた未フォローバックのユーザーをフォローする機能を有効にする
-# max_followers_to_follow_back: 10     #   上記機能で一度にフォローバックする最大ユーザー数 (フォロワーリストの上から順)
-# delay_between_follow_back_sec: 5   #   上記機能で各ユーザーをフォローバックした後に次のユーザーへ移るまでの待機時間 (秒) -> action_delays.after_follow_action_sec で代替
-#
-# follow_users_who_domoed_and_high_follow_ratio: true # true: DOMOをくれ、特定のRatio条件を満たすユーザーをフォローする機能を有効にする
-# max_domo_activities_for_ratio_follow: 5 #   上記機能でDOMOユーザーを探すためにチェックする自身の活動日記の最大数 (最新から)
-# min_followers_for_ratio_follow: 30      #   上記機能のRatioチェック対象とする相手の最低フォロワー数 (これ未満のユーザーはRatioチェック自体をスキップ)
-# follow_to_follower_ratio_threshold: 0.7 #   上記機能でフォローするための「相手のフォロー中ユーザー数 / 相手のフォロワー数」比率の上限
-# delay_between_ratio_follow_sec: 5     #   上記機能でユーザーを処理 (フォローまたはスキップ) した後に次のユーザーへ移るまでの待機時間 (秒)
+#   follow_users_who_domoed_and_high_follow_ratio: true # (旧) DOMOをくれ、特定のRatio条件を満たすユーザーをフォローする機能
+#   max_domo_activities_for_ratio_follow: 5 # (旧) 上記でDOMOユーザーを探すためにチェックする自身の活動日記の最大数
+#   min_followers_for_ratio_follow: 30      # (旧) 上記のRatioチェック対象とする相手の最低フォロワー数
+#   follow_to_follower_ratio_threshold: 0.7 # (旧) 上記でフォローするための「相手のフォロー中/フォロワー数」比率上限
+#   delay_between_ratio_follow_sec: 5     # (旧) 上記でユーザー処理後の待機時間
 
 
-# --- 新しい yamap_auto_domo.py 用の設定 ---
-# これらの設定は主に yamap_auto_domo.py スクリプトから参照されます。
+# === 新しい `yamap_auto_domo.py` 用の機能別設定 ===
+# これらの設定は、主に `yamap_auto_domo.py` スクリプトから参照され、各自動化機能の動作を制御します。
 
 follow_back_settings:
-  enable_follow_back: true             # true: フォローバック機能の有効/無効
-  max_users_to_follow_back: 15         # 一度にフォローバックする最大ユーザー数 (全ページを通じての合計)
-  max_pages_for_follow_back: 5         # フォローバック確認のためにチェックするフォロワーリストの最大ページ数 (例: 5ページまで)
-  # delay_after_follow_back_action_sec は action_delays.after_follow_action_sec を参照します
+  # フォローバック機能に関する設定 (自分をフォローしてくれたユーザーを自動でフォローバックする)
+  enable_follow_back: true
+  # true: フォローバック機能を有効にします。
+  # false: フォローバック機能を無効にします。
+
+  max_users_to_follow_back: 15
+  # 一度のスクリプト実行でフォローバックする最大のユーザー数。
+  # フォロワーリストの複数ページをチェックする場合、この合計数に達すると処理を停止します。
+
+  max_pages_for_follow_back: 5
+  # フォローバック対象者を探すために、フォロワーリストの何ページ目まで確認するかを指定します。
+  # 例えば `5` を指定すると、最新のフォロワーから最大5ページ分遡って確認します。
+
+  # フォローバック実行後の待機時間は `action_delays.after_follow_action_sec` を参照します。
 
 timeline_domo_settings:
-  enable_timeline_domo: true           # true: タイムラインDOMO機能の有効/無効
-  max_activities_to_domo_on_timeline: 10 # タイムラインでDOMOする最大の活動記録数 (新しいものから順に)
-  # delay_between_timeline_domo_sec は action_delays.after_domo_sec を参照します
+  # タイムラインDOMO機能に関する設定 (YAMAPのタイムライン上の活動記録に自動でDOMOする)
+  enable_timeline_domo: true
+  # true: タイムラインDOMO機能を有効にします。
+  # false: タイムラインDOMO機能を無効にします。
+
+  max_activities_to_domo_on_timeline: 10
+  # タイムライン上でDOMOする活動記録の最大数。
+  # タイムラインの新しい投稿から順に、この数に達するまでDOMOを試みます。
+
+  # タイムラインでの各DOMO実行後の待機時間は `action_delays.after_domo_sec` を参照します。
 
 search_and_follow_settings:
-  enable_search_and_follow: true       # true: 検索からのフォロー＆DOMO機能の有効/無効
-  search_activities_url: "https://yamap.com/search/activities" # 活動記録検索ページのURL
-  max_pages_to_process_search: 3       # 検索結果を処理する最大ページ数
-  max_users_to_process_per_page: 5     # 検索結果1ページあたりで処理する最大ユーザー数（活動記録数）
-  min_followers_for_search_follow: 20  # フォロー対象とするユーザーの最低フォロワー数
-  follow_ratio_threshold_for_search: 0.9 # フォロー対象とするユーザーの「フォロー数/フォロワー数」の閾値 (この値以上のユーザーをフォロー)
-  domo_latest_activity_after_follow: true # フォロー後に最新の活動記録へDOMOするかのフラグ
-  delay_between_user_processing_in_search_sec: 5.0 # 検索結果でのユーザー処理間の待機時間 (秒)
-  delay_after_pagination_sec: 3.0      # 検索結果のページネーション後の待機時間 (秒)
+  # 活動記録検索ページからのフォロー＆DOMO機能に関する設定
+  enable_search_and_follow: true
+  # true: 検索結果からのフォロー＆DOMO機能を有効にします。
+  # false: 機能を無効にします。
 
-# --- 並列処理設定 ---
+  search_activities_url: "https://yamap.com/search/activities"
+  # 処理を開始する活動記録の検索結果ページのURL。
+  # 通常はデフォルトのままで問題ありませんが、特定の検索条件で開始したい場合にカスタマイズ可能です。
+
+  max_pages_to_process_search: 3
+  # 検索結果の何ページ目まで処理を続けるかを指定します。
+  # 例えば `3` を指定すると、最初のページから3ページ目まで処理します。
+
+  max_users_to_process_per_page: 5
+  # 検索結果の各ページで、最大何人のユーザー（活動記録の投稿者）を処理対象とするかを指定します。
+
+  min_followers_for_search_follow: 20
+  # フォローを検討するユーザーの最低フォロワー数。
+  # この数未満のフォロワーしか持たないユーザーは、フォローの対象外となります。
+
+  follow_ratio_threshold_for_search: 0.9
+  # フォローを検討する際の「相手のフォロー中ユーザー数 / 相手のフォロワー数」の比率の閾値。
+  # この比率が設定値以上のユーザー（つまり、フォロワー数に対してフォロー中の数が多いユーザー）をフォロー対象とします。
+  # 例えば `0.9` の場合、フォロー数がフォロワー数の90%以上のユーザーが対象です。
+
+  domo_latest_activity_after_follow: true
+  # true: 上記の条件でユーザーをフォローした後、そのユーザーの最新の活動記録にDOMOします。
+  # false: フォローのみ行い、DOMOはしません。
+
+  delay_between_user_processing_in_search_sec: 5.0
+  # 検索結果ページで一人のユーザーの処理（フォロー/DOMOまたはスキップ）が完了した後、
+  # 次のユーザーの処理を開始するまでの待機時間 (秒単位)。
+
+  delay_after_pagination_sec: 3.0
+  # 検索結果のページネーション（「次へ」ボタンクリックなど）を実行した後の待機時間 (秒単位)。
+  # 新しいページのコンテンツが完全に読み込まれるのを待つために使用します。
+
+# === 並列処理設定 ===
+# スクリプト内の一部の処理（現在はタイムラインDOMO）を並列実行するための設定です。
+# 注意: 並列処理はアカウントの安全性やYAMAPの利用規約に影響を与える可能性があるため、慎重に使用してください。
+#       過度な並列化は短時間に多くのリクエストを送信することになり、一時的なアクセス制限のリスクを高める可能性があります。
+
 parallel_processing_settings:
-  enable_parallel_processing: true       # true: 並列処理を有効にする (全体的なスイッチ)
-  max_workers: 3                         # ThreadPoolExecutor の最大ワーカー数 (推奨: 2-5程度)
-  use_cookie_sharing: true               # true: ログインセッションのCookie共有を試みる
-  delay_between_thread_tasks_sec: 1.0    # 各並列タスクの開始前に挿入する基本的な遅延時間 (秒)
+  enable_parallel_processing: true
+  # true: 並列処理を有効にします (現在はタイムラインDOMO機能が対象)。
+  # false: 並列処理を無効にし、全ての処理を逐次実行します。
+
+  max_workers: 3
+  # 並列処理に使用する最大ワーカー（スレッド）数。
+  # PCのスペックやネットワーク環境に応じて調整してください。推奨値は 2〜5 程度です。
+  # 大きすぎる値を設定すると、かえってパフォーマンスが低下したり、アカウントへの負荷が高まる可能性があります。
+
+  use_cookie_sharing: true
+  # true: ログイン時に取得したセッションCookieを、並列実行される各ワーカー（ブラウザインスタンス）で共有しようと試みます。
+  #       これにより、各ワーカーが個別にログイン処理を行う必要がなくなります。
+  # false: Cookie共有を行いません (各ワーカーが独立して動作しようとしますが、ログインが必要な操作は失敗する可能性があります)。
+
+  delay_between_thread_tasks_sec: 1.0
+  # 各並列タスク（例: 個別のDOMO処理）を開始する前に挿入される基本的な遅延時間 (秒単位)。
+  # これに加えて、スクリプト内でタスクごとに僅かな追加遅延が加えられることがあります。
+  # 同時アクセスを緩和し、サーバー負荷を軽減することを目的としています。
