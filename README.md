@@ -80,7 +80,8 @@ Selenium WebDriverを使用してブラウザを操作し、設定ファイル (
         *   その他、詳細は `config.yaml` を参照。
     *   `follow_back_settings`: フォローバック機能に関する設定。
         *   `enable_follow_back`: 機能の有効/無効 (true/false)
-        *   `max_users_to_follow_back`: 一度にフォローバックする最大ユーザー数
+        *   `max_users_to_follow_back`: 一度にフォローバックする最大ユーザー数 (全ページを通じての合計)
+        *   `max_pages_for_follow_back`: フォローバック確認のためにチェックするフォロワーリストの最大ページ数
     *   `timeline_domo_settings`: タイムライン上の活動記録へのDOMO機能に関する設定。
         *   `enable_timeline_domo`: 機能の有効/無効 (true/false)
         *   `max_activities_to_domo_on_timeline`: DOMOする最大の活動記録数
