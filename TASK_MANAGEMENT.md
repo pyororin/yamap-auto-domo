@@ -6,7 +6,8 @@
 
 ## 🛠 仕掛中タスク
 
-*   [x] `yamap_auto_domo.py` のリファクタリング - 機能分割 (ログイン関連処理を `driver_utils.py` に分割完了) `[THIS_COMMIT_HASH]`
+*   [x] `yamap_auto_domo.py` のリファクタリング - 機能分割 (ログイン関連処理を `driver_utils.py` に分割完了) `[PREVIOUS_COMMIT_HASH_PLACEHOLDER]`
+*   [x] `yamap_auto_domo.py` のリファクタリング - 機能分割 (ユーザープロフィール関連処理を `user_profile_utils.py` に分割完了: `get_latest_activity_url`, `get_user_follow_counts`, `find_follow_button_on_profile_page`) `[THIS_COMMIT_HASH]`
 *   [ ] `yamap_auto_domo.py` のリファクタリング - 機能分割 (継続)
 *   [ ] エラーハンドリング、ログ出力の強化 - 継続的に改善要
 *   [ ] 動作確認・デバッグ - 継続的に必要
@@ -133,4 +134,13 @@
 
 ## ❗手動確認依頼
 
+*   **ユーザープロフィール関連関数のリファクタリング影響確認 (`user_profile_utils.py` 分割関連)** `[THIS_COMMIT_HASH]`
+    *   `yamap_auto_domo.py` を実行し、特に「検索からのフォロー＆DOMO機能 (`search_follow_and_domo_users`)」が正常に動作することを確認してください。
+        *   ユーザーのプロフィールページへのアクセス
+        *   フォロー数・フォロワー数の取得
+        *   フォローボタンの検出
+        *   最新活動日記URLの取得
+        *   上記に基づくフォローおよびDOMOの実行
+    *   スクリプト実行時にエラーログが出力されていないか確認してください。
+    *   意図しない挙動（例：対象ユーザーの誤判定、操作の失敗など）がないか確認してください。
 (ここに手動確認が必要な事項を記述)
