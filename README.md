@@ -75,6 +75,7 @@ Selenium WebDriverを使用してブラウザを操作し、設定ファイル (
     *   `implicit_wait_sec`: 要素が見つかるまでの暗黙的な待機時間 (秒) - トップレベル設定
     *   `action_delays`: DOMOやフォロー後の待機時間など、アクション間の遅延に関する設定。
         *   `after_domo_sec`: DOMO操作後の共通待機時間 (秒)
+        *   `wait_for_activity_link_sec`: プロフィールページ等で活動日記リンクが表示されるまでの待機時間 (秒)
         *   `after_follow_action_sec`: フォロー操作後の共通待機時間 (秒)
         *   その他、詳細は `config.yaml` を参照。
     *   `follow_back_settings`: フォローバック機能に関する設定。
@@ -91,13 +92,18 @@ Selenium WebDriverを使用してブラウザを操作し、設定ファイル (
         *   `min_followers_for_search_follow`: フォロー対象とするユーザーの最低フォロワー数
         *   `follow_ratio_threshold_for_search`: フォロー対象とするユーザーのフォロー数/フォロワー数比率の閾値
         *   `domo_latest_activity_after_follow`: フォロー後にそのユーザーの最新活動記録へDOMOするかのフラグ (true/false)
+        *   `delay_between_user_processing_in_search_sec`: 検索結果でのユーザー処理間の待機時間 (秒)
+        *   `delay_after_pagination_sec`: 検索結果のページネーション後の待機時間 (秒)
         *   その他、詳細は `config.yaml` を参照。
-    *   `parallel_processing_settings`: 並列処理に関する設定。
+    *   `parallel_processing_settings`: 並列処理に関する設定。(注: この機能は実験的なものであり、期待通りに動作しない場合があります)
         *   `enable_parallel_processing`: 並列処理を有効にするか (true/false)
-        *   `max_workers`: 最大ワーカー数
+        *   `max_workers`: 最大ワーカー数 (ThreadPoolExecutor の最大並列実行数)
+        *   `use_cookie_sharing`: ログインセッションのCookieを共有して並列処理を試みるか (true/false)
+        *   `delay_between_thread_tasks_sec`: 各並列タスク開始前の遅延時間 (秒)
         *   その他、詳細は `config.yaml` を参照。
 
     上記は主要な設定項目です。全ての詳細設定は `yamap_auto/config.yaml` ファイル内のコメントを確認してください。
+    また、`config.yaml` 内には、以前のバージョンのスクリプトで使用されていた「旧 domo_settings」や「旧 follow_settings」といった項目がコメントアウトされて残っている場合があります。これらは現在の `yamap_auto_domo.py` スクリプトでは直接使用されていませんので、設定変更の際はご注意ください。
 
 **注意**: `credentials.yaml` と `config.yaml` はYAML形式です。インデント（字下げ）が重要な意味を持つため、構造を崩さないように編集してください。
 
