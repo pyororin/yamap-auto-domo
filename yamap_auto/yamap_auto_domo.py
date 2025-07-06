@@ -31,274 +31,102 @@ import json # 現状直接は使われていないが、将来的な拡張のた
 import os
 import re # 現状直接は使われていないが、将来的な拡張のために残す (URLやテキストのパターンマッチなど)
 import logging
-import yaml
+# import yaml # driver_utils に移動
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+# driver_utils から必要なものをインポート
+from .driver_utils import (
+    get_driver_options,
+    login as util_login, # login関数名がローカルにも存在しうるため別名でインポート
+    create_driver_with_cookies,
+    get_main_config,
+    get_credentials,
+    # BASE_URL as UTIL_BASE_URL, # driver_utils側のBASE_URLは内部利用とし、こちらは維持
+    # LOGIN_URL as UTIL_LOGIN_URL # 同上
+)
+
 
 # --- Loggerの設定 ---
 # スクリプトの動作状況やエラー情報をログとして記録するための設定。
 # コンソールとファイルの両方に出力します。
+# この設定は driver_utils を含む他のモジュールにも影響します。
 LOG_FILE_NAME = "yamap_auto_domo.log" # ログファイル名
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG) # ロガー自体のレベルはDEBUGに設定 (ハンドラ側でフィルタリング)
+logger = logging.getLogger() # ルートロガーを取得または生成
+if not logger.handlers: # ハンドラがまだ設定されていない場合のみ設定（多重設定防止）
+    logger.setLevel(logging.DEBUG) # ロガー自体のレベルはDEBUGに設定 (ハンドラ側でフィルタリング)
 
-# StreamHandler (コンソールへのログ出力設定)
-stream_handler = logging.StreamHandler()
-stream_handler.setLevel(logging.INFO) # コンソールにはINFOレベル以上のログを出力
-stream_formatter = logging.Formatter("[%(asctime)s] [%(levelname)s] - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
-stream_handler.setFormatter(stream_formatter)
-if not any(isinstance(h, logging.StreamHandler) for h in logger.handlers): # ハンドラの重複追加を防止
+    # StreamHandler (コンソールへのログ出力設定)
+    stream_handler = logging.StreamHandler()
+    stream_handler.setLevel(logging.INFO) # コンソールにはINFOレベル以上のログを出力
+    stream_formatter = logging.Formatter("[%(asctime)s] [%(levelname)s] - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+    stream_handler.setFormatter(stream_formatter)
     logger.addHandler(stream_handler)
 
-# FileHandler (ログファイルへの出力設定)
-try:
-    file_handler = logging.FileHandler(LOG_FILE_NAME, encoding='utf-8', mode='a') # 'a'モードで追記
-    file_handler.setLevel(logging.DEBUG) # ファイルにはDEBUGレベル以上のログを全て記録
-    file_formatter = logging.Formatter(
-        "[%(asctime)s] [%(levelname)s] [%(funcName)s:%(lineno)d] - %(message)s", # 関数名と行番号も記録
-        datefmt="%Y-%m-%d %H:%M:%S"
-    )
-    file_handler.setFormatter(file_formatter)
-    if not any(isinstance(h, logging.FileHandler) and h.baseFilename == os.path.abspath(LOG_FILE_NAME) for h in logger.handlers): # ハンドラの重複追加を防止
+    # FileHandler (ログファイルへの出力設定)
+    try:
+        file_handler = logging.FileHandler(LOG_FILE_NAME, encoding='utf-8', mode='a') # 'a'モードで追記
+        file_handler.setLevel(logging.DEBUG) # ファイルにはDEBUGレベル以上のログを全て記録
+        file_formatter = logging.Formatter(
+            "[%(asctime)s] [%(levelname)s] [%(funcName)s:%(lineno)d] - %(message)s", # 関数名と行番号も記録
+            datefmt="%Y-%m-%d %H:%M:%S"
+        )
+        file_handler.setFormatter(file_formatter)
         logger.addHandler(file_handler)
-except Exception as e:
-    logger.error(f"ログファイルハンドラの設定に失敗しました: {e}")
+    except Exception as e:
+        # ここでのlogger.errorはまだハンドラが完全に設定されていない可能性があるのでprintも使う
+        print(f"ログファイルハンドラ ({LOG_FILE_NAME}) の設定に失敗しました: {e}")
+        logger.error(f"ログファイルハンドラの設定に失敗しました: {e}")
+else:
+    logger = logging.getLogger(__name__) # 既に設定済みの場合は、このモジュール用のロガーを取得
 # --- Logger設定完了 ---
 
-# --- 設定ファイルのパス定義 ---
-# スクリプトの動作に必要な設定ファイル (`config.yaml`) と認証情報ファイル (`credentials.yaml`) のパスを定義します。
-# これらのファイルはスクリプトと同じディレクトリ (yamap_auto/) に配置されていることを想定しています。
-CONFIG_FILE = os.path.join(os.path.dirname(__file__), "config.yaml")
-CREDENTIALS_FILE = os.path.join(os.path.dirname(__file__), "credentials.yaml")
 
-# --- 設定ファイルの読み込み ---
-# `credentials.yaml` からYAMAPの認証情報を、`config.yaml` からスクリプトの動作設定を読み込みます。
-# ファイルが存在しない場合や形式が不正な場合はエラーログを出力し、スクリプトを終了します。
+# --- 設定情報の読み込み (driver_utils経由) ---
 try:
-    # 1. `credentials.yaml` (認証情報ファイル) の読み込み
-    try:
-        with open(CREDENTIALS_FILE, 'r', encoding='utf-8') as f:
-            credentials_config = yaml.safe_load(f) # YAML形式で読み込み
-        if not credentials_config:
-            raise ValueError("認証ファイルが空か、内容を読み取れませんでした。")
-        # 必要な認証情報を取得
-        YAMAP_EMAIL = credentials_config.get("email")
-        YAMAP_PASSWORD = credentials_config.get("password")
-        MY_USER_ID = str(credentials_config.get("user_id", "")) # ユーザーIDは文字列として扱う
+    main_config = get_main_config()
+    credentials = get_credentials()
+    YAMAP_EMAIL = credentials.get("email")
+    YAMAP_PASSWORD = credentials.get("password")
+    MY_USER_ID = credentials.get("user_id")
 
-        # 必須情報が設定されているか確認
-        if not all([YAMAP_EMAIL, YAMAP_PASSWORD, MY_USER_ID]):
-             logger.critical(f"認証ファイル ({CREDENTIALS_FILE}) に email, password, user_id のいずれかが正しく設定されていません。")
-             logger.info(f"例:\nemail: your_email@example.com\npassword: your_password\nuser_id: '1234567'")
-             exit()
-    except FileNotFoundError:
-        logger.critical(f"認証ファイル ({CREDENTIALS_FILE}) が見つかりません。作成して認証情報を記述してください。")
-        logger.info(f"ファイルパス: {os.path.abspath(CREDENTIALS_FILE)}")
-        logger.info(f"例:\nemail: your_email@example.com\npassword: your_password\nuser_id: '1234567'")
+    if not all([YAMAP_EMAIL, YAMAP_PASSWORD, MY_USER_ID, main_config]):
+        logger.critical("設定情報 (main_config または credentials) の取得に失敗しました。driver_utilsからの読み込みを確認してください。")
         exit()
-    except (yaml.YAMLError, ValueError) as e_cred: # YAML形式エラーまたはValueError
-        logger.critical(f"認証ファイル ({CREDENTIALS_FILE}) の形式が正しくないか、内容に問題があります。エラー: {e_cred}")
-        exit()
-
-    # 2. `config.yaml` (メイン設定ファイル) の読み込み
-    with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
-        main_config = yaml.safe_load(f) # YAML形式で読み込み
-        if not main_config:
-             raise ValueError("メインの設定ファイル (config.yaml) が空か、内容を読み取れませんでした。")
 
     # 各機能ごとの設定セクションを読み込み (存在しない場合は空の辞書として扱う)
-    # DOMO_SETTINGS と FOLLOW_SETTINGS は旧スクリプトとの互換性のために読み込むが、
-    # このスクリプト (yamap_auto_domo.py) では主に新しい設定セットを使用します。
-    DOMO_SETTINGS = main_config.get("domo_settings", {}) # 旧DOMO設定
-    FOLLOW_SETTINGS = main_config.get("follow_settings", {}) # 旧フォロー設定
+    DOMO_SETTINGS = main_config.get("domo_settings", {})
+    FOLLOW_SETTINGS = main_config.get("follow_settings", {})
+    FOLLOW_BACK_SETTINGS = main_config.get("follow_back_settings", {})
+    TIMELINE_DOMO_SETTINGS = main_config.get("timeline_domo_settings", {})
+    SEARCH_AND_FOLLOW_SETTINGS = main_config.get("search_and_follow_settings", {})
+    PARALLEL_PROCESSING_SETTINGS = main_config.get("parallel_processing_settings", {})
 
-    # 新しい機能のための設定セクション
-    FOLLOW_BACK_SETTINGS = main_config.get("follow_back_settings", {})         # フォローバック機能の設定
-    TIMELINE_DOMO_SETTINGS = main_config.get("timeline_domo_settings", {})     # タイムラインDOMO機能の設定
-    SEARCH_AND_FOLLOW_SETTINGS = main_config.get("search_and_follow_settings", {}) # 検索からのフォロー＆DOMO機能の設定
-    PARALLEL_PROCESSING_SETTINGS = main_config.get("parallel_processing_settings", {}) # 並列処理に関する設定
-
-    # 新しい設定セクションが `config.yaml` に存在しない場合の警告
-    # (スクリプトはデフォルト値で動作しようと試みるが、ユーザーに確認を促す)
     if not all([FOLLOW_BACK_SETTINGS, TIMELINE_DOMO_SETTINGS, SEARCH_AND_FOLLOW_SETTINGS, PARALLEL_PROCESSING_SETTINGS]):
         logger.warning(
             "config.yamlに新しい機能（follow_back_settings, timeline_domo_settings, search_and_follow_settings, parallel_processing_settings）の"
             "一部または全ての設定セクションが見つからないか空です。デフォルト値で動作しようとしますが、"
             "意図した動作をしない可能性があります。config.yamlを確認してください。"
         )
-        # ここで必須キーの有無をチェックし、なければ exit() する選択肢もあるが、今回は警告に留める。
 
-except FileNotFoundError as e_fnf: # config.yaml または credentials.yaml が見つからない場合
-    logger.critical(f"設定ファイル ({e_fnf.filename}) が見つかりません。スクリプトを終了します。")
+except Exception as e: # 設定読み込み中の予期せぬエラー
+    logger.critical(f"設定情報の読み込み中に致命的なエラーが発生しました (driver_utils経由): {e}", exc_info=True)
     exit()
-except (yaml.YAMLError, ValueError) as e_yaml_val: # YAML形式エラーまたは設定内容のValueError
-    logger.critical(f"設定ファイル ({CONFIG_FILE} または {CREDENTIALS_FILE}) の形式が正しくないか、内容に問題があります。エラー: {e_yaml_val}")
-    exit()
-except Exception as e: # その他の予期せぬエラー
-    logger.critical(f"設定ファイルの読み込み中に予期せぬエラーが発生しました: {e}", exc_info=True)
-    exit()
-# --- 設定ファイルの読み込み完了 ---
+# --- 設定情報の読み込み完了 ---
+
 
 # --- グローバル定数 ---
 # YAMAPウェブサイトの基本的なURLなどを定義します。
-BASE_URL = "https://yamap.com"                          # YAMAPのベースURL
-LOGIN_URL = f"{BASE_URL}/login"                         # ログインページのURL
-TIMELINE_URL = f"{BASE_URL}/timeline"                   # タイムラインページのURL (タイムラインDOMO機能で使用)
-SEARCH_ACTIVITIES_URL_DEFAULT = f"{BASE_URL}/search/activities" # 活動記録検索ページのデフォルトURL (検索＆フォロー機能で使用)
+# driver_utils 側にも BASE_URL はあるが、こちらはメインスクリプト側のグローバル定数として維持
+BASE_URL = "https://yamap.com"
+# LOGIN_URL は driver_utils 側で定義・使用されるため、ここでは不要 (または driver_utils からインポート)
+# LOGIN_URL = f"{BASE_URL}/login" # 不要になった
+TIMELINE_URL = f"{BASE_URL}/timeline"
+SEARCH_ACTIVITIES_URL_DEFAULT = f"{BASE_URL}/search/activities"
 
-# --- WebDriver関連 ---
-
-def get_driver_options():
-    """
-    Selenium WebDriver (Chrome) のオプションを設定します。
-    `config.yaml` の `headless_mode` 設定に基づいて、ヘッドレスモードの有効/無効を切り替えます。
-
-    Returns:
-        webdriver.ChromeOptions: 設定済みのChromeオプションオブジェクト。
-    """
-    options = webdriver.ChromeOptions()
-    # headless_mode は config.yaml のトップレベルの `headless_mode` から読み込む
-    if main_config.get("headless_mode", False): # デフォルトはFalse (通常モード)
-        logger.info("ヘッドレスモードで起動します。")
-        options.add_argument('--headless')        # ヘッドレスモードを有効化
-        options.add_argument('--disable-gpu')     # GPUアクセラレーションを無効化 (ヘッドレスモードで推奨)
-        options.add_argument('--window-size=1920,1080') # ウィンドウサイズを指定 (一部サイトで必要)
-    return options
-
-def login(driver, email, password):
-    """
-    指定されたメールアドレスとパスワードを使用してYAMAPにログインします。
-
-    Args:
-        driver (webdriver.Chrome): Selenium WebDriverインスタンス。
-        email (str): YAMAPのログインに使用するメールアドレス。
-        password (str): YAMAPのログインに使用するパスワード。
-
-    Returns:
-        bool: ログインに成功した場合はTrue、失敗した場合はFalse。
-    """
-    logger.info(f"ログインページ ({LOGIN_URL}) にアクセスします...")
-    driver.get(LOGIN_URL) # ログインページへ遷移
-    try:
-        # メールアドレス入力フィールドが表示されるまで待機し、入力
-        email_field = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.NAME, "email"))
-        )
-        email_field.send_keys(email)
-
-        # パスワード入力フィールドを取得し、入力
-        password_field = driver.find_element(By.NAME, "password")
-        password_field.send_keys(password)
-
-        # ログインボタンを取得し、クリック
-        login_button = driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
-        login_button.click()
-
-        # ログイン処理後のページ遷移を待機 (URLが "login" を含まなくなるまで)
-        WebDriverWait(driver, 15).until_not(EC.url_contains("login"))
-
-        # --- ログイン成功判定 ---
-        # 旧 yamap_auto.py のロジックをベースに、現在のURLやページタイトルで判定します。
-        # MY_USER_ID は credentials.yaml から読み込まれた自身のユーザーIDです。
-        current_url_lower = driver.current_url.lower() # 現在のURL (小文字)
-        page_title_lower = driver.title.lower()       # 現在のページタイトル (小文字)
-
-        if not MY_USER_ID: # MY_USER_IDが設定されていない場合は警告 (判定精度が落ちる可能性)
-             logger.warning("MY_USER_IDが設定されていません。ログイン成功判定の一部が機能しません。")
-
-        # 判定ロジック1: URLベースの確認
-        #   - URLに "login" が含まれない
-        #   - かつ、URLに "yamap", MY_USER_ID (設定されていれば), "timeline", "home", "discover" のいずれかが含まれる
-        if "login" not in current_url_lower and \
-           ("yamap" in current_url_lower or \
-            (MY_USER_ID and MY_USER_ID in current_url_lower) or \
-            "timeline" in current_url_lower or \
-            "home" in current_url_lower or \
-            "discover" in current_url_lower):
-            logger.info("ログインに成功しました。(URLベース判定)")
-            return True
-        # 判定ロジック2: ページタイトルベースの確認 (フォールバック)
-        #   - ページタイトルに "ようこそ" または "welcome" が含まれる
-        elif "ようこそ" in page_title_lower or "welcome" in page_title_lower:
-             logger.info("ログインに成功しました。(ページタイトル判定)")
-             return True
-        # 判定ロジック3: 上記以外は失敗とみなす
-        else:
-            logger.error("ログインに失敗したか、予期せぬページに遷移しました。")
-            logger.error(f"現在のURL: {driver.current_url}, タイトル: {driver.title}")
-            # ページ上に表示されている可能性のあるエラーメッセージを取得試行
-            try:
-                error_message_element = driver.find_element(By.CSS_SELECTOR, "div[class*='ErrorText'], p[class*='error-message'], div[class*='FormError']")
-                if error_message_element and error_message_element.is_displayed():
-                    logger.error(f"ページ上のエラーメッセージ: {error_message_element.text.strip()}")
-            except NoSuchElementException:
-                logger.debug("ページ上にログインエラーメッセージ要素は見つかりませんでした。")
-            return False
-        # --- ログイン成功判定ここまで ---
-
-    except Exception as e: # ログイン処理中の予期せぬエラー
-        logger.error(f"ログイン処理中に予期せぬエラーが発生しました。", exc_info=True)
-        return False
-
-# --- WebDriver関連 ---
-def create_driver_with_cookies(cookies, base_url_to_visit_first="https://yamap.com/"):
-    """
-    指定されたCookieを設定済みの新しいWebDriverインスタンスを作成します。
-    これは主に並列処理で、ログイン済みのセッションを他のWebDriverインスタンスで共有するために使用されます。
-    Cookieを設定する前に、一度そのドメインのページにアクセスする必要があります。
-
-    Args:
-        cookies (list[dict]): 設定するCookieのリスト。各要素はSeleniumのCookie形式の辞書。
-        base_url_to_visit_first (str, optional): Cookieを設定する前に最初にアクセスするURL。
-                                                デフォルトはYAMAPのベースURL。
-
-    Returns:
-        webdriver.Chrome or None: Cookieが設定された新しいWebDriverインスタンス。
-                                  作成に失敗した場合はNone。
-    """
-    logger.debug("新しいWebDriverインスタンスを作成し、Cookieを設定します...")
-    driver = None
-    try:
-        options = get_driver_options() # 通常のWebDriverオプションを取得
-        driver = webdriver.Chrome(options=options)
-        # config.yaml から暗黙的な待機時間を読み込み設定
-        implicit_wait = main_config.get("implicit_wait_sec", 7)
-        driver.implicitly_wait(implicit_wait)
-
-        # Cookieを設定するためには、まずそのCookieが属するドメインのページにアクセスする必要がある
-        logger.debug(f"Cookie設定のため、ベースURL ({base_url_to_visit_first}) にアクセスします。")
-        driver.get(base_url_to_visit_first)
-        time.sleep(0.5) # ページ読み込みとJavaScript実行の安定待ち
-
-        # 取得したCookieを新しいWebDriverインスタンスに設定
-        for cookie in cookies:
-            # YAMAPのCookieは通常 `.yamap.com` または `yamap.com` ドメインに属する。
-            # WebDriverがCookieを追加する際、現在のドメインとCookieのドメインが一致しないとエラーになることがある。
-            # そのため、ドメインが不一致の場合はCookie辞書から `domain` キーを削除して試みる。
-            # (SameSite属性などに影響する可能性があるので注意)
-            if 'domain' in cookie and not base_url_to_visit_first.endswith(cookie['domain'].lstrip('.')):
-                logger.warning(f"Cookieのドメイン '{cookie['domain']}' とアクセス先ドメインが一致しないため、このCookieのドメイン情報を削除して試みます: {cookie}")
-                del cookie['domain']
-
-            try:
-                driver.add_cookie(cookie)
-            except Exception as e_cookie_add:
-                logger.error(f"Cookie追加中にエラーが発生しました: {cookie}, エラー: {e_cookie_add}")
-                # 重要なCookie（セッションIDなど）が設定できない場合、このWebDriverは期待通りに動作しない可能性が高い。
-
-        logger.debug(f"{len(cookies)}個のCookieを新しいWebDriverインスタンスに設定しました。")
-
-        # Cookie設定後、再度ベースURLにアクセスしてセッションが有効か確認（推奨）
-        driver.get(base_url_to_visit_first)
-        time.sleep(0.5) # 再アクセス後の安定待ち
-        # ここで、実際にログイン状態になっているか（例: マイページへのリンクが存在するか）を
-        # 確認するロジックを追加することも可能です。
-
-        return driver
-    except Exception as e: # WebDriver作成またはCookie設定中の予期せぬエラー
-        logger.error(f"Cookie付きWebDriver作成中にエラー: {e}", exc_info=True)
-        if driver:
-            driver.quit() # エラーが発生したら作成途中のWebDriverも閉じる
-        return None
+# --- WebDriver関連の関数は driver_utils に移動したため、ここでは削除 ---
+# def get_driver_options(): ...
+# def login(driver, email, password): ...
+# def create_driver_with_cookies(cookies, base_url_to_visit_first="https://yamap.com/"): ...
 
 
 # --- DOMO関連補助関数 (yamap_auto.pyから移植・調整) ---
@@ -1675,18 +1503,18 @@ if __name__ == "__main__":
     logger.info(f"=========== {os.path.basename(__file__)} スクリプト開始 ===========")
     driver = None
     try:
-        # DOMO_SETTINGS は config.yaml の domo_settings セクションに依存するため、
-        # この時点では headless_mode のみ参照される get_driver_options の呼び出しはOK
-        driver_options = get_driver_options()
+        # driver_utilsからWebDriverオプションを取得
+        driver_options = get_driver_options() # これは driver_utils.get_driver_options() を指す
         driver = webdriver.Chrome(options=driver_options)
 
-        # implicit_wait_sec は config.yaml のトップレベルから読むように変更
+        # implicit_wait_sec は main_config (driver_utils経由で取得済み) から読む
         implicit_wait = main_config.get("implicit_wait_sec", 7)
         driver.implicitly_wait(implicit_wait)
 
         logger.info(f"認証情報: email={YAMAP_EMAIL}, user_id={MY_USER_ID}") # パスワードはログ出力しない
 
-        if login(driver, YAMAP_EMAIL, YAMAP_PASSWORD):
+        # driver_utils の login (util_loginとしてインポート) を使用
+        if util_login(driver, YAMAP_EMAIL, YAMAP_PASSWORD, MY_USER_ID): # MY_USER_ID を引数に追加
             logger.info(f"ログイン成功。現在のURL: {driver.current_url}")
             shared_cookies = None
             if PARALLEL_PROCESSING_SETTINGS.get("enable_parallel_processing", False) and \
@@ -1694,16 +1522,12 @@ if __name__ == "__main__":
                 try:
                     shared_cookies = driver.get_cookies()
                     logger.info(f"ログイン後のCookieを {len(shared_cookies)} 個取得しました。並列処理で利用します。")
-                    # Cookieの内容をデバッグ表示 (注意: セッションIDなどが含まれるため本番では控える)
-                    # for cookie in shared_cookies:
-                    #     logger.debug(f"Cookie: {cookie.get('name')} = {cookie.get('value')}, Domain: {cookie.get('domain')}")
                 except Exception as e_cookie_get:
                     logger.error(f"ログイン後のCookie取得に失敗しました: {e_cookie_get}", exc_info=True)
-                    shared_cookies = None # 失敗したらNoneに戻す
+                    shared_cookies = None
 
             # --- 各機能の呼び出し ---
-            # MY_USER_ID はログイン処理前に設定ファイルから読み込まれている想定
-            if MY_USER_ID:
+            if MY_USER_ID: # MY_USER_ID は driver_utils 経由で取得済み
                 # フォローバック機能
                 if FOLLOW_BACK_SETTINGS.get("enable_follow_back", False):
                     start_time = time.time()
