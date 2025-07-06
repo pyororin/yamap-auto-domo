@@ -1639,28 +1639,37 @@ if __name__ == "__main__":
             if MY_USER_ID:
                 # フォローバック機能
                 if FOLLOW_BACK_SETTINGS.get("enable_follow_back", False):
+                    start_time = time.time()
                     # TODO: フォローバック機能の並列化対応 (domo_timeline_activities_parallel と同様の構造で)
                     logger.info("現時点ではフォローバック機能は並列化未対応のため、逐次実行します。")
                     follow_back_users_new(driver, MY_USER_ID)
+                    end_time = time.time()
+                    logger.info(f"フォローバック機能の処理時間: {end_time - start_time:.2f}秒")
                 else:
                     logger.info("フォローバック機能は設定で無効です。")
 
                 # タイムラインDOMO機能
                 if TIMELINE_DOMO_SETTINGS.get("enable_timeline_domo", False):
+                    start_time = time.time()
                     if PARALLEL_PROCESSING_SETTINGS.get("enable_parallel_processing", False) and shared_cookies:
                         domo_timeline_activities_parallel(driver, shared_cookies) # メインドライバーとCookieを渡す
                     else:
                         if PARALLEL_PROCESSING_SETTINGS.get("enable_parallel_processing", False) and not shared_cookies:
                             logger.warning("並列処理が有効ですがCookie共有ができなかったため、タイムラインDOMOは逐次実行されます。")
                         domo_timeline_activities(driver) # 従来の逐次実行
+                    end_time = time.time()
+                    logger.info(f"タイムラインDOMO機能の処理時間: {end_time - start_time:.2f}秒")
                 else:
                     logger.info("タイムラインDOMO機能は設定で無効です。")
 
                 # 検索結果からのフォロー＆DOMO機能
                 if SEARCH_AND_FOLLOW_SETTINGS.get("enable_search_and_follow", False):
+                    start_time = time.time()
                     # TODO: 検索からのフォロー＆DOMO機能の並列化対応
                     logger.info("現時点では検索からのフォロー＆DOMO機能は並列化未対応のため、逐次実行します。")
                     search_follow_and_domo_users(driver, MY_USER_ID)
+                    end_time = time.time()
+                    logger.info(f"検索結果からのフォロー＆DOMO機能の処理時間: {end_time - start_time:.2f}秒")
                 else:
                     logger.info("検索結果からのフォロー＆DOMO機能は設定で無効です。")
 
