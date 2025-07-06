@@ -40,7 +40,8 @@ action_delays:
 
 follow_back_settings:
   enable_follow_back: true             # true: フォローバック機能の有効/無効
-  max_users_to_follow_back: 15         # 一度にフォローバックする最大ユーザー数
+  max_users_to_follow_back: 15         # 一度にフォローバックする最大ユーザー数 (全ページを通じての合計)
+  max_pages_for_follow_back: 5         # フォローバック確認のためにチェックするフォロワーリストの最大ページ数 (例: 5ページまで)
   # delay_after_follow_back_action_sec は action_delays.after_follow_action_sec を参照します
 
 timeline_domo_settings:
