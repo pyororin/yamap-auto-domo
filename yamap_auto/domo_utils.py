@@ -11,7 +11,7 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
 # driver_utilsから設定情報を取得するためのインポート (直接configを読むのではなく、メインスクリプトから渡す設計も考慮)
 # 現状は yamap_auto_domo.py と同様に直接 main_config を参照する形を一旦取る
-from .driver_utils import get_main_config, create_driver_with_cookies # main_config を取得するため
+from .driver_utils import get_main_config, create_driver_with_cookies, save_screenshot # save_screenshot をインポート
 # user_profile_utils は現時点では domo_utils 内で直接使用されていないが、
 # 将来的にDOMO関連の高度な機能でユーザー情報を参照する可能性を考慮してコメントアウトで残す
 # from .user_profile_utils import get_latest_activity_url
@@ -79,30 +79,37 @@ def domo_activity(driver, activity_url, base_url="https://yamap.com"): # base_ur
             logger.debug(f"既に活動日記ページ ({activity_url}) にいます。")
 
         # 2. DOMOボタンの探索
-        primary_domo_button_selector = "button[data-testid='ActivityDomoButton']"
-        id_domo_button_selector = "button#DomoActionButton"
+        domo_button_selectors = [
+            "button[data-testid='ActivityDomoButton']",  # プライマリセレクタ
+            "button#DomoActionButton"                    # セカンダリセレクタ
+        ]
+        logger.debug(f"DOMOボタン探索開始。試行セレクタリスト: {domo_button_selectors}")
 
         domo_button = None
         current_selector_used = ""
 
-        for idx, selector in enumerate([primary_domo_button_selector, id_domo_button_selector]):
+        for idx, selector in enumerate(domo_button_selectors):
+            logger.debug(f"DOMOボタン探索試行 #{idx+1} (セレクタ: '{selector}')")
             try:
-                logger.debug(f"DOMOボタン探索試行 (セレクタ: {selector})")
-                wait_time = 5 if idx == 0 else 2
+                wait_time = 5 if idx == 0 else 2 # 最初のセレクタは少し長めに待つ
                 domo_button_candidate = WebDriverWait(driver, wait_time).until(
                     EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
                 )
                 if domo_button_candidate:
                     domo_button = domo_button_candidate
                     current_selector_used = selector
-                    logger.debug(f"DOMOボタンを発見 (セレクタ: '{selector}')")
+                    logger.info(f"DOMOボタンを発見しました (使用セレクタ: '{selector}') for activity: {activity_id_for_log}")
                     break
+                else: # WebDriverWait が None を返すことは通常ないが、念のため
+                    logger.debug(f"セレクタ '{selector}' でDOMOボタン候補が見つかりましたが、無効な要素でした。")
             except TimeoutException:
-                logger.debug(f"DOMOボタンがセレクタ '{selector}' で見つからず、またはタイムアウトしました。")
-                continue
+                logger.debug(f"セレクタ '{selector}' でDOMOボタンが見つからず、タイムアウトしました。")
+            except Exception as e_sel: # その他の例外 (例: StaleElementなど)
+                logger.warning(f"セレクタ '{selector}' でDOMOボタン探索中に予期せぬエラー: {e_sel}", exc_info=True)
+                # このセレクタでの探索は失敗として続行
 
         if not domo_button:
-            logger.warning(f"DOMOボタンが見つかりませんでした (試行セレクタ: '{primary_domo_button_selector}', '{id_domo_button_selector}'): {activity_id_for_log}")
+            logger.warning(f"DOMOボタンが見つかりませんでした。試行した全セレクタ: {domo_button_selectors} for activity: {activity_id_for_log}")
             return False
 
         # 3. DOMO済みかどうかの判定
@@ -141,7 +148,25 @@ def domo_activity(driver, activity_url, base_url="https://yamap.com"): # base_ur
                 time.sleep(delay_after_action)
                 return True
             except TimeoutException:
-                logger.warning(f"DOMO実行後、状態変化の確認でタイムアウト (期待: aria-labelに'Domo済み'またはアイコンに'is-active'): {activity_id_for_log}", exc_info=True)
+                logger.warning(f"DOMO実行後、状態変化の確認でタイムアウト (期待: aria-labelに'Domo済み'またはアイコンに'is-active'): {activity_id_for_log}")
+                # タイムアウト時の実際の属性値を取得してログ出力
+                actual_aria_label = "取得失敗"
+                actual_icon_class = "取得失敗"
+                try:
+                    button_element_after_click = driver.find_element(By.CSS_SELECTOR, current_selector_used)
+                    actual_aria_label = button_element_after_click.get_attribute("aria-label") or "aria-labelなし"
+                    try:
+                        icon_span_after_click = button_element_after_click.find_element(By.CSS_SELECTOR, "span[class*='DomoActionContainer__DomoIcon'], span.RidgeIcon")
+                        actual_icon_class = icon_span_after_click.get_attribute("class") or "classなし"
+                    except NoSuchElementException:
+                        actual_icon_class = "アイコンspanなし"
+                except Exception as e_attr:
+                    logger.error(f"DOMO後の属性取得中にエラー: {e_attr}")
+
+                logger.warning(f"DOMO状態確認タイムアウト時の詳細 - Activity: {activity_id_for_log}, "
+                               f"期待: aria-labelに'Domo済み' or アイコンに'is-active', "
+                               f"実際: aria-label='{actual_aria_label}', icon_class='{actual_icon_class}'")
+                save_screenshot(driver, error_type="DOMO_ConfirmTimeout", context_info=activity_id_for_log) # 状態確認タイムアウトでもスクショ
                 time.sleep(delay_after_action)
                 return False
         else:
@@ -149,10 +174,23 @@ def domo_activity(driver, activity_url, base_url="https://yamap.com"): # base_ur
 
     except TimeoutException:
         logger.warning(f"DOMO処理中にタイムアウト ({activity_id_for_log})。ページ要素が見つからないか、読み込みが遅い可能性があります。")
+        save_screenshot(driver, error_type="TimeoutException", context_info=activity_id_for_log) # スクリーンショット保存
     except NoSuchElementException:
         logger.warning(f"DOMOボタンまたはその構成要素が見つかりません ({activity_id_for_log})。セレクタが古い可能性があります。")
+        save_screenshot(driver, error_type="NoSuchElementException", context_info=activity_id_for_log) # スクリーンショット保存
     except Exception as e:
-        logger.error(f"DOMO実行中に予期せぬエラー ({activity_id_for_log}):", exc_info=True)
+        current_url_on_error = "取得失敗"
+        try:
+            current_url_on_error = driver.current_url
+        except Exception as e_url:
+            logger.error(f"予期せぬエラー発生時に現在のURL取得も失敗: {e_url}")
+
+        logger.error(
+            f"DOMO実行中に予期せぬエラー ({activity_id_for_log})。 "
+            f"発生時のURL: {current_url_on_error}",
+            exc_info=True
+        )
+        save_screenshot(driver, error_type="UnhandledException", context_info=activity_id_for_log)
     return False
 
 # --- タイムラインDOMO機能 ---
