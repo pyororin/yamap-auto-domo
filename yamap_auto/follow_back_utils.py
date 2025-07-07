@@ -59,85 +59,106 @@ def _follow_back_task(page_url, user_profile_url_to_find, user_name_to_find, sha
     """
     task_driver = None
     followed_in_task = False
-    status_message = f"ユーザー「{user_name_to_find}」({user_profile_url_to_find.split('/')[-1]}): "
-    log_prefix_task = f"[FB_TASK][{user_profile_url_to_find.split('/')[-1]}] "
+    user_id_short = user_profile_url_to_find.split('/')[-1]
+    # page_url からドメイン部分を除去してログを見やすくする (例: /users/12345/followers?page=2)
+    page_path_for_log = page_url.replace(BASE_URL, "")
+    log_prefix_task = f"[FB_TASK][UID:{user_id_short}][Page:{page_path_for_log}] "
+    status_message = f"{log_prefix_task}ユーザー「{user_name_to_find}」({user_id_short}): "
+
+    logger.info(f"{log_prefix_task}並列フォローバックタスク開始。対象ユーザー名: {user_name_to_find}, プロフィールURL: {user_profile_url_to_find}, 処理対象ページ: {page_url}")
+
     try:
-        # Cookieを使って新しいWebDriverインスタンスを作成し、ログイン状態を検証。
-        # create_driver_with_cookies は内部でBASE_URLにアクセスしCookieを設定後、
-        # マイページに遷移してログイン状態を検証する。成功すればマイページにいる状態でdriverを返す。
-        logger.info(f"{log_prefix_task}WebDriverを作成し、Cookieを設定・検証します。(User ID: {current_user_id_for_task})")
-        task_driver = create_driver_with_cookies(shared_cookies, current_user_id_for_task) # base_url_to_visit_first は不要になった
+        logger.info(f"{log_prefix_task}新しいWebDriverインスタンスを作成し、Cookieを設定・検証します (ログイン中ユーザーID: {current_user_id_for_task})。")
+        # `create_driver_with_cookies` は強化されたログイン検証（マイページでのアバター/URL確認など）を実行する
+        task_driver = create_driver_with_cookies(shared_cookies, current_user_id_for_task)
 
         if not task_driver:
             # create_driver_with_cookies が None を返した場合、内部でエラーログとスクリーンショット取得済みのはず
-            logger.error(f"{log_prefix_task}WebDriverの作成またはCookie/ログイン検証に失敗。タスクを中止。")
+            logger.error(f"{log_prefix_task}WebDriverの作成またはCookie/ログイン検証に失敗しました。タスクを中止します。")
             return {"profile_url": user_profile_url_to_find, "followed": False, "error": "WebDriver/ログイン検証失敗"}
 
-        # create_driver_with_cookies が成功した場合、ドライバーはログイン済みで、
-        # 現在のページはユーザー自身のマイページのはず。
-        # 次に、このタスクの目的であるフォロワーリストページに遷移する。
-        logger.info(f"{log_prefix_task}ログイン検証済み。対象のフォロワーページ ({page_url}) にアクセスします。")
+        logger.info(f"{log_prefix_task}WebDriver作成とログイン検証成功。現在のURL: {task_driver.current_url} (マイページのはず)")
+        logger.info(f"{log_prefix_task}目的のフォロワーリストページ ({page_url}) にアクセスします。")
         task_driver.get(page_url)
+        logger.info(f"{log_prefix_task}フォロワーリストページ ({page_url}) にアクセス完了。現在のURL: {task_driver.current_url}")
 
         # フォロワーリストページで、リストコンテナが表示されるのを待つ
+        followers_list_container_selector = "ul.css-18aka15"
         try:
+            logger.debug(f"{log_prefix_task}フォロワーリストコンテナ ({followers_list_container_selector}) の表示を待ちます...")
             WebDriverWait(task_driver, 20).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "ul.css-18aka15"))  # followers_list_container_selector
+                EC.presence_of_element_located((By.CSS_SELECTOR, followers_list_container_selector))
             )
-            logger.info(f"{log_prefix_task}フォロワーリストコンテナ ({'ul.css-18aka15'}) をターゲットページ ({page_url}) で確認。")
+            logger.info(f"{log_prefix_task}フォロワーリストコンテナをページ ({page_url}) で確認しました。")
         except TimeoutException:
-            logger.error(f"{log_prefix_task}ターゲットフォロワーページ ({page_url}) でリストコンテナの表示タイムアウト。タスク中止。")
-            # スクリーンショットを保存
+            logger.error(f"{log_prefix_task}フォロワーリストページ ({page_url}) でリストコンテナの表示がタイムアウトしました。タスクを中止します。")
             context_info = f"UID_{current_user_id_for_task}_TargetURL_{page_url.replace('/', '_').replace(':', '_')}"
             save_screenshot(task_driver, "FollowerListLoadFail_FBTask", context_info)
-            if task_driver: task_driver.quit()
+            # HTMLも保存検討
             return {"profile_url": user_profile_url_to_find, "followed": False, "error": "フォロワーページ読み込み失敗"}
 
-        time.sleep(0.5)  # 描画待ち
-        # 以前のタスク内での冗長なログイン確認ブロックは削除済み
+        time.sleep(0.7)  # 描画の安定待ちを少し延長
 
         # ページ内で対象ユーザーのカードを探す
-        logger.debug(f"{log_prefix_task}ページ内で対象ユーザーカード (div[data-testid='user']) を探します...")
-        all_cards_on_page_in_task = task_driver.find_elements(By.CSS_SELECTOR, "div[data-testid='user']")
+        user_card_selector_in_task = "div[data-testid='user']"
+        logger.debug(f"{log_prefix_task}ページ ({page_url}) 内で対象ユーザーカード ({user_card_selector_in_task}) を探します...")
+        all_cards_on_page_in_task = task_driver.find_elements(By.CSS_SELECTOR, user_card_selector_in_task)
+        logger.info(f"{log_prefix_task}{len(all_cards_on_page_in_task)} 件のユーザーカード候補を検出しました。")
+
         target_card_element = None
-        for card in all_cards_on_page_in_task:
+        for card_idx, card in enumerate(all_cards_on_page_in_task):
             try:
-                link_el = card.find_element(By.CSS_SELECTOR, "a.css-e5vv35[href^='/users/']")
-                href = link_el.get_attribute("href")
-                if href:
-                    if href.startswith("/"):
-                        href = BASE_URL + href
-                    if href == user_profile_url_to_find:
+                user_link_in_card_sel = "a.css-e5vv35[href^='/users/']"
+                link_el = card.find_element(By.CSS_SELECTOR, user_link_in_card_sel)
+                href_attr = link_el.get_attribute("href")
+                if href_attr:
+                    full_href = href_attr if href_attr.startswith(BASE_URL) else BASE_URL + href_attr
+                    if full_href == user_profile_url_to_find:
+                        logger.debug(f"{log_prefix_task}対象ユーザーカード候補 {card_idx+1} のリンク ({full_href}) が目的のURLと一致。")
                         target_card_element = card
                         break
+                    else:
+                        logger.trace(f"{log_prefix_task}カード候補 {card_idx+1} のリンク ({full_href}) は対象外。")
             except NoSuchElementException:
-                continue  # このカードは対象外
+                logger.trace(f"{log_prefix_task}カード候補 {card_idx+1} でユーザーリンク要素 ({user_link_in_card_sel}) が見つかりません。")
+                continue
 
         if not target_card_element:
-            logger.warning(f"{status_message}ページ ({page_url}) 内で対象ユーザーカードが見つかりませんでした。")
+            logger.warning(f"{status_message}ページ ({page_url}) 内で対象ユーザーのカードが見つかりませんでした。")
             return {"profile_url": user_profile_url_to_find, "followed": False, "error": "対象ユーザーカード発見失敗"}
 
-        # フォローボタンを探してクリック
-        follow_button = find_follow_button_in_list_item(target_card_element)
+        logger.info(f"{status_message}対象ユーザーのカードを発見。フォロー状態を確認します。")
+        follow_button = find_follow_button_in_list_item(target_card_element) # この関数は内部でログを出すはず
         if follow_button:
             logger.info(f"{status_message}はまだフォローしていません。並列タスク内でフォローバックを実行します。")
-            # 並列処理用の遅延を使用
             delay_worker_action = follow_back_settings_for_task.get("delay_per_worker_action_sec", 2.5)
-            if click_follow_button_and_verify(task_driver, follow_button, user_name_to_find):
+            logger.debug(f"{log_prefix_task}フォローアクション実行前の遅延: {delay_worker_action}秒")
+            # click_follow_button_and_verify は内部でログを出すはず
+            if click_follow_button_and_verify(task_driver, follow_button, user_name_to_find): # user_name_to_find はログ用
                 followed_in_task = True
-            time.sleep(delay_worker_action)
+                logger.info(f"{status_message}フォローバック成功。")
+            else:
+                logger.warning(f"{status_message}フォローバック試行失敗。")
+            time.sleep(delay_worker_action) # アクション後の遅延
         else:
             logger.info(f"{status_message}は既にフォロー済みか、フォローボタンが見つかりませんでした（並列タスク内）。")
-            time.sleep(0.2)  # 短い遅延
+            time.sleep(0.3)
 
+        logger.info(f"{log_prefix_task}タスク処理完了。結果: {'フォロー成功' if followed_in_task else 'フォローせず/失敗'}。")
         return {"profile_url": user_profile_url_to_find, "followed": followed_in_task, "error": None}
 
     except Exception as e_task:
-        logger.error(f"{status_message}並列処理タスク中にエラー: {e_task}", exc_info=True)
-        return {"profile_url": user_profile_url_to_find, "followed": False, "error": str(e_task)}
+        logger.error(f"{status_message}並列処理タスク中に予期せぬエラーが発生しました: {e_task}", exc_info=True)
+        # エラー発生時にもスクリーンショットを保存
+        if task_driver: # driverが初期化されていれば
+             context_info_err = f"UID_{current_user_id_for_task}_TargetUser_{user_id_short}_Page_{page_path_for_log.replace('/', '_')}"
+             save_screenshot(task_driver, "ErrorInFBTask", context_info_err)
+        return {"profile_url": user_profile_url_to_find, "followed": False, "error": f"タスク内エラー: {str(e_task)}"}
     finally:
         if task_driver:
+            logger.debug(f"{log_prefix_task}WebDriverインスタンスを終了します。")
             task_driver.quit()
+        logger.info(f"{log_prefix_task}並列フォローバックタスク終了。")
 
 # --- フォローバック機能 (メインロジック) ---
 
