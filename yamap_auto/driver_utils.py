@@ -155,11 +155,23 @@ def get_driver_options():
     """
     main_conf = get_main_config() # 設定を確実にロード
     options = webdriver.ChromeOptions()
-    if main_conf.get("headless_mode", False):
+
+    webdriver_settings = main_conf.get("webdriver_settings", {})
+
+    if webdriver_settings.get("headless_mode", False): # headless_modeもwebdriver_settingsから取得
         logger.info("ヘッドレスモードで起動します。")
         options.add_argument('--headless')
         options.add_argument('--disable-gpu')
         options.add_argument('--window-size=1920,1080')
+
+    # 新規追加: User-Agentの設定
+    user_agent_string = webdriver_settings.get("user_agent")
+    if user_agent_string:
+        logger.info(f"指定されたUser-Agentを使用します: {user_agent_string}")
+        options.add_argument(f"user-agent={user_agent_string}")
+    else:
+        logger.info("User-Agentは指定されていません。WebDriverのデフォルトを使用します。")
+
     return options
 
 def login(driver, email, password, user_id_for_check):
@@ -241,10 +253,15 @@ def create_driver_with_cookies(cookies, current_user_id, initial_page_for_cookie
     logger.debug("新しいWebDriverインスタンスを作成し、Cookieとログイン状態を確認します...")
     main_conf = get_main_config() # 設定を確実にロード
     driver = None
+    # ログ出力用に元のCookie情報をディープコピー（add_cookie処理中に変更される可能性があるため）
+    original_cookies_for_log = [c.copy() for c in cookies]
+
     try:
         options = get_driver_options()
         driver = webdriver.Chrome(options=options)
-        implicit_wait = main_conf.get("implicit_wait_sec", 7)
+
+        webdriver_settings = main_conf.get("webdriver_settings", {}) # webdriver_settings を再度取得
+        implicit_wait = webdriver_settings.get("implicit_wait_sec", 7) # ここから取得
         driver.implicitly_wait(implicit_wait)
 
         logger.debug(f"Cookie設定のため、初期ページ ({initial_page_for_cookie_setting}) にアクセスします。")
@@ -255,20 +272,36 @@ def create_driver_with_cookies(cookies, current_user_id, initial_page_for_cookie
         for idx, cookie in enumerate(cookies):
             # cookie_info_for_log = {k: v for k, v in cookie.items() if k != 'value'}
             # logger.debug(f"Cookie {idx+1}/{len(cookies)}: {cookie_info_for_log}")
-            if 'domain' in cookie and cookie['domain'] and not initial_page_for_cookie_setting.endswith(cookie['domain'].lstrip('.')):
-                original_domain = cookie['domain']
-                if not original_domain.endswith(".yamap.com"):
-                    del cookie['domain']
-                    logger.warning(
-                        f"Cookie {idx+1} のドメイン '{original_domain}' が予期されるドメインと異なり、初期ページのドメイン '{initial_page_for_cookie_setting}' "
-                        f"とも一致しないため、ドメイン情報を削除して試みます。Cookie名: {cookie.get('name', 'N/A')}"
-                    )
-                else:
-                     logger.info(f"Cookie {idx+1} のドメイン '{original_domain}' は初期ページのドメインと異なりますが、YAMAP関連ドメインのため保持します。")
+            cookie_original_domain = cookie.get('domain')
             try:
-                driver.add_cookie(cookie)
-            except Exception as e_cookie_add:
-                logger.error(f"Cookie {idx+1} ({cookie.get('name', 'N/A')}) の追加中にエラー: {e_cookie_add}", exc_info=False)
+                # ドメインが設定されていて、かつ現在のページのドメインと一致しない場合、
+                # または .yamap.com で終わっていない場合、より慎重に扱う
+                if cookie_original_domain and \
+                   not initial_page_for_cookie_setting.endswith(cookie_original_domain.lstrip('.')) and \
+                   not cookie_original_domain.endswith(".yamap.com"):
+
+                    logger.warning(
+                        f"Cookie {idx+1} (名: {cookie.get('name', 'N/A')}) のドメイン '{cookie_original_domain}' が "
+                        f"初期ページドメイン '{initial_page_for_cookie_setting}' やYAMAP関連ドメインと一致しません。ドメイン情報を削除して試行します。"
+                    )
+                    cookie_copy_for_add = cookie.copy()
+                    del cookie_copy_for_add['domain']
+                    driver.add_cookie(cookie_copy_for_add)
+                else:
+                    if cookie_original_domain and not initial_page_for_cookie_setting.endswith(cookie_original_domain.lstrip('.')):
+                        logger.info(f"Cookie {idx+1} (名: {cookie.get('name', 'N/A')}) のドメイン '{cookie_original_domain}' は初期ページと異なりますが、YAMAP関連ドメインのため保持して設定します。")
+                    driver.add_cookie(cookie)
+
+            except Exception as e_cookie_add_initial:
+                logger.warning(f"Cookie {idx+1} (名: {cookie.get('name', 'N/A')}, ドメイン: {cookie_original_domain}) の初期追加試行中にエラー: {e_cookie_add_initial}。ドメイン情報を削除して再試行します。")
+                try:
+                    cookie_copy_for_retry = cookie.copy()
+                    if 'domain' in cookie_copy_for_retry:
+                        del cookie_copy_for_retry['domain']
+                    driver.add_cookie(cookie_copy_for_retry)
+                    logger.info(f"Cookie {idx+1} (名: {cookie.get('name', 'N/A')}) はドメイン情報削除後に設定成功。")
+                except Exception as e_cookie_add_retry:
+                    logger.error(f"Cookie {idx+1} (名: {cookie.get('name', 'N/A')}) はドメイン情報削除後も追加中にエラー: {e_cookie_add_retry}", exc_info=False)
 
         logger.info(f"{len(cookies)}個のCookieを新しいWebDriverインスタンスに設定試行完了。")
 
@@ -295,42 +328,89 @@ def create_driver_with_cookies(cookies, current_user_id, initial_page_for_cookie
         time.sleep(0.5) # JS等によるコンテンツ描画の時間を少し待つ
 
         my_page_login_ok = False
+        # ヘッダーのユーザーメニューを開くボタンを主要な確認要素とする
+        # このボタンが存在すれば、ログインしているとみなせる可能性が高い
+        user_menu_button_selector = "button[aria-label='ユーザーメニューを開く']"
+        # 補助的に、プロフィール編集ボタンも確認対象として残すが、優先度は下げる
         profile_edit_button_selector = "a[href$='/profile/edit'], button[data-testid='profile-edit-button']"
+
         try:
-            # Increased timeout from 10 to 20 seconds
-            edit_element = WebDriverWait(driver, 20).until(
-                EC.visibility_of_element_located((By.CSS_SELECTOR, profile_edit_button_selector))
+            # まずユーザーメニューボタンの「存在」を確認 (presence_of_element_located)
+            user_menu_element = WebDriverWait(driver, 20).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, user_menu_button_selector))
             )
-            if edit_element.is_displayed():
-                my_page_login_ok = True
-                logger.info(f"マイページ ({my_page_url}) でプロフィール編集関連要素 ({profile_edit_button_selector}) を確認。ログイン状態は良好と判断。")
-            else:
-                logger.warning(f"マイページ ({my_page_url}) でプロフィール編集関連要素は存在しますが非表示です。")
+            # 要素が存在すれば、ログインしている可能性が高いと判断
+            my_page_login_ok = True
+            logger.info(f"マイページ ({my_page_url}) でユーザーメニュー関連要素 ({user_menu_button_selector}) の存在を確認。ログイン状態は良好と判断。")
+
+            # オプションとして、さらに詳細な確認（例：ユーザー名が期待通りかなど）もここに追加可能
+            # 例えば、アバター画像内のimgタグのalt属性にユーザー名が含まれるか等
+
         except TimeoutException:
-            logger.warning(f"マイページ ({my_page_url}) の特有要素 ({profile_edit_button_selector}) の表示が20秒以内にタイムアウトしました。")
-            # HTMLソースを取得してデバッグ情報を追加
-            if driver:
-                try:
-                    html_source = driver.page_source
-                    debug_source_filename = f"MyPageFail_UID_{current_user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
-                    debug_source_path = os.path.join(os.path.dirname(_MODULE_DIR), "logs", "debug_html", debug_source_filename)
-                    os.makedirs(os.path.dirname(debug_source_path), exist_ok=True)
-                    with open(debug_source_path, "w", encoding="utf-8") as f:
-                        f.write(html_source)
-                    logger.info(f"タイムアウト時のHTMLソースを保存しました: {debug_source_path}")
-                    # ログには一部を出力（長すぎる可能性があるため）
-                    logger.debug(f"タイムアウト時のHTMLソース先頭1000文字:\n{html_source[:1000]}")
-                except Exception as e_ps:
-                    logger.error(f"ページソース取得/保存中にエラー: {e_ps}")
+            logger.warning(f"マイページ ({my_page_url}) で主要なログイン確認要素 ({user_menu_button_selector}) が20秒以内に見つかりませんでした。")
+            # プライマリ要素が見つからない場合、念のためセカンダリ要素（プロフィール編集ボタン）も試す
+            logger.info(f"セカンダリのログイン確認要素 ({profile_edit_button_selector}) の確認を試みます...")
+            try:
+                edit_element = WebDriverWait(driver, 5).until( # 短めのタイムアウトで試行
+                    EC.presence_of_element_located((By.CSS_SELECTOR, profile_edit_button_selector))
+                )
+                my_page_login_ok = True
+                logger.info(f"マイページ ({my_page_url}) でセカンダリのプロフィール編集関連要素 ({profile_edit_button_selector}) の存在を確認。ログイン状態は良好と判断。")
+            except TimeoutException:
+                logger.warning(f"マイページ ({my_page_url}) でセカンダリのログイン確認要素 ({profile_edit_button_selector}) も5秒以内に見つかりませんでした。")
+                # HTMLソースの保存などはここで行う
+                if driver:
+                    try:
+                        html_source = driver.page_source
+                        debug_source_filename = f"MyPageFail_UID_{current_user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
+                        debug_source_path = os.path.join(os.path.dirname(_MODULE_DIR), "logs", "debug_html", debug_source_filename)
+                        os.makedirs(os.path.dirname(debug_source_path), exist_ok=True)
+                        with open(debug_source_path, "w", encoding="utf-8") as f:
+                            f.write(html_source)
+                        logger.info(f"タイムアウト時のHTMLソースを保存しました: {debug_source_path}")
+                    except Exception as e_ps:
+                        logger.error(f"ページソース取得/保存中にエラー: {e_ps}")
+            except Exception as e_sec_check:
+                 logger.warning(f"セカンダリ要素確認中に予期せぬエラー: {e_sec_check}", exc_info=True)
+
         except Exception as e_mypage_check:
             logger.warning(f"マイページ ({my_page_url}) 確認中に予期せぬエラー: {e_mypage_check}", exc_info=True)
 
         if not my_page_login_ok:
             logger.error(
                 f"マイページ ({my_page_url}) でのログイン状態確認に失敗。Cookieによるセッションが正しく機能していません。"
-                f"現在のURL: {driver.current_url}, タイトル: {driver.title}"
             )
-            # スクリーンショットは既にこのエラー発生時に撮られる想定 (save_screenshot呼び出しがここにある)
+            # 詳細なデバッグ情報をログに出力
+            current_url_on_fail = "N/A"
+            current_title_on_fail = "N/A"
+            try:
+                current_url_on_fail = driver.current_url
+                current_title_on_fail = driver.title
+            except Exception as e_url_title:
+                logger.warning(f"ログイン失敗時のURL/タイトル取得中にエラー: {e_url_title}")
+
+            logger.error(f"ログイン失敗時のURL: {current_url_on_fail}, タイトル: {current_title_on_fail}")
+
+            try:
+                logger.debug("--- 設定試行したCookie情報 (ログイン失敗時) ---")
+                if original_cookies_for_log:
+                    for idx, cookie_param in enumerate(original_cookies_for_log):
+                        log_cookie = {k: v for k, v in cookie_param.items() if k.lower() != 'value'} # valueを除外
+                        logger.debug(f"Param Cookie {idx+1}: {log_cookie}")
+                else:
+                    logger.debug("設定試行するCookie情報がありませんでした（original_cookies_for_logが空）。")
+
+                logger.debug("--- WebDriverが保持している実際のCookie情報 (ログイン失敗時) ---")
+                actual_cookies_on_fail = driver.get_cookies()
+                if actual_cookies_on_fail:
+                    for idx, actual_cookie in enumerate(actual_cookies_on_fail):
+                        log_actual_cookie = {k: v for k, v in actual_cookie.items() if k.lower() != 'value'} # valueを除外
+                        logger.debug(f"Actual Cookie {idx+1}: {log_actual_cookie}")
+                else:
+                    logger.debug("WebDriverはログイン失敗時点でCookieを保持していませんでした。")
+            except Exception as e_cookie_log:
+                logger.error(f"ログイン失敗時のCookie情報ログ記録中にエラー: {e_cookie_log}")
+
             save_screenshot(driver, "MyPageLoginCheckFail_CookieDriver", f"UID_{current_user_id}")
             driver.quit()
             return None
