@@ -1,16 +1,13 @@
 # タスク管理
 
-最終更新日時: 2025/07/07
+最終更新日時: 2024/07/08
 
 ---
 
 ## 🛠 仕掛中タスク
-*   [ ] フォローバックについて、処理時間を大幅に短縮するようお願いします（処理時間計測機能を追加済み。今後この情報をもとに改善を行う）
-*   [ ] 新規フォローの拡充機能時も処理時間を大幅に短縮するようお願いします（処理時間計測機能を追加済み。今後この情報をもとに改善を行う）
-    *   [ ] 検索＆フォロー機能への並列処理の導入検討（アカウントの安全性とYAMAPの規約を考慮）
-    *   [ ] 検索＆フォロー機能におけるアクションのバッチ処理検討（YAMAPの規約範囲内）
+*   [ ] 検索＆フォロー機能におけるアクションのバッチ処理検討（YAMAPの規約範囲内）
 *   [ ] エラーハンドリング、ログ出力の強化 - 継続的に改善要
-*   [ ] 動作確認・デバッグ - 継続的に必要
+*   [ ] 動作確認・デバッグ - 継続的に必要 (特に並列処理の安定性とパフォーマンス)
 
 ---
 
@@ -25,6 +22,7 @@
 *   [x] フォローバックについて、「次へ」のページ遷移も行い全ページの確認を実施します (`max_pages_for_follow_back` 設定追加)
 *   [x] タイムラインDOMO機能について、個別の記事に飛ばずに一覧上でDOMOする
 *   [ ]これらのスクリプトを管理しやすいよう分割するリファクタリング
+*   [ ] 並列処理のワーカー数や遅延時間について、最適な値をユーザー環境ごとに調整する必要があるため、README等に指針を記載検討。
 (ここにメモや改善案を記述)
 
 ---
@@ -133,14 +131,24 @@
 *   [x] `yamap_auto_domo.py` のリファクタリング - 機能分割 (ログイン関連処理を `driver_utils.py` に分割完了) `[PREVIOUS_COMMIT_HASH_PLACEHOLDER]`
 *   [x] `yamap_auto_domo.py` のリファクタリング - 機能分割 (ユーザープロフィール関連処理を `user_profile_utils.py` に分割完了: `get_latest_activity_url`, `get_user_follow_counts`, `find_follow_button_on_profile_page`) `[PREVIOUS_COMMIT_HASH_PLACEHOLDER]`
 *   [x] `yamap_auto_domo.py` のリファクタリング - 機能分割 (DOMO関連処理を `domo_utils.py` に、リストアイテムからのフォロー関連処理を `follow_utils.py` に分割) `[THIS_COMMIT_HASH]`
-*   [x] `follow_utils.py` のログ出力強化（詳細なセレクタ情報、ボタン状態の記録） `[THIS_COMMIT_HASH]`
+*   [x] `follow_utils.py` のログ出力強化（詳細なセレクタ情報、ボタン状態の記録） `[PREVIOUS_COMMIT_HASH]`
+*   [x] **フォローバック機能の高速化（並列処理化）** `[THIS_COMMIT_HASH]`
+    *   `follow_back_utils.py` に `ThreadPoolExecutor` を用いた並列処理ロジックを実装。
+    *   ワーカースレッドは独立したWebDriverインスタンスと共有Cookieで動作。
+    *   StaleElement対策として、ワーカースレッド内で対象ユーザー要素を再探索。
+    *   `config.yaml` に並列処理関連の設定項目 (`enable_parallel_follow_back`, `max_workers_follow_back`, `delay_per_worker_action_sec`) を追加。
+*   [x] **検索＆フォロー機能の高速化（ユーザー処理の並列化）** `[THIS_COMMIT_HASH]`
+    *   `search_utils.py` に `ThreadPoolExecutor` を用いた並列処理ロジックを実装。
+    *   メインスレッドが検索結果ページからユーザー情報を収集し、ワーカースレッドが個々のユーザー処理（プロフィール確認、フォロー、DOMO）を担当。
+    *   ワーカースレッドは独立したWebDriverインスタンスと共有Cookieで動作。
+    *   `config.yaml` に並列処理関連の設定項目 (`enable_parallel_search_follow`, `max_workers_search_follow`, `delay_per_worker_user_processing_sec`) を追加。
 <!-- - [x] 完了したタスク1 (コミットハッシュ or Issue番号) -->
 
 ---
 
 ## ❗手動確認依頼
 
-*   **ユーザープロフィール関連関数のリファクタリング影響確認 (`user_profile_utils.py` 分割関連)** `[THIS_COMMIT_HASH]`
+*   **ユーザープロフィール関連関数のリファクタリング影響確認 (`user_profile_utils.py` 分割関連)** `[PREVIOUS_COMMIT_HASH]`
     *   `yamap_auto_domo.py` を実行し、特に「検索からのフォロー＆DOMO機能 (`search_follow_and_domo_users`)」が正常に動作することを確認してください。
         *   ユーザーのプロフィールページへのアクセス
         *   フォロー数・フォロワー数の取得
@@ -149,4 +157,11 @@
         *   上記に基づくフォローおよびDOMOの実行
     *   スクリプト実行時にエラーログが出力されていないか確認してください。
     *   意図しない挙動（例：対象ユーザーの誤判定、操作の失敗など）がないか確認してください。
+*   **フォローバック機能および検索＆フォロー機能の並列処理動作確認** `[THIS_COMMIT_HASH]`
+    *   `config.yaml` で各機能の並列処理を有効 (`enable_parallel_...: true`) にし、ワーカー数を調整して実行してください。
+    *   処理が正常に完了すること、エラーログが出力されないことを確認してください。
+    *   特に、複数のブラウザウィンドウ（ヘッドレスの場合あり）が起動し、並行して処理が進む様子をログで確認してください。
+    *   フォロー/DOMOのアクションがYAMAP上で正しく行われているか（可能な範囲で）確認してください。
+    *   処理件数の上限設定 (`max_users_to_follow_back`, `max_users_to_process_per_page` など) が並列処理時も意図通り機能することを確認してください。
+    *   並列処理を無効にした場合と比較して、処理時間が短縮されるか確認してください。
 (ここに手動確認が必要な事項を記述)
