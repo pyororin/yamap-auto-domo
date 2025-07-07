@@ -204,9 +204,10 @@ if __name__ == "__main__":
                 # フォローバック機能
                 if FOLLOW_BACK_SETTINGS.get("enable_follow_back", False):
                     start_time = time.time()
-                    # TODO: フォローバック機能の並列化対応 (domo_timeline_activities_parallel と同様の構造で)
-                    logger.info("現時点ではフォローバック機能は並列化未対応のため、逐次実行します。")
-                    follow_back_users_new(driver, MY_USER_ID)
+                    # shared_cookies が取得できていればそれを渡し、並列処理を試みる
+                    # follow_back_users_new 内部で並列設定が無効、またはCookieがない場合は逐次処理にフォールバックされる
+                    logger.info("フォローバック機能呼び出し。並列処理は設定とCookieの有無に依存。")
+                    follow_back_users_new(driver, MY_USER_ID, shared_cookies_from_main=shared_cookies)
                     end_time = time.time()
                     logger.info(f"フォローバック機能の処理時間: {end_time - start_time:.2f}秒")
                 else:
@@ -229,9 +230,8 @@ if __name__ == "__main__":
                 # 検索結果からのフォロー＆DOMO機能
                 if SEARCH_AND_FOLLOW_SETTINGS.get("enable_search_and_follow", False):
                     start_time = time.time()
-                    # TODO: 検索からのフォロー＆DOMO機能の並列化対応
-                    logger.info("現時点では検索からのフォロー＆DOMO機能は並列化未対応のため、逐次実行します。")
-                    search_follow_and_domo_users(driver, MY_USER_ID)
+                    logger.info("検索結果からのフォロー＆DOMO機能呼び出し。並列処理は設定とCookieの有無に依存。")
+                    search_follow_and_domo_users(driver, MY_USER_ID, shared_cookies_from_main=shared_cookies)
                     end_time = time.time()
                     logger.info(f"検索結果からのフォロー＆DOMO機能の処理時間: {end_time - start_time:.2f}秒")
                 else:
