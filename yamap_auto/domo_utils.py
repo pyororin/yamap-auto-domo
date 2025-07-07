@@ -568,17 +568,17 @@ def domo_activity_on_timeline(driver, feed_item_element, domo_button_selectors, 
 
 
 # --- タイムラインDOMO機能 (並列処理対応版) ---
-def domo_timeline_activities_parallel(driver, shared_cookies):
+def domo_timeline_activities_parallel(driver, shared_cookies, current_user_id): # Added current_user_id
     """
     タイムライン上の活動記録にDOMOする機能の並列処理版です。
     `config.yaml` の `timeline_domo_settings` および `parallel_processing_settings` に従って動作します。
-    メインのWebDriverでタイムラインからDOMO対象の活動記録URLを収集し、
-    収集したURL群に対して `ThreadPoolExecutor` を使用して並列でDOMO処理を行います。
+    メインのWebDriverでタイムラインからDOMO対象の活動記録アイテムのインデックスを収集し、
+    収集したインデックス群に対して `ThreadPoolExecutor` を使用して並列でDOMO処理を行います。
 
     Args:
         driver (webdriver.Chrome): メインのSelenium WebDriverインスタンス (URL収集用)。
         shared_cookies (list[dict]): メインのWebDriverから取得したログインセッションCookie。
-                                   並列実行される各タスクのWebDriverに共有されます。
+        current_user_id (str): 現在ログインしているユーザーのID。
     """
     # 機能が有効かチェック (config.yaml)
     if not TIMELINE_DOMO_SETTINGS.get("enable_timeline_domo", False):
@@ -692,6 +692,7 @@ def domo_timeline_activities_parallel(driver, shared_cookies):
                     domo_timeline_item_task, # 新しいタスク関数
                     item_idx,
                     shared_cookies,
+                    current_user_id, # Pass current_user_id
                     TIMELINE_URL, # タイムラインページのURL
                     domo_button_selectors_for_timeline,
                     TIMELINE_DOMO_SETTINGS, # timeline_domo_settings を渡す
@@ -716,6 +717,7 @@ def domo_timeline_activities_parallel(driver, shared_cookies):
 def domo_timeline_item_task(
     feed_item_index,
     shared_cookies,
+    current_user_id, # Added current_user_id
     timeline_url_to_load,
     domo_button_selectors,
     timeline_domo_config_settings, # timeline_domo_settings全体を渡す
@@ -727,52 +729,38 @@ def domo_timeline_item_task(
     """
     task_driver = None
     action_delays = main_config.get("action_delays", {}) # main_config はグローバルアクセス可能想定
-    # task_startup_delay = PARALLEL_PROCESSING_SETTINGS.get("task_startup_delay_sec", 0.5) # 設定から読み込む
 
-    log_prefix = f"[DOMO_TASK Idx:{feed_item_index}]" # ログプレフィックス変更
+    log_prefix = f"[DOMO_TASK Idx:{feed_item_index}]"
     logger.info(f"{log_prefix} DOMOタスク開始。初期遅延: {initial_delay_sec:.2f}秒。")
     time.sleep(initial_delay_sec)
 
     try:
         # 1. 新しいWebDriverインスタンスを作成し、共有Cookieでログイン状態を再現
-        logger.info(f"{log_prefix} WebDriverを作成し、Cookieを設定します。ベースURL: {timeline_url_to_load}")
-        task_driver = create_driver_with_cookies(shared_cookies, base_url_to_visit_first=timeline_url_to_load)
+        # create_driver_with_cookies は current_user_id を必須とするように変更された
+        logger.info(f"{log_prefix} WebDriverを作成し、Cookieを設定・検証します。(User ID: {current_user_id})")
+        task_driver = create_driver_with_cookies(shared_cookies, current_user_id)
         if not task_driver:
-            logger.error(f"{log_prefix} WebDriver作成失敗。タスク中止。")
+            # create_driver_with_cookies がNoneを返した場合、内部でエラーログとスクショ取得済み
+            logger.error(f"{log_prefix} WebDriverの作成またはCookie/ログイン検証に失敗。タスクを中止。")
             return False
 
-        # --- ログイン状態確認 ---
-        login_check_selectors_task = {
-            "user_icon_task": "a[data-testid='header-avatar']",
-        }
-        is_logged_in_task = False
-        for key, selector in login_check_selectors_task.items():
-            try:
-                element = WebDriverWait(task_driver, 5).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, selector))
-                )
-                if element.is_displayed():
-                    is_logged_in_task = True
-                    logger.info(f"{log_prefix} ログイン状態確認OK: 要素 '{key}' が表示されています。")
-                    break
-            except TimeoutException:
-                logger.info(f"{log_prefix} ログイン状態確認: 要素 '{key}' が5秒以内に見つかりませんでした。")
-            except Exception as e_check_login_task:
-                logger.warning(f"{log_prefix} ログイン状態確認要素 '{key}' のチェック中にエラー: {e_check_login_task}")
+        # create_driver_with_cookies が成功した場合、ドライバーはログイン済みで、
+        # 現在のページはユーザー自身のマイページのはず。
+        # 次に、このタスクの目的であるタイムラインページに遷移する。
+        logger.info(f"{log_prefix} ログイン検証済み。対象のタイムラインページ ({timeline_url_to_load}) にアクセスします。")
+        task_driver.get(timeline_url_to_load)
 
-        if not is_logged_in_task:
-            logger.error(f"{log_prefix} タスク開始時のログイン状態確認に失敗。Cookieが正しく機能していない可能性があります。タスクを中止。")
-            save_screenshot(task_driver, "LoginCheckFail_DomoTimelineTask", f"idx_{feed_item_index}")
-            return False
-        # --- ログイン状態確認完了 ---
-
-        # 2. タイムラインページが正しく読み込まれたか確認
-        if task_driver.current_url != timeline_url_to_load:
-            logger.info(f"{log_prefix} 現在のURL ({task_driver.current_url}) が期待されるタイムラインURL ({timeline_url_to_load}) と異なるため、再アクセスします。")
-            task_driver.get(timeline_url_to_load)
+        # タイムラインページが正しく読み込まれたか確認
+        try:
             WebDriverWait(task_driver, 15).until(EC.url_to_be(timeline_url_to_load))
+            logger.info(f"{log_prefix} タイムラインページ ({timeline_url_to_load}) への遷移を確認。")
+        except TimeoutException:
+            logger.error(f"{log_prefix} タイムラインページ ({timeline_url_to_load}) へのURL遷移が15秒以内に確認できませんでした。現在のURL: {task_driver.current_url}")
+            save_screenshot(task_driver, "TimelineNavFail_DomoTask", f"idx_{feed_item_index}")
+            return False # ページ遷移失敗
 
-        logger.info(f"{log_prefix} タイムラインページ ({timeline_url_to_load}) にアクセス完了。")
+        # 以前のタスク内での冗長なログイン確認ブロックは削除。
+        # create_driver_with_cookies での検証に一本化。
 
         # 3. タイムラインのフィードアイテムリストを再取得
         feed_item_selector_in_task = "li.TimelineList__Feed"

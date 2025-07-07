@@ -71,57 +71,17 @@ def _search_follow_domo_task(user_profile_url, user_name_for_log, shared_cookies
     status_message = f"ユーザー「{user_name_for_log}」(URL: {user_profile_url.split('/')[-1]}): "
     log_prefix_task = f"[SF_TASK][{user_profile_url.split('/')[-1]}] "
     try:
-        logger.info(f"{log_prefix_task}WebDriverを作成し、Cookieを設定します。ベースURL: {BASE_URL} (User ID: {current_user_id_for_task})")
-        task_driver = create_driver_with_cookies(shared_cookies, current_user_id_for_task, base_url_to_visit_first=BASE_URL) # BASE_URLに一度アクセス
+        logger.info(f"{log_prefix_task}WebDriverを作成し、Cookieを設定・検証します。(User ID: {current_user_id_for_task})")
+        # Call create_driver_with_cookies with the new signature (current_user_id is mandatory, initial_page_for_cookie_setting uses default)
+        task_driver = create_driver_with_cookies(shared_cookies, current_user_id_for_task)
         if not task_driver:
-            logger.error(f"{log_prefix_task}WebDriverの作成に失敗。タスクを中止。")
-            return {"profile_url": user_profile_url, "followed": 0, "domoed": 0, "error": "WebDriver作成失敗"}
+            # create_driver_with_cookies handles logging and screenshots on failure
+            logger.error(f"{log_prefix_task}WebDriverの作成またはCookie/ログイン検証に失敗。タスクを中止。")
+            return {"profile_url": user_profile_url, "followed": 0, "domoed": 0, "error": "WebDriver/ログイン検証失敗"}
 
-        # --- ログイン状態確認 ---
-        # create_driver_with_cookies 内でも確認しているが、タスク側でも再確認
-        login_check_selector_avatar = "a[data-testid='header-avatar']" # ヘッダーのユーザーアバターアイコン
-        profile_edit_button_selector = "a[href$='/profile/edit'], button[data-testid='profile-edit-button']" # プロフィール編集ボタン (マイページ確認用)
-        is_logged_in_task = False
-
-        try:
-            logger.info(f"{log_prefix_task}ヘッダーアバター ({login_check_selector_avatar}) の表示を確認します (最大15秒)。")
-            avatar_element = WebDriverWait(task_driver, 15).until(
-                EC.visibility_of_element_located((By.CSS_SELECTOR, login_check_selector_avatar))
-            )
-            if avatar_element.is_displayed():
-                is_logged_in_task = True
-                logger.info(f"{log_prefix_task}ログイン状態確認OK: ヘッダーアバターが表示されています。")
-            else:
-                logger.warning(f"{log_prefix_task}ログイン状態確認: ヘッダーアバターは存在しますが非表示でした。")
-        except TimeoutException:
-            logger.warning(f"{log_prefix_task}ログイン状態確認: ヘッダーアバターが15秒以内に表示されませんでした。")
-            logger.debug(f"{log_prefix_task}アバター確認失敗時のURL: {task_driver.current_url}, タイトル: {task_driver.title}")
-            try:
-                body_start = task_driver.find_element(By.TAG_NAME, "body").get_attribute('innerHTML')[:500]
-                logger.debug(f"{log_prefix_task}アバター確認失敗時のBody先頭:\n{body_start}")
-            except Exception as e_body:
-                logger.debug(f"{log_prefix_task}アバター確認失敗時のBody取得エラー: {e_body}")
-        except Exception as e_check_login_task:
-            logger.warning(f"{log_prefix_task}ヘッダーアバター確認中に予期せぬエラー: {e_check_login_task}", exc_info=True)
-
-        if not is_logged_in_task:
-            # アバター確認に失敗した場合、現在のURLがマイページならプロフィール編集ボタンを確認
-            # _search_follow_domo_task は通常、対象ユーザーのプロフィールページから処理を開始するため、
-            # current_user_id_for_task を使ったマイページ確認は直接的には行わない。
-            # ただし、何らかの理由で自分のマイページにリダイレクトされた場合などを考慮するなら追加も可能だが、
-            # ここでは主にアバター確認のデバッグ情報拡充に留める。
-            # driver_utils.create_driver_with_cookies でのマイページ確認が主となる。
-            logger.info(f"{log_prefix_task}ヘッダーアバター確認失敗。")
-
-
-        if not is_logged_in_task: # is_logged_in_task が上記で True にならなかった場合
-            logger.error(f"{log_prefix_task}タスク開始時の最終的なログイン状態確認に失敗。タスクを中止。")
-            context_info = f"SearchFollow_LoginFail_User_{user_profile_url.split('/')[-1]}"
-            save_screenshot(task_driver, "LoginCheckFail_SearchFollowTask", context_info)
-            return {"profile_url": user_profile_url, "followed": 0, "domoed": 0, "error": "タスク開始時最終ログイン確認失敗"}
-        # --- ログイン状態確認完了 ---
-
-        logger.info(f"{log_prefix_task}プロフィールページ ({user_profile_url}) へアクセスします。")
+        # If task_driver is valid, login is verified, and driver is on My Page.
+        # Now navigate to the target user's profile page.
+        logger.info(f"{log_prefix_task}ログイン検証済み。対象のプロフィールページ ({user_profile_url}) へアクセスします。")
         task_driver.get(user_profile_url)
         try:
             WebDriverWait(task_driver, 20).until(
