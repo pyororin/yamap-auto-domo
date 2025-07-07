@@ -328,59 +328,140 @@ def create_driver_with_cookies(cookies, current_user_id, initial_page_for_cookie
         time.sleep(0.5) # JS等によるコンテンツ描画の時間を少し待つ
 
         my_page_login_ok = False
-        # ヘッダーのユーザーメニューを開くボタンを主要な確認要素とする
-        # このボタンが存在すれば、ログインしているとみなせる可能性が高い
+        verification_details = [] # 検証ステップごとの詳細を記録
+
+        # --- ヘルパー関数: URL正規化 ---
+        def _normalize_url(url_string):
+            if not url_string:
+                return ""
+            url_string = url_string.strip().lower()
+            if url_string.endswith('/'):
+                url_string = url_string[:-1]
+            # クエリパラメータやハッシュを除去することも検討 (今回はシンプルに末尾スラッシュのみ)
+            return url_string
+
+        normalized_expected_my_page_url = _normalize_url(my_page_url)
+        normalized_current_url = _normalize_url(driver.current_url)
+
+        # --- 確認ステップ1: URLが期待通りマイページか ---
+        if normalized_current_url == normalized_expected_my_page_url:
+            logger.info(f"マイページURL ({my_page_url}) に正しく遷移済みであることを確認。")
+            verification_details.append("URL_MATCH_OK")
+        else:
+            logger.warning(f"マイページURL ({my_page_url}) への遷移を期待しましたが、現在のURL ({driver.current_url}) が異なります。")
+            verification_details.append(f"URL_MISMATCH (Expected: {my_page_url}, Actual: {driver.current_url})")
+            # URLが異なる場合は即時失敗とはせず、他の要素でログイン状態を確認する
+
+        # --- 確認ステップ2: 主要なログインインジケータ (ユーザーメニューボタン) ---
         user_menu_button_selector = "button[aria-label='ユーザーメニューを開く']"
-        # 補助的に、プロフィール編集ボタンも確認対象として残すが、優先度は下げる
-        profile_edit_button_selector = "a[href$='/profile/edit'], button[data-testid='profile-edit-button']"
+        # ヘッダーアバター画像セレクタ (alt属性確認用) - より具体的なセレクタに変更が必要な場合あり
+        header_avatar_selector = "header button[aria-label='ユーザーメニューを開く'] img, header a[href*='/users/'] img" # 複数候補
 
         try:
-            # まずユーザーメニューボタンの「存在」を確認 (presence_of_element_located)
-            user_menu_element = WebDriverWait(driver, 20).until(
+            user_menu_element = WebDriverWait(driver, 15).until( # 少し短縮
                 EC.presence_of_element_located((By.CSS_SELECTOR, user_menu_button_selector))
             )
-            # 要素が存在すれば、ログインしている可能性が高いと判断
-            my_page_login_ok = True
-            logger.info(f"マイページ ({my_page_url}) でユーザーメニュー関連要素 ({user_menu_button_selector}) の存在を確認。ログイン状態は良好と判断。")
+            logger.info(f"主要ログイン確認要素 ({user_menu_button_selector}) の存在を確認。")
+            verification_details.append("USER_MENU_BTN_OK")
 
-            # オプションとして、さらに詳細な確認（例：ユーザー名が期待通りかなど）もここに追加可能
-            # 例えば、アバター画像内のimgタグのalt属性にユーザー名が含まれるか等
+            # --- 確認ステップ2a: アバター画像のalt属性確認 (ユーザーメニューボタンが見つかった場合) ---
+            try:
+                avatar_verified = False
+                avatar_elements = driver.find_elements(By.CSS_SELECTOR, header_avatar_selector)
+                if avatar_elements:
+                    for avatar_img in avatar_elements:
+                        if avatar_img.is_displayed(): # 表示されているもののみ対象
+                            alt_text = avatar_img.get_attribute("alt")
+                            if alt_text:
+                                # ユーザーIDが含まれているか、またはユーザー名（取得できれば）が含まれているか
+                                # ここでは current_user_id (数値ID) の一部が含まれているかで簡易的に確認
+                                if current_user_id in alt_text: # 完全一致または部分一致
+                                    logger.info(f"ヘッダーアバター画像のalt属性 ({alt_text}) にユーザーID ({current_user_id}) を確認。")
+                                    avatar_verified = True
+                                    verification_details.append(f"AVATAR_ALT_OK (alt: {alt_text})")
+                                    break
+                                else:
+                                    logger.debug(f"アバターalt属性 ({alt_text}) にユーザーID ({current_user_id}) が見つからず。")
+                            else:
+                                logger.debug("アバター画像のalt属性が空または取得できませんでした。")
+                        else:
+                            logger.debug("非表示のアバター画像をスキップ。")
+                else:
+                    logger.warning(f"ヘッダーアバター画像要素 ({header_avatar_selector}) が見つかりませんでした。")
+
+                if avatar_verified:
+                    my_page_login_ok = True # ユーザーメニューとアバターaltでOK
+                else:
+                    logger.warning(f"ユーザーメニューボタンは存在しましたが、アバターalt属性でのユーザーID確認に失敗。")
+                    # この時点ではまだ失敗とせず、他の要素で補完する
+
+            except Exception as e_avatar:
+                logger.warning(f"アバターalt属性確認中にエラー: {e_avatar}", exc_info=True)
+                verification_details.append("AVATAR_ALT_CHECK_ERROR")
+
+            if my_page_login_ok: # アバター確認もOKならここで確定
+                 logger.info(f"ユーザーメニューボタンおよびアバターalt属性によりログイン状態は良好と判断。")
 
         except TimeoutException:
-            logger.warning(f"マイページ ({my_page_url}) で主要なログイン確認要素 ({user_menu_button_selector}) が20秒以内に見つかりませんでした。")
-            # プライマリ要素が見つからない場合、念のためセカンダリ要素（プロフィール編集ボタン）も試す
-            logger.info(f"セカンダリのログイン確認要素 ({profile_edit_button_selector}) の確認を試みます...")
+            logger.warning(f"主要なログイン確認要素 ({user_menu_button_selector}) が15秒以内に見つかりませんでした。")
+            verification_details.append("USER_MENU_BTN_TIMEOUT")
+        except Exception as e_user_menu:
+            logger.warning(f"ユーザーメニューボタン確認中に予期せぬエラー: {e_user_menu}", exc_info=True)
+            verification_details.append("USER_MENU_BTN_ERROR")
+
+        # --- 確認ステップ3: 補助的なログインインジケータ (プロフィール編集ボタン) ---
+        # 主要な確認 (ユーザーメニュー＋アバター) でOKでなければ、こちらを試す
+        if not my_page_login_ok:
+            profile_edit_button_selector = "a[href$='/profile/edit'], button[data-testid='profile-edit-button']"
+            logger.info(f"主要確認でNGだったため、セカンダリのログイン確認要素 ({profile_edit_button_selector}) の確認を試みます...")
             try:
-                edit_element = WebDriverWait(driver, 5).until( # 短めのタイムアウトで試行
+                edit_element = WebDriverWait(driver, 7).until( # 短めのタイムアウト
                     EC.presence_of_element_located((By.CSS_SELECTOR, profile_edit_button_selector))
                 )
-                my_page_login_ok = True
-                logger.info(f"マイページ ({my_page_url}) でセカンダリのプロフィール編集関連要素 ({profile_edit_button_selector}) の存在を確認。ログイン状態は良好と判断。")
+                my_page_login_ok = True # プロフィール編集ボタンがあればOKとみなす
+                logger.info(f"セカンダリのプロフィール編集関連要素 ({profile_edit_button_selector}) の存在を確認。ログイン状態は良好と判断。")
+                verification_details.append("PROFILE_EDIT_BTN_OK")
             except TimeoutException:
-                logger.warning(f"マイページ ({my_page_url}) でセカンダリのログイン確認要素 ({profile_edit_button_selector}) も5秒以内に見つかりませんでした。")
-                # HTMLソースの保存などはここで行う
-                if driver:
-                    try:
-                        html_source = driver.page_source
-                        debug_source_filename = f"MyPageFail_UID_{current_user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
-                        debug_source_path = os.path.join(os.path.dirname(_MODULE_DIR), "logs", "debug_html", debug_source_filename)
-                        os.makedirs(os.path.dirname(debug_source_path), exist_ok=True)
-                        with open(debug_source_path, "w", encoding="utf-8") as f:
-                            f.write(html_source)
-                        logger.info(f"タイムアウト時のHTMLソースを保存しました: {debug_source_path}")
-                    except Exception as e_ps:
-                        logger.error(f"ページソース取得/保存中にエラー: {e_ps}")
-            except Exception as e_sec_check:
-                 logger.warning(f"セカンダリ要素確認中に予期せぬエラー: {e_sec_check}", exc_info=True)
+                logger.warning(f"セカンダリのログイン確認要素 ({profile_edit_button_selector}) も7秒以内に見つかりませんでした。")
+                verification_details.append("PROFILE_EDIT_BTN_TIMEOUT")
+            except Exception as e_prof_edit:
+                logger.warning(f"プロフィール編集ボタン確認中に予期せぬエラー: {e_prof_edit}", exc_info=True)
+                verification_details.append("PROFILE_EDIT_BTN_ERROR")
 
-        except Exception as e_mypage_check:
-            logger.warning(f"マイページ ({my_page_url}) 確認中に予期せぬエラー: {e_mypage_check}", exc_info=True)
+        # --- 確認ステップ4: 最終手段としてのURL再確認 (他の要素が全滅した場合) ---
+        if not my_page_login_ok:
+            logger.info("主要およびセカンダリの要素確認でNG。最終手段としてURLの一致を再評価します。")
+            if normalized_current_url == normalized_expected_my_page_url:
+                my_page_login_ok = True
+                logger.info(f"最終確認: 現在のURL ({driver.current_url}) が期待されるマイページURLと一致するため、ログイン状態とみなします。")
+                verification_details.append("FINAL_URL_MATCH_RECONFIRMED_OK")
+            else:
+                logger.error(f"最終確認: 現在のURL ({driver.current_url}) も期待されるマイページURL ({my_page_url}) と不一致。")
+                verification_details.append("FINAL_URL_MATCH_FAILED")
 
+
+        # --- 総合判定と失敗時の処理 ---
         if not my_page_login_ok:
             logger.error(
-                f"マイページ ({my_page_url}) でのログイン状態確認に失敗。Cookieによるセッションが正しく機能していません。"
+                f"マイページ ({my_page_url}) でのログイン状態確認に失敗。Cookieによるセッションが正しく機能していません。検証詳細: {verification_details}"
             )
-            # 詳細なデバッグ情報をログに出力
+            # HTMLソースとスクリーンショットの保存
+            if driver:
+                try:
+                    html_source = driver.page_source
+                    # logs/debug_html ディレクトリは save_screenshot 内で screenshots と同様に作成されることを期待するか、ここで作る
+                    debug_html_dir = os.path.join(os.path.dirname(_MODULE_DIR), "logs", "debug_html")
+                    os.makedirs(debug_html_dir, exist_ok=True)
+                    debug_source_filename = f"MyPageFail_UID_{current_user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
+                    debug_source_path = os.path.join(debug_html_dir, debug_source_filename)
+                    with open(debug_source_path, "w", encoding="utf-8") as f:
+                        f.write(html_source)
+                    logger.info(f"ログイン失敗時のHTMLソースを保存しました: {debug_source_path}")
+                except Exception as e_ps:
+                    logger.error(f"ページソース取得/保存中にエラー: {e_ps}")
+                save_screenshot(driver, "MyPageLoginCheckFail_CookieDriver", f"UID_{current_user_id}_Details_{'_'.join(verification_details)}")
+
+            # 詳細なデバッグ情報をログに出力 (既存のものを流用・強化)
             current_url_on_fail = "N/A"
             current_title_on_fail = "N/A"
             try:
