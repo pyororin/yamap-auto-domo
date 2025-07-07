@@ -20,7 +20,7 @@
 ## 💡 メモ / 改善案
 
 *   [x] フォローバックについて、「次へ」のページ遷移も行い全ページの確認を実施します (`max_pages_for_follow_back` 設定追加)
-*   [ ] タイムラインDOMO機能について、個別の記事に飛ばずに一覧上でDOMOする
+*   [x] タイムラインDOMO機能について、個別の記事に飛ばずに一覧上でDOMOする
 *   [ ] フォローバックについて、処理時間を大幅に短縮するようお願いします（処理時間計測機能を追加済み。今後この情報をもとに改善を行う）
 *   [ ] 新規フォローの拡充機能時も処理時間を大幅に短縮するようお願いします（処理時間計測機能を追加済み。今後この情報をもとに改善を行う）
     *   [ ] 検索＆フォロー機能への並列処理の導入検討（アカウントの安全性とYAMAPの規約を考慮）
@@ -100,6 +100,7 @@
 
 ## ✅ 完了タスク
 
+*   [x] タイムラインDOMO機能について、個別の記事に飛ばずに一覧上でDOMOするよう改修 ([THIS_COMMIT_HASH])
 *   [x] `domo_utils.py` の `domo_activity` 関数のエラーハンドリングとログ出力を強化 `[THIS_COMMIT_HASH]`
 *   [x] `yamap_auto_domo.py` 内のフォローバック処理 (`follow_back_users_new`) を `follow_back_utils.py` 等に分割 (現状 `follow_utils.py` に存在、これから `follow_back_utils.py` へ移動、実際には既に `follow_back_utils.py` に存在することを確認) `[THIS_COMMIT_HASH]`
 *   [x] `yamap_auto_domo.py` 内の検索結果処理 (`search_follow_and_domo_users`) を `search_utils.py` 等に分割 (現状 `follow_utils.py` に存在、これから `search_utils.py` へ移動、実際には既に `search_utils.py` に存在することを確認) `[THIS_COMMIT_HASH]`
