@@ -99,7 +99,6 @@ def _follow_back_task(page_url, user_profile_url_to_find, user_name_to_find, sha
             logger.warning(f"{log_prefix_task}ヘッダーアバター確認中に予期せぬエラー: {e_check_login_task}", exc_info=True)
 
         if not is_logged_in_task:
-        if not is_logged_in_task:
             # ヘッダーアバター確認に失敗した場合の追加処理
             # 現在のURLがユーザー自身の「マイページURL」（クエリパラメータ等なし）と一致するか確認
             expected_my_page_url = f"{BASE_URL}/users/{current_user_id_for_task}"
