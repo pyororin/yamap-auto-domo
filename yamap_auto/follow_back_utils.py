@@ -12,8 +12,8 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from selenium import webdriver  # 並列処理でwebdriverを直接使うため
 
-# .driver_utils から main_config の読み込み関数と Cookie付きドライバ作成関数をインポート
-from .driver_utils import get_main_config, create_driver_with_cookies, get_driver_options
+# .driver_utils から main_config の読み込み関数と Cookie付きドライバ作成関数、スクリーンショット保存関数をインポート
+from .driver_utils import get_main_config, create_driver_with_cookies, get_driver_options, save_screenshot
 # .follow_utils からフォローボタン検索・クリック関数をインポート
 from .follow_utils import find_follow_button_in_list_item, click_follow_button_and_verify
 
@@ -65,38 +65,34 @@ def _follow_back_task(page_url, user_profile_url_to_find, user_name_to_find, sha
         # Cookieを使って新しいWebDriverインスタンスを作成
         # (create_driver_with_cookies は driver_utils にある想定)
         # page_url (フォロワー一覧ページ) を base_url_to_visit_first として渡す
-        logger.info(f"{log_prefix_task}WebDriverを作成し、Cookieを設定します。ベースURL: {page_url}")
-        task_driver = create_driver_with_cookies(shared_cookies, base_url_to_visit_first=page_url)
+        logger.info(f"{log_prefix_task}WebDriverを作成し、Cookieを設定します。ベースURL: {page_url} (User ID: {current_user_id_for_task})")
+        task_driver = create_driver_with_cookies(shared_cookies, current_user_id_for_task, base_url_to_visit_first=page_url)
         if not task_driver:
             logger.error(f"{log_prefix_task}WebDriverの作成に失敗。タスクを中止。")
             return {"profile_url": user_profile_url_to_find, "followed": False, "error": "WebDriver作成失敗"}
 
         # --- ログイン状態確認 ---
-        # create_driver_with_cookies 内である程度確認しているが、タスク側でも簡易確認
-        # YAMAPのログイン後に表示される共通ヘッダーのユーザーアイコンやマイページリンクなどを確認
-        login_check_selectors_task = {
-            "user_icon_task": "a[data-testid='header-avatar']",
-            # "my_page_link_task": f"a[href*='/users/{current_user_id_for_task}']" # current_user_id_for_task を使う
-        }
+        # create_driver_with_cookies 内でも確認しているが、タスク側でも再確認
+        login_check_selector_task = "a[data-testid='header-avatar']" # ヘッダーのユーザーアバターアイコン
         is_logged_in_task = False
-        for key, selector in login_check_selectors_task.items():
-            try:
-                element = WebDriverWait(task_driver, 5).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, selector))
-                )
-                if element.is_displayed():
-                    is_logged_in_task = True
-                    logger.info(f"{log_prefix_task}ログイン状態確認OK: 要素 '{key}' が表示されています。")
-                    break # いずれか一つでも確認できればOKとする
-            except TimeoutException:
-                logger.info(f"{log_prefix_task}ログイン状態確認: 要素 '{key}' が5秒以内に見つかりませんでした。")
-            except Exception as e_check_login_task:
-                logger.warning(f"{log_prefix_task}ログイン状態確認要素 '{key}' のチェック中にエラー: {e_check_login_task}")
+        try:
+            avatar_element = WebDriverWait(task_driver, 10).until(
+                EC.visibility_of_element_located((By.CSS_SELECTOR, login_check_selector_task))
+            )
+            if avatar_element.is_displayed():
+                is_logged_in_task = True
+                logger.info(f"{log_prefix_task}ログイン状態確認OK: ヘッダーアバター ({login_check_selector_task}) が表示されています。")
+            else:
+                logger.warning(f"{log_prefix_task}ログイン状態確認: ヘッダーアバターは存在しますが非表示です。")
+        except TimeoutException:
+            logger.warning(f"{log_prefix_task}ログイン状態確認: ヘッダーアバター ({login_check_selector_task}) が10秒以内に表示されませんでした。")
+        except Exception as e_check_login_task:
+            logger.warning(f"{log_prefix_task}ログイン状態確認中に予期せぬエラー: {e_check_login_task}", exc_info=True)
 
         if not is_logged_in_task:
             logger.error(f"{log_prefix_task}タスク開始時のログイン状態確認に失敗。Cookieが正しく機能していない可能性があります。タスクを中止。")
-            # from .driver_utils import save_screenshot # 遅延インポート or driver_utilsをグローバルインポート
-            # save_screenshot(task_driver, "LoginCheckFail_FollowBackTask", f"user_{user_profile_url_to_find.split('/')[-1]}")
+            context_info = f"FollowBack_LoginFail_User_{user_profile_url_to_find.split('/')[-1]}"
+            save_screenshot(task_driver, "LoginCheckFail_FollowBackTask", context_info)
             return {"profile_url": user_profile_url_to_find, "followed": False, "error": "タスク開始時ログイン確認失敗"}
         # --- ログイン状態確認完了 ---
 
