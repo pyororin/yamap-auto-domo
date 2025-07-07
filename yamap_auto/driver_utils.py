@@ -307,7 +307,21 @@ def create_driver_with_cookies(cookies, current_user_id, initial_page_for_cookie
             else:
                 logger.warning(f"マイページ ({my_page_url}) でプロフィール編集関連要素は存在しますが非表示です。")
         except TimeoutException:
-            logger.warning(f"マイページ ({my_page_url}) の特有要素 ({profile_edit_button_selector}) の表示が20秒以内にタイムアウトしました。") # Updated log message
+            logger.warning(f"マイページ ({my_page_url}) の特有要素 ({profile_edit_button_selector}) の表示が20秒以内にタイムアウトしました。")
+            # HTMLソースを取得してデバッグ情報を追加
+            if driver:
+                try:
+                    html_source = driver.page_source
+                    debug_source_filename = f"MyPageFail_UID_{current_user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
+                    debug_source_path = os.path.join(os.path.dirname(_MODULE_DIR), "logs", "debug_html", debug_source_filename)
+                    os.makedirs(os.path.dirname(debug_source_path), exist_ok=True)
+                    with open(debug_source_path, "w", encoding="utf-8") as f:
+                        f.write(html_source)
+                    logger.info(f"タイムアウト時のHTMLソースを保存しました: {debug_source_path}")
+                    # ログには一部を出力（長すぎる可能性があるため）
+                    logger.debug(f"タイムアウト時のHTMLソース先頭1000文字:\n{html_source[:1000]}")
+                except Exception as e_ps:
+                    logger.error(f"ページソース取得/保存中にエラー: {e_ps}")
         except Exception as e_mypage_check:
             logger.warning(f"マイページ ({my_page_url}) 確認中に予期せぬエラー: {e_mypage_check}", exc_info=True)
 
@@ -316,6 +330,7 @@ def create_driver_with_cookies(cookies, current_user_id, initial_page_for_cookie
                 f"マイページ ({my_page_url}) でのログイン状態確認に失敗。Cookieによるセッションが正しく機能していません。"
                 f"現在のURL: {driver.current_url}, タイトル: {driver.title}"
             )
+            # スクリーンショットは既にこのエラー発生時に撮られる想定 (save_screenshot呼び出しがここにある)
             save_screenshot(driver, "MyPageLoginCheckFail_CookieDriver", f"UID_{current_user_id}")
             driver.quit()
             return None
