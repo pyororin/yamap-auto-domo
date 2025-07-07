@@ -10,7 +10,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from selenium import webdriver # 並列処理でwebdriverを直接使うため
+from selenium import webdriver  # 並列処理でwebdriverを直接使うため
 
 # .driver_utils から main_config の読み込み関数と Cookie付きドライバ作成関数をインポート
 from .driver_utils import get_main_config, create_driver_with_cookies, get_driver_options
@@ -20,10 +20,12 @@ from .follow_utils import find_follow_button_in_list_item, click_follow_button_a
 logger = logging.getLogger(__name__)
 
 # --- グローバル定数 ---
-BASE_URL = "https://yamap.com" # このファイルでも直接URLを組み立てるために必要
+BASE_URL = "https://yamap.com"  # このファイルでも直接URLを組み立てるために必要
 
 # --- 設定情報の読み込み ---
 _main_config_cache = None
+
+
 def _get_config_cached():
     """ 設定情報をキャッシュを使って取得 """
     global _main_config_cache
@@ -31,8 +33,9 @@ def _get_config_cached():
         _main_config_cache = get_main_config()
         if not _main_config_cache:
             logger.error("follow_back_utils: main_config の読み込みに失敗しました。")
-            _main_config_cache = {} # フォールバック
+            _main_config_cache = {}  # フォールバック
     return _main_config_cache
+
 
 def _get_follow_back_settings():
     config = _get_config_cached()
@@ -41,11 +44,14 @@ def _get_follow_back_settings():
         logger.warning("follow_back_utils: config.yaml に follow_back_settings が見つからないか空です。")
     return settings
 
+
 def _get_action_delays():
     config = _get_config_cached()
     return config.get("action_delays", {})
 
 # --- 並列処理用ワーカースレッドタスク ---
+
+
 def _follow_back_task(page_url, user_profile_url_to_find, user_name_to_find, shared_cookies, follow_back_settings_for_task, action_delays_for_task, current_user_id_for_task):
     """
     並列処理用のワーカースレッドタスク。
@@ -65,13 +71,11 @@ def _follow_back_task(page_url, user_profile_url_to_find, user_name_to_find, sha
         # 念のため、再度ページURLにアクセス (create_driver_with_cookies内で既にアクセスしている場合もある)
         task_driver.get(page_url)
         WebDriverWait(task_driver, 20).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, "ul.css-18aka15")) # followers_list_container_selector
+            EC.presence_of_element_located((By.CSS_SELECTOR, "ul.css-18aka15"))  # followers_list_container_selector
         )
-        time.sleep(0.5) # 描画待ち
+        time.sleep(0.5)  # 描画待ち
 
         # ページ内で対象ユーザーのカードを探す
-        # user_card_selector = "div[data-testid='user']"
-        # user_link_in_card_selector = "a.css-e5vv35[href^='/users/']"
         all_cards_on_page_in_task = task_driver.find_elements(By.CSS_SELECTOR, "div[data-testid='user']")
         target_card_element = None
         for card in all_cards_on_page_in_task:
@@ -79,12 +83,13 @@ def _follow_back_task(page_url, user_profile_url_to_find, user_name_to_find, sha
                 link_el = card.find_element(By.CSS_SELECTOR, "a.css-e5vv35[href^='/users/']")
                 href = link_el.get_attribute("href")
                 if href:
-                    if href.startswith("/"): href = BASE_URL + href
+                    if href.startswith("/"):
+                        href = BASE_URL + href
                     if href == user_profile_url_to_find:
                         target_card_element = card
                         break
             except NoSuchElementException:
-                continue # このカードは対象外
+                continue  # このカードは対象外
 
         if not target_card_element:
             logger.warning(f"{status_message}ページ ({page_url}) 内で対象ユーザーカードが見つかりませんでした。")
@@ -101,7 +106,7 @@ def _follow_back_task(page_url, user_profile_url_to_find, user_name_to_find, sha
             time.sleep(delay_worker_action)
         else:
             logger.info(f"{status_message}は既にフォロー済みか、フォローボタンが見つかりませんでした（並列タスク内）。")
-            time.sleep(0.2) # 短い遅延
+            time.sleep(0.2)  # 短い遅延
 
         return {"profile_url": user_profile_url_to_find, "followed": followed_in_task, "error": None}
 
@@ -112,8 +117,9 @@ def _follow_back_task(page_url, user_profile_url_to_find, user_name_to_find, sha
         if task_driver:
             task_driver.quit()
 
-
 # --- フォローバック機能 (メインロジック) ---
+
+
 def follow_back_users_new(driver, current_user_id, shared_cookies_from_main=None):
     """
     自分をフォローしてくれたユーザーをフォローバックする機能。
@@ -135,7 +141,6 @@ def follow_back_users_new(driver, current_user_id, shared_cookies_from_main=None
         logger.warning("並列フォローバックが有効ですが、共有Cookieが提供されませんでした。逐次処理にフォールバックします。")
         is_parallel_enabled = False
 
-
     logger.info(f">>> フォローバック機能を開始します... (並列処理: {'有効' if is_parallel_enabled else '無効'})")
     base_followers_url = f"{BASE_URL}/users/{current_user_id}?tab=followers"
     current_page_number = 1
@@ -147,10 +152,11 @@ def follow_back_users_new(driver, current_user_id, shared_cookies_from_main=None
     max_to_follow_back_total = fb_settings.get("max_users_to_follow_back", 10)
     max_pages_to_check = fb_settings.get("max_pages_for_follow_back", 100)
     # 逐次処理用の遅延 (並列時はワーカースレッド側で `delay_per_worker_action_sec` を使用)
-    sequential_delay_between_actions = action_delays.get("after_follow_action_sec", # 旧 config の delay_after_follow_back_action_sec に相当するものを探す
-                                                       fb_settings.get("delay_after_follow_back_action_sec", 3.0)) # フォールバック
+    sequential_delay_between_actions = action_delays.get(
+        "after_follow_action_sec",
+        fb_settings.get("delay_after_follow_back_action_sec", 3.0)
+    )
     delay_after_pagination_fb = action_delays.get("delay_after_pagination_sec", 3.0)
-
 
     total_followed_this_session = 0
     # processed_profile_urls_this_session は、メインスレッドでURLを収集し、
@@ -169,14 +175,14 @@ def follow_back_users_new(driver, current_user_id, shared_cookies_from_main=None
     ]
 
     with ThreadPoolExecutor(max_workers=max_workers) if is_parallel_enabled else nullcontext() as executor:
-        futures = [] # 並列処理の場合のFutureオブジェクトリスト
+        futures = []  # 並列処理の場合のFutureオブジェクトリスト
 
         while current_page_number <= max_pages_to_check:
             if total_followed_this_session >= max_to_follow_back_total:
                 logger.info(f"セッション中のフォローバック上限 ({max_to_follow_back_total}人) に達しました。ページネーションを停止。")
-                break # ページネーションループ (while) を抜ける
+                break  # ページネーションループ (while) を抜ける
 
-            current_page_url_for_task = driver.current_url # タスクに渡す現在のページURL
+            current_page_url_for_task = driver.current_url  # タスクに渡す現在のページURL
             logger.info(f"フォロワーリストの {current_page_number} ページ目 ({current_page_url_for_task}) を処理します。")
 
             try:
@@ -184,7 +190,7 @@ def follow_back_users_new(driver, current_user_id, shared_cookies_from_main=None
                     EC.presence_of_element_located((By.CSS_SELECTOR, followers_list_container_selector))
                 )
                 logger.info("フォロワーリストのコンテナをメインドライバーで発見。")
-                time.sleep(1.0) # リスト内容の描画待ち (メインドライバー)
+                time.sleep(1.0)  # リスト内容の描画待ち (メインドライバー)
 
                 user_cards_all_on_page = driver.find_elements(By.CSS_SELECTOR, user_card_selector)
                 logger.info(f"{current_page_number} ページ目から {len(user_cards_all_on_page)} 件のユーザーカード候補を検出 (メインドライバー)。")
@@ -198,7 +204,6 @@ def follow_back_users_new(driver, current_user_id, shared_cookies_from_main=None
                     elif skip_count > 0:
                         logger.info(f"スキップ対象がカード数以上のため、このページでは全件スキップ。")
                         user_cards_to_process_this_page = []
-                    # else: スキップなし
                 else:
                     logger.info("各ページ先頭のユーザースキップ機能は無効。検出された全ユーザーを処理対象とします。")
 
@@ -208,12 +213,12 @@ def follow_back_users_new(driver, current_user_id, shared_cookies_from_main=None
 
                 tasks_for_this_page = []
                 for card_idx, user_card_element_main_driver in enumerate(user_cards_to_process_this_page):
-                    if total_followed_this_session + len(futures) >= max_to_follow_back_total and is_parallel_enabled : # 並列時は投入タスク数も考慮
-                         logger.info(f"フォローバック上限 ({max_to_follow_back_total}人) に近づいたため、新規タスク投入を停止します。")
-                         break
-                    if total_followed_this_session >= max_to_follow_back_total and not is_parallel_enabled: # 逐次処理の場合
-                         logger.info(f"フォローバック上限 ({max_to_follow_back_total}人) に達しました。")
-                         break
+                    if total_followed_this_session + len(futures) >= max_to_follow_back_total and is_parallel_enabled:
+                        logger.info(f"フォローバック上限 ({max_to_follow_back_total}人) に近づいたため、新規タスク投入を停止します。")
+                        break
+                    if total_followed_this_session >= max_to_follow_back_total and not is_parallel_enabled:
+                        logger.info(f"フォローバック上限 ({max_to_follow_back_total}人) に達しました。")
+                        break
 
                     user_name_main = f"ユーザー{card_idx+1} (Page {current_page_number}, MainDriver)"
                     profile_url_main = ""
@@ -230,7 +235,8 @@ def follow_back_users_new(driver, current_user_id, shared_cookies_from_main=None
                         if not profile_url_main:
                             logger.warning(f"{user_name_main}: プロフィールURL取得失敗。スキップ。")
                             continue
-                        if profile_url_main.startswith("/"): profile_url_main = BASE_URL + profile_url_main
+                        if profile_url_main.startswith("/"):
+                            profile_url_main = BASE_URL + profile_url_main
 
                         if f"/users/{current_user_id}" in profile_url_main or not profile_url_main.startswith(f"{BASE_URL}/users/"):
                             logger.debug(f"スキップ対象: 自分自身または無効なURL ({profile_url_main})")
@@ -246,14 +252,23 @@ def follow_back_users_new(driver, current_user_id, shared_cookies_from_main=None
                         logger.warning(f"{user_name_main}: カード解析中に予期せぬエラー: {e_card_parse_main}。スキップ。")
                         continue
 
-                    processed_profile_urls_this_session.add(profile_url_main) # メインスレッドで処理済みとしてマーク
+                    processed_profile_urls_this_session.add(profile_url_main)  # メインスレッドで処理済みとしてマーク
 
                     # --- ここで逐次処理と並列処理の分岐 ---
                     if is_parallel_enabled and executor:
                         # 並列処理: タスクを投入
                         logger.info(f"フォロワー「{user_name_main}」(URL: {profile_url_main.split('/')[-1]}) のフォローバックタスクを投入します...")
                         # fb_settings と action_delays をタスクに渡す
-                        future = executor.submit(_follow_back_task, current_page_url_for_task, profile_url_main, user_name_main, shared_cookies_from_main, fb_settings, action_delays, current_user_id)
+                        future = executor.submit(
+                            _follow_back_task,
+                            current_page_url_for_task,
+                            profile_url_main,
+                            user_name_main,
+                            shared_cookies_from_main,
+                            fb_settings,
+                            action_delays,
+                            current_user_id
+                        )
                         futures.append(future)
                     else:
                         # 逐次処理: メインドライバーで直接処理
@@ -270,22 +285,21 @@ def follow_back_users_new(driver, current_user_id, shared_cookies_from_main=None
                 # --- ページ内の全ユーザーカード処理後 (逐次処理の場合) ---
                 if not is_parallel_enabled and total_followed_this_session >= max_to_follow_back_total:
                     logger.info("逐次処理でフォローバック上限に達したため、ページネーションを停止します。")
-                    break # while ループを抜ける
+                    break  # while ループを抜ける
 
             except TimeoutException:
                 logger.warning(f"{current_page_number} ページ目のリストコンテナ読み込みタイムアウト(メインドライバー)。")
-                break # while ループを抜ける
+                break  # while ループを抜ける
             except Exception as e_page_process_main:
                 logger.error(f"{current_page_number} ページ目の処理中(メインドライバー)に予期せぬエラー: {e_page_process_main}", exc_info=True)
-                break # while ループを抜ける
+                break  # while ループを抜ける
 
             # --- 「次へ」ボタンの処理 (メインドライバー) ---
-            if total_followed_this_session >= max_to_follow_back_total and not is_parallel_enabled: # 逐次処理の上限チェック
-                 break
-            if is_parallel_enabled and executor and (total_followed_this_session + len(futures) >= max_to_follow_back_total): # 並列処理の上限チェック
-                 logger.info("並列タスク投入数が上限に近いため、次のページへは進みません。残タスク処理後に終了します。")
-                 break
-
+            if total_followed_this_session >= max_to_follow_back_total and not is_parallel_enabled:
+                break
+            if is_parallel_enabled and executor and (total_followed_this_session + len(futures) >= max_to_follow_back_total):
+                logger.info("並列タスク投入数が上限に近いため、次のページへは進みません。残タスク処理後に終了します。")
+                break
 
             next_button_found_on_page = False
             current_url_before_pagination = driver.current_url
@@ -309,7 +323,7 @@ def follow_back_users_new(driver, current_user_id, shared_cookies_from_main=None
 
             if not next_button_found_on_page:
                 logger.info("「次へ」ボタンが見つかりませんでした(メインドライバー)。最終ページと判断。")
-                break # while ループを抜ける
+                break  # while ループを抜ける
 
             try:
                 WebDriverWait(driver, 15).until(EC.url_changes(current_url_before_pagination))
@@ -320,7 +334,7 @@ def follow_back_users_new(driver, current_user_id, shared_cookies_from_main=None
                 time.sleep(delay_after_pagination_fb)
             except TimeoutException:
                 logger.warning("「次へ」ボタンクリック後、ページ遷移またはリスト再表示タイムアウト(メインドライバー)。")
-                break # while ループを抜ける
+                break  # while ループを抜ける
             current_page_number += 1
         # --- ページネーションループ (while) 終了 ---
 
@@ -329,92 +343,33 @@ def follow_back_users_new(driver, current_user_id, shared_cookies_from_main=None
             logger.info(f"投入済みの {len(futures)} 件の並列フォローバックタスクの結果を処理します...")
             for future_item in as_completed(futures):
                 if total_followed_this_session >= max_to_follow_back_total:
-                    # 個々のタスクはキャンセルできないが、結果の処理はスキップできる
-                    # logger.info("フォローバック上限に達したため、残りのタスク結果処理はスキップします。")
-                    # continue # continueするとエラー結果なども見逃すので、結果は最後まで見る
-                    pass # 上限には達したが、エラー等がないか確認するために結果は処理する
+                    pass  # 上限には達したが、エラー等がないか確認するために結果は処理する
 
                 try:
                     result = future_item.result()
                     profile_url_res = result.get("profile_url", "不明なURL")
-                    user_name_res = profile_url_res.split('/')[-1] # 簡易表示用
+                    user_name_res = profile_url_res.split('/')[-1]  # 簡易表示用
                     if result.get("error"):
                         logger.error(f"並列タスクエラー (ユーザー: {user_name_res}): {result['error']}")
                     elif result.get("followed"):
                         logger.info(f"ユーザー「{user_name_res}」のフォローバックに成功しました（並列タスク）。")
-                        if total_followed_this_session < max_to_follow_back_total: # 上限チェックしてから加算
+                        if total_followed_this_session < max_to_follow_back_total:
                             total_followed_this_session += 1
                         else:
-                             logger.info(f"ユーザー「{user_name_res}」はフォロー成功しましたが、既に上限 ({max_to_follow_back_total}) に達していたためカウント外とします。")
+                            logger.info(f"ユーザー「{user_name_res}」はフォロー成功しましたが、既に上限 ({max_to_follow_back_total}) に達していたためカウント外とします。")
                     else:
-                        # フォローしなかった場合 (既にフォロー済み、ボタンなしなど)
                         logger.info(f"ユーザー「{user_name_res}」は並列タスク内でフォローバックされませんでした。")
                 except Exception as e_future:
                     logger.error(f"並列フォローバックタスクの結果取得中にエラー: {e_future}", exc_info=True)
 
-
     logger.info(f"<<< フォローバック機能完了。このセッションで合計 {total_followed_this_session} 人をフォローバックしました。")
 
-
 # nullcontext for Python < 3.7 (concurrent.futures might be used without `with`)
-# For simplicity, assuming Python 3.7+ where `nullcontext` is available or not strictly needed if `with` isn't used for sequential.
-# However, to make the code cleaner with a conditional `with` statement:
 try:
     from contextlib import nullcontext
 except ImportError:
     import contextlib
+
     @contextlib.contextmanager
     def nullcontext(enter_result=None):
         yield enter_result
-                break # ページネーションループ (while) を抜ける
-
-            # 「次へ」ボタンの探索とクリック
-            next_button_found_on_page = False
-            current_url_before_pagination = driver.current_url # URL変化の確認用
-            logger.info("現在のページのフォロワー処理完了。「次へ」ボタンを探します...")
-
-            for selector_idx, selector in enumerate(next_button_selectors):
-                try:
-                    # WebDriverWaitで要素がクリック可能になるまで待つ (タイムアウトを5秒に延長)
-                    next_button = WebDriverWait(driver, 5).until(
-                        EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
-                    )
-                    if next_button.is_displayed() and next_button.is_enabled(): # 表示されていて有効か
-                        logger.info(f"「次へ」ボタンをセレクタ '{selector}' で発見。クリックします。")
-                        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", next_button) # ボタンを画面中央に表示
-                        time.sleep(0.5) # スクロール後の短い待機
-                        next_button.click()
-                        next_button_found_on_page = True
-                        break # ボタンを見つけてクリックしたらループを抜ける
-                except TimeoutException:
-                    logger.debug(f"セレクタ '{selector}' で「次へ」ボタンが見つからずタイムアウト ({selector_idx+1}/{len(next_button_selectors)}).")
-                except Exception as e_click_next:
-                    logger.warning(f"セレクタ '{selector}' で「次へ」ボタンのクリック試行中にエラー: {e_click_next}")
-
-            if not next_button_found_on_page:
-                logger.info("「次へ」ボタンが見つかりませんでした。これが最終ページと判断し、フォローバック処理を終了します。")
-                break # ページネーションループ (while) を抜ける
-
-            # ページ遷移とコンテンツ読み込みの確認
-            try:
-                WebDriverWait(driver, 15).until(EC.url_changes(current_url_before_pagination))
-                logger.info(f"次のフォロワーページ ({driver.current_url}) へ正常に遷移しました。")
-                # 新しいページのリストコンテナが表示されるまで待機
-                WebDriverWait(driver, 10).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, followers_list_container_selector))
-                )
-                time.sleep(delay_after_pagination_fb) # ページ読み込み後の遅延
-            except TimeoutException:
-                logger.warning("「次へ」ボタンクリック後、ページ遷移またはリスト再表示のタイムアウト。処理を停止します。")
-                break # ページネーションループ (while) を抜ける
-
-            current_page_number += 1 # 次のページ番号へ
-
-        except TimeoutException:
-            logger.warning(f"{current_page_number} ページ目のフォロワーリストコンテナの読み込みタイムアウト。処理を終了します。")
-            break # ページネーションループ (while) を抜ける
-        except Exception as e_page_process:
-            logger.error(f"{current_page_number} ページ目の処理中に予期せぬエラーが発生しました: {e_page_process}", exc_info=True)
-            break # ページネーションループ (while) を抜ける
-
-    logger.info(f"<<< フォローバック機能完了。このセッションで合計 {total_followed_this_session} 人をフォローバックしました。")
