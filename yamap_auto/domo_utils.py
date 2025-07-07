@@ -337,7 +337,8 @@ def domo_timeline_activities(driver):
                 logger.info(f"タイムライン活動記録 {idx+1}/{initial_feed_item_count} (ID/URL: {identifier_for_check}) のDOMOを試みます。")
 
                 # 新しい関数でフィードアイテム上で直接DOMO
-                if domo_activity_on_timeline(driver, feed_item_element, domo_button_selectors_for_timeline, TIMELINE_DOMO_SETTINGS):
+                # timeline_page_url (driver.current_url のキャッシュ) を渡す
+                if domo_activity_on_timeline(driver, feed_item_element, domo_button_selectors_for_timeline, TIMELINE_DOMO_SETTINGS, timeline_page_url):
                     domoed_count += 1
                     if identifier_for_check != "N/A":
                          processed_activity_identifiers.add(identifier_for_check) # DOMO成功したものを記録
@@ -365,20 +366,22 @@ def domo_timeline_activities(driver):
     logger.info(f"<<< タイムラインDOMO機能完了。合計 {domoed_count} 件の活動記録にDOMOしました。")
 
 
-def domo_activity_on_timeline(driver, feed_item_element, domo_button_selectors, timeline_domo_settings):
+def domo_activity_on_timeline(driver, feed_item_element, domo_button_selectors, timeline_domo_settings, timeline_url):
     """
     タイムラインのフィードアイテム上で直接DOMOを実行します。
-    個別の活動記録ページには遷移しません。
+    意図しないページ遷移が発生した場合は検知し、元のタイムラインURLに戻ろうと試みます。
 
     Args:
         driver (webdriver.Chrome): Selenium WebDriverインスタンス。
         feed_item_element (WebElement): DOMO対象のフィードアイテム要素。
         domo_button_selectors (list[str]): DOMOボタンを見つけるためのCSSセレクタのリスト。
         timeline_domo_settings (dict): タイムラインDOMO関連の設定。
+        timeline_url (str): 元のタイムラインページのURL (ページ遷移時の復帰用)。
 
     Returns:
-        bool: DOMOに成功した場合はTrue。既にDOMO済み、ボタンが見つからない、
-              またはエラーが発生した場合はFalse。
+        bool: DOMOに成功し、ページ遷移も発生しなかった場合はTrue。
+              既にDOMO済み、ボタンが見つからない、ページ遷移が発生した、
+              またはその他のエラーが発生した場合はFalse。
     """
     activity_id_for_log = "N/A" # アイテムからIDが取れれば更新
     action_delays = main_config.get("action_delays", {})
@@ -474,6 +477,8 @@ def domo_activity_on_timeline(driver, feed_item_element, domo_button_selectors, 
 
         # 3. DOMO実行 (まだDOMOしていなければ)
         logger.info(f"タイムラインアイテム ({activity_id_for_log}) 上でDOMOを実行します (使用ボタンセレクタ: '{current_selector_used}')")
+        url_before_click = driver.current_url # クリック前のURLを記録
+
         try:
             # 要素が画面内に表示されるようにスクロール (中央揃え)
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", domo_button)
@@ -485,13 +490,35 @@ def domo_activity_on_timeline(driver, feed_item_element, domo_button_selectors, 
             save_screenshot(driver, error_type="DOMO_ClickError_Timeline", context_info=f"{activity_id_for_log}")
             return False
 
-        # 4. DOMO後の状態変化確認
+        # 4. ページ遷移が発生したか確認
+        time.sleep(0.5) # ページ遷移が発生する可能性を考慮した短い待機
+        url_after_click = driver.current_url
+        if url_after_click != url_before_click:
+            logger.warning(
+                f"DOMOボタンクリック後、意図しないページ遷移が発生しました (item: {activity_id_for_log})。"
+                f"遷移前URL: {url_before_click}, 遷移後URL: {url_after_click}。"
+                f"元のタイムライン ({timeline_url}) に戻ります。"
+            )
+            save_screenshot(driver, error_type="UnexpectedPageTransition_DOMO_Timeline", context_info=f"{activity_id_for_log}_to_{url_after_click.split('/')[-1]}")
+            driver.get(timeline_url)
+            try:
+                # タイムラインに戻った後、フィードアイテムが再認識されるように少し待つ
+                WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "li.TimelineList__Feed")) # 一般的なフィードアイテムセレクタ
+                )
+                logger.info(f"元のタイムライン ({timeline_url}) に戻りました。")
+            except TimeoutException:
+                logger.error(f"タイムライン ({timeline_url}) に戻ろうとしましたが、フィードアイテムの再表示確認でタイムアウトしました。")
+                # この場合、さらなる処理は困難なため False を返す
+            return False # ページ遷移が発生した場合はDOMO成否不明のためFalse
+
+        # 5. DOMO後の状態変化確認 (ページ遷移がなかった場合のみ)
         try:
             WebDriverWait(driver, 5).until(
                 lambda d: ("Domo済み" in (feed_item_element.find_element(By.CSS_SELECTOR, current_selector_used).get_attribute("aria-label") or "")) or \
                           ("is-active" in (feed_item_element.find_element(By.CSS_SELECTOR, f"{current_selector_used} span.RidgeIcon, {current_selector_used} span[class*='DomoActionContainer__DomoIcon']").get_attribute("class") or ""))
             )
-            # 状態変化後の属性をログ出力
+
             final_button_state = "N/A"
             try:
                 button_after_action = feed_item_element.find_element(By.CSS_SELECTOR, current_selector_used)
@@ -506,14 +533,12 @@ def domo_activity_on_timeline(driver, feed_item_element, domo_button_selectors, 
                  logger.debug(f"DOMO後の状態取得中に軽微なエラー: {e_log_state}")
 
             logger.info(f"DOMO成功を確認しました (タイムラインアイテム: {activity_id_for_log}, 最終状態: {final_button_state})")
-            time.sleep(delay_after_action) # アクション後の適切な待機
+            time.sleep(delay_after_action)
             return True
         except TimeoutException:
-            # タイムアウト時の詳細ログ
             actual_aria_label = "取得失敗"
             actual_icon_class = "取得失敗"
             try:
-                # feed_item_element を起点に再検索
                 button_element_after_click = feed_item_element.find_element(By.CSS_SELECTOR, current_selector_used)
                 actual_aria_label = button_element_after_click.get_attribute("aria-label") or "aria-labelなし"
                 try:
