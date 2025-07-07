@@ -69,31 +69,60 @@ def _search_follow_domo_task(user_profile_url, user_name_for_log, shared_cookies
     task_followed_count = 0
     task_domoed_count = 0
     status_message = f"ユーザー「{user_name_for_log}」(URL: {user_profile_url.split('/')[-1]}): "
+    log_prefix_task = f"[SF_TASK][{user_profile_url.split('/')[-1]}] "
     try:
+        logger.info(f"{log_prefix_task}WebDriverを作成し、Cookieを設定します。ベースURL: {BASE_URL}")
         task_driver = create_driver_with_cookies(shared_cookies, base_url_to_visit_first=BASE_URL) # BASE_URLに一度アクセス
         if not task_driver:
-            logger.error(f"{status_message}WebDriverの作成に失敗。タスクを中止。")
+            logger.error(f"{log_prefix_task}WebDriverの作成に失敗。タスクを中止。")
             return {"profile_url": user_profile_url, "followed": 0, "domoed": 0, "error": "WebDriver作成失敗"}
 
-        logger.info(f"{status_message}プロフィールページ ({user_profile_url}) へアクセスします (並列タスク)。")
+        # --- ログイン状態確認 ---
+        login_check_selectors_task = {
+            "user_icon_task": "a[data-testid='header-avatar']",
+        }
+        is_logged_in_task = False
+        for key, selector in login_check_selectors_task.items():
+            try:
+                element = WebDriverWait(task_driver, 5).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                )
+                if element.is_displayed():
+                    is_logged_in_task = True
+                    logger.info(f"{log_prefix_task}ログイン状態確認OK: 要素 '{key}' が表示されています。")
+                    break
+            except TimeoutException:
+                logger.info(f"{log_prefix_task}ログイン状態確認: 要素 '{key}' が5秒以内に見つかりませんでした。")
+            except Exception as e_check_login_task:
+                logger.warning(f"{log_prefix_task}ログイン状態確認要素 '{key}' のチェック中にエラー: {e_check_login_task}")
+
+        if not is_logged_in_task:
+            logger.error(f"{log_prefix_task}タスク開始時のログイン状態確認に失敗。Cookieが正しく機能していない可能性があります。タスクを中止。")
+            # from .driver_utils import save_screenshot
+            # save_screenshot(task_driver, "LoginCheckFail_SearchFollowTask", f"user_{user_profile_url.split('/')[-1]}")
+            return {"profile_url": user_profile_url, "followed": 0, "domoed": 0, "error": "タスク開始時ログイン確認失敗"}
+        # --- ログイン状態確認完了 ---
+
+        logger.info(f"{log_prefix_task}プロフィールページ ({user_profile_url}) へアクセスします。")
         task_driver.get(user_profile_url)
         try:
             WebDriverWait(task_driver, 20).until(
                 EC.all_of(
-                    EC.url_contains(user_profile_url.split('/')[-1]),
-                    EC.visibility_of_element_located((By.CSS_SELECTOR, "h1.css-jctfiw")), # プロフィール名
+                    EC.url_contains(user_profile_url.split('/')[-1]), # URLにユーザーIDが含まれるか
+                    EC.visibility_of_element_located((By.CSS_SELECTOR, "h1.css-jctfiw")), # プロフィール名 (例)
                     lambda d: d.execute_script("return document.readyState") == "complete",
-                    EC.presence_of_element_located((By.CSS_SELECTOR, "footer.css-1yg0z07")) # フッター
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "footer.css-1yg0z07")) # フッター (例)
                 )
             )
+            logger.info(f"{log_prefix_task}プロフィールページ ({user_profile_url}) の主要要素読み込みを確認。")
         except TimeoutException:
-            logger.warning(f"{status_message}プロフィールページ読み込みタイムアウト（並列タスク）。")
+            logger.warning(f"{log_prefix_task}プロフィールページ ({user_profile_url}) の読み込みタイムアウト。")
+            # save_screenshot(task_driver, "ProfileLoadTimeout_SearchFollowTask", f"user_{user_profile_url.split('/')[-1]}")
             return {"profile_url": user_profile_url, "followed": 0, "domoed": 0, "error": "プロフィールページ読み込みタイムアウト"}
 
-        if user_profile_url not in task_driver.current_url: # 稀にリダイレクトされるケースなどへの対処
-            logger.error(f"{status_message}URL不一致: プロフィールページ ({user_profile_url}) にいるはずが、現在のURLは {task_driver.current_url} です。スキップします。")
+        if user_profile_url not in task_driver.current_url:
+            logger.error(f"{log_prefix_task}URL不一致: 期待したプロフィールページ ({user_profile_url}) にいません。現在のURL: {task_driver.current_url}。スキップ。")
             return {"profile_url": user_profile_url, "followed": 0, "domoed": 0, "error": "プロフィールページURL不一致"}
-
 
         follow_button_on_profile = find_follow_button_on_profile_page(task_driver)
         if not follow_button_on_profile:

@@ -729,30 +729,53 @@ def domo_timeline_item_task(
     action_delays = main_config.get("action_delays", {}) # main_config はグローバルアクセス可能想定
     # task_startup_delay = PARALLEL_PROCESSING_SETTINGS.get("task_startup_delay_sec", 0.5) # 設定から読み込む
 
-    log_prefix = f"[TASK Idx:{feed_item_index}]"
+    log_prefix = f"[DOMO_TASK Idx:{feed_item_index}]" # ログプレフィックス変更
     logger.info(f"{log_prefix} DOMOタスク開始。初期遅延: {initial_delay_sec:.2f}秒。")
     time.sleep(initial_delay_sec)
 
     try:
         # 1. 新しいWebDriverインスタンスを作成し、共有Cookieでログイン状態を再現
-        #    create_driver_with_cookies はベースURLに一度アクセスする
-        #    timeline_url_to_load をベースURLとして渡せば、直接タイムラインを開く
-        task_driver = create_driver_with_cookies(shared_cookies, timeline_url_to_load)
+        logger.info(f"{log_prefix} WebDriverを作成し、Cookieを設定します。ベースURL: {timeline_url_to_load}")
+        task_driver = create_driver_with_cookies(shared_cookies, base_url_to_visit_first=timeline_url_to_load)
         if not task_driver:
             logger.error(f"{log_prefix} WebDriver作成失敗。タスク中止。")
             return False
 
-        # 2. タイムラインページが正しく読み込まれたか確認 (create_driver_with_cookies内で実施済みの場合もある)
-        #    念のためURLを確認し、必要なら明示的にgetする
+        # --- ログイン状態確認 ---
+        login_check_selectors_task = {
+            "user_icon_task": "a[data-testid='header-avatar']",
+        }
+        is_logged_in_task = False
+        for key, selector in login_check_selectors_task.items():
+            try:
+                element = WebDriverWait(task_driver, 5).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                )
+                if element.is_displayed():
+                    is_logged_in_task = True
+                    logger.info(f"{log_prefix} ログイン状態確認OK: 要素 '{key}' が表示されています。")
+                    break
+            except TimeoutException:
+                logger.info(f"{log_prefix} ログイン状態確認: 要素 '{key}' が5秒以内に見つかりませんでした。")
+            except Exception as e_check_login_task:
+                logger.warning(f"{log_prefix} ログイン状態確認要素 '{key}' のチェック中にエラー: {e_check_login_task}")
+
+        if not is_logged_in_task:
+            logger.error(f"{log_prefix} タスク開始時のログイン状態確認に失敗。Cookieが正しく機能していない可能性があります。タスクを中止。")
+            save_screenshot(task_driver, "LoginCheckFail_DomoTimelineTask", f"idx_{feed_item_index}")
+            return False
+        # --- ログイン状態確認完了 ---
+
+        # 2. タイムラインページが正しく読み込まれたか確認
         if task_driver.current_url != timeline_url_to_load:
-            logger.info(f"{log_prefix} 指定されたタイムラインURL ({timeline_url_to_load}) に再アクセスします。")
+            logger.info(f"{log_prefix} 現在のURL ({task_driver.current_url}) が期待されるタイムラインURL ({timeline_url_to_load}) と異なるため、再アクセスします。")
             task_driver.get(timeline_url_to_load)
             WebDriverWait(task_driver, 15).until(EC.url_to_be(timeline_url_to_load))
 
         logger.info(f"{log_prefix} タイムラインページ ({timeline_url_to_load}) にアクセス完了。")
 
         # 3. タイムラインのフィードアイテムリストを再取得
-        feed_item_selector_in_task = "li.TimelineList__Feed" # domo_timeline_activities_parallel と同じセレクタ
+        feed_item_selector_in_task = "li.TimelineList__Feed"
         # 要素が表示されるまで待機 (少し長めに設定)
         wait_time_for_feed = timeline_domo_config_settings.get("wait_for_feed_items_in_task_sec", 20)
         logger.debug(f"{log_prefix} フィードアイテム ({feed_item_selector_in_task}) の出現を待ちます (最大{wait_time_for_feed}秒)...")
