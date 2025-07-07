@@ -477,7 +477,6 @@ def domo_activity_on_timeline(driver, feed_item_element, domo_button_selectors, 
 
         # 3. DOMO実行 (まだDOMOしていなければ)
         logger.info(f"タイムラインアイテム ({activity_id_for_log}) 上でDOMOを実行します (使用ボタンセレクタ: '{current_selector_used}')")
-
         url_before_click = driver.current_url # クリック前のURLを記録
 
         try:
@@ -519,6 +518,7 @@ def domo_activity_on_timeline(driver, feed_item_element, domo_button_selectors, 
                 lambda d: ("Domo済み" in (feed_item_element.find_element(By.CSS_SELECTOR, current_selector_used).get_attribute("aria-label") or "")) or \
                           ("is-active" in (feed_item_element.find_element(By.CSS_SELECTOR, f"{current_selector_used} span.RidgeIcon, {current_selector_used} span[class*='DomoActionContainer__DomoIcon']").get_attribute("class") or ""))
             )
+
             final_button_state = "N/A"
             try:
                 button_after_action = feed_item_element.find_element(By.CSS_SELECTOR, current_selector_used)
