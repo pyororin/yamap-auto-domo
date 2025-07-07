@@ -93,7 +93,7 @@ def follow_back_users_new(driver, current_user_id):
 
             user_cards_to_process_this_page = user_cards_all_on_page
             # 各ページの先頭N件をスキップするロジック (設定により有効化)
-            if FOLLOW_BACK_SETTINGS.get("enable_per_page_skip", False): # デフォルトはFalseに変更しても良いかもしれません
+            if FOLLOW_BACK_SETTINGS.get("enable_per_page_skip", True):
                 skip_count = FOLLOW_BACK_SETTINGS.get("users_to_skip_per_page", 3)
                 if skip_count > 0 and len(user_cards_all_on_page) > skip_count:
                     user_cards_to_process_this_page = user_cards_all_on_page[skip_count:]
