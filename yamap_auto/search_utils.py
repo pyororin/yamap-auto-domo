@@ -206,34 +206,59 @@ def search_follow_and_domo_users(driver, current_user_id, shared_cookies_from_ma
             if page_num > 1:
                 logger.info(f"{page_num-1}ページ目({current_page_url_for_log})の処理完了。次のページ ({page_num}ページ目) へ遷移を試みます。")
                 next_button_selectors = [
-                    "a[data-testid='pagination-next-button']", "a[rel='next']", "a.next",
-                    "a.pagination__next", "button.next", "button.pagination__next",
-                    "a[aria-label*='次へ']:not([aria-disabled='true'])", "a[aria-label*='Next']:not([aria-disabled='true'])",
-                    "button[aria-label*='次へ']:not([disabled])", "button[aria-label*='Next']:not([disabled])"
+                    "button[data-testid='MoveToNextButton']",  # 最優先のセレクタ (2024/07/09確認)
+                    "a[data-testid='pagination-next-button']", # 以前のdata-testid
+                    "button[aria-label='次のページに移動する']",  # aria-labelによる指定 (日本語)
+                    "button[aria-label='Go to next page']",    # aria-labelによる指定 (英語の可能性も考慮)
+                    "a[rel='next']",
+                    "a.next", "button.next", # 一般的なクラス名
+                    "a.pagination__next", "button.pagination__next", # 一般的なページネーションクラス
+                    # より広範なaria-label指定 (無効状態を除外)
+                    "a[aria-label*='次へ']:not([aria-disabled='true'])",
+                    "a[aria-label*='Next']:not([aria-disabled='true'])",
+                    "button[aria-label*='次へ']:not([disabled])",
+                    "button[aria-label*='Next']:not([disabled])"
                 ]
                 next_button_found = False
-                for selector in next_button_selectors:
+                for selector_idx, selector in enumerate(next_button_selectors):
+                    log_prefix_paginate = f"[PAGINATE][Page {page_num-1} to {page_num}][Selector {selector_idx+1}/{len(next_button_selectors)} ('{selector}')]"
                     try:
-                        next_button = WebDriverWait(driver, 5).until(
+                        logger.debug(f"{log_prefix_paginate} 「次へ」ボタンの探索開始...")
+                        # 要素の存在と表示をまず確認
+                        WebDriverWait(driver, 3).until(
+                            EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                        )
+                        # 次にクリック可能性を確認
+                        next_button = WebDriverWait(driver, 2).until( # presence確認後なのでタイムアウト短縮
                             EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
                         )
-                        if next_button.is_displayed() and next_button.is_enabled():
-                            logger.info(f"「次へ」ボタンをセレクタ '{selector}' で発見。クリックします。")
-                            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", next_button)
-                            time.sleep(0.5)
-                            next_button.click()
+                        # is_displayed() と is_enabled() は Selenium 4 ではより堅牢なチェックが推奨されるが、ここでは残す
+                        if next_button and next_button.is_displayed() and next_button.is_enabled():
+                            logger.info(f"{log_prefix_paginate} クリック可能な「次へ」ボタンを発見。クリックします。")
+                            driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center', inline: 'nearest'});", next_button)
+                            time.sleep(0.7) # スクロールと描画の安定待ち
+                            # クリック前に再度要素が stale になっていないか確認することも検討できる
+                            # next_button.click() の代わりに JavaScript でクリックも検討
+                            driver.execute_script("arguments[0].click();", next_button)
+                            logger.info(f"{log_prefix_paginate} 「次へ」ボタンをクリック実行。")
                             next_button_found = True
-                            break
-                    except TimeoutException: logger.debug(f"セレクタ '{selector}' で「次へ」ボタンが見つからずタイムアウト。")
-                    except Exception as e_click: logger.warning(f"セレクタ '{selector}' でボタンクリック試行中にエラー: {e_click}")
+                            break # セレクタのループを抜ける
+                        else:
+                            logger.debug(f"{log_prefix_paginate} ボタンは存在しましたが、表示されていないか有効ではありませんでした。")
+                    except TimeoutException:
+                        logger.debug(f"{log_prefix_paginate} 「次へ」ボタンが見つからずタイムアウト。")
+                    except Exception as e_click:
+                        logger.warning(f"{log_prefix_paginate} ボタン探索またはクリック試行中に予期せぬエラー: {e_click}", exc_info=False) # exc_info=Falseでスタックトレースを抑制
 
                 if not next_button_found:
-                    logger.info("試行した全てのセレクタで、クリック可能な「次へ」ボタンが見つかりませんでした。検索結果のページネーション処理を終了します。")
+                    logger.error(f"ページ {page_num-1} ({current_page_url_for_log}) で試行した全てのセレクタで、クリック可能な「次へ」ボタンが見つかりませんでした。検索結果のページネーション処理を終了します。")
+                    save_screenshot(driver, "NextButtonNotFound_Search", f"Page{page_num-1}_URL_{current_page_url_for_log.replace('/', '_')}")
                     break # for page_num ループを抜ける
                 try:
-                    WebDriverWait(driver, 10).until(EC.url_changes(current_page_url_for_log)) # 前のページのURLと比較
-                    logger.info(f"{page_num}ページ目へ遷移しました。新しいURL: {driver.current_url}")
-                    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, activity_card_selector)))
+                    logger.info(f"「次へ」ボタンクリック後、ページ遷移 ({page_num}ページ目) を確認します。旧URL: {current_page_url_for_log}")
+                    WebDriverWait(driver, 15).until(EC.url_changes(current_page_url_for_log))
+                    logger.info(f"{page_num}ページ目へ正常に遷移しました。新しいURL: {driver.current_url}")
+                    WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.CSS_SELECTOR, activity_card_selector)))
                     logger.info(f"{page_num}ページ目の活動記録カードの読み込みを確認。")
                     time.sleep(delay_pagination)
                 except TimeoutException:
