@@ -19,6 +19,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
+from selenium.webdriver.common.action_chains import ActionChains # ActionChainsをインポート
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time # time モジュールをインポート
 
@@ -483,36 +484,38 @@ def domo_activity_on_timeline(driver, feed_item_element, domo_button_selectors, 
             # 要素が画面内に表示されるようにスクロール (中央揃え)
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", domo_button)
             time.sleep(0.2) # スクロール後の描画待ち
-            domo_button.click()
-            logger.debug(f"DOMOボタンクリック実行 (item: {activity_id_for_log})。")
+            # JavaScript経由のクリック(domo_button.click() や driver.execute_script("arguments[0].click();", domo_button))では
+            # DOMO後の状態変化が確認できなかったため、ActionChainsを使用する。
+            ActionChains(driver).move_to_element(domo_button).click().perform()
+            logger.debug(f"DOMOボタンクリック実行 (ActionChains経由) (item: {activity_id_for_log})。")
         except Exception as e_click:
-            logger.error(f"DOMOボタンのクリックに失敗しました (item: {activity_id_for_log}): {e_click}", exc_info=True)
-            save_screenshot(driver, error_type="DOMO_ClickError_Timeline", context_info=f"{activity_id_for_log}")
+            logger.error(f"DOMOボタンのクリック (ActionChains経由) に失敗しました (item: {activity_id_for_log}): {e_click}", exc_info=True)
+            save_screenshot(driver, error_type="DOMO_ClickError_Timeline_ActionChains", context_info=f"{activity_id_for_log}")
             return False
 
         # 4. ページ遷移が発生したか確認
+        # (ActionChainsの使用により、意図しないページ遷移の問題は発生しにくくなったはずだが、安全のためにチェック処理は残す)
         time.sleep(0.5) # ページ遷移が発生する可能性を考慮した短い待機
         url_after_click = driver.current_url
         if url_after_click != url_before_click:
             logger.warning(
                 f"DOMOボタンクリック後、意図しないページ遷移が発生しました (item: {activity_id_for_log})。"
                 f"遷移前URL: {url_before_click}, 遷移後URL: {url_after_click}。"
-                f"元のタイムライン ({timeline_url}) に戻ります。"
+                f"元のタイムライン ({timeline_url}) に戻ろうと試みます。"
             )
             save_screenshot(driver, error_type="UnexpectedPageTransition_DOMO_Timeline", context_info=f"{activity_id_for_log}_to_{url_after_click.split('/')[-1]}")
-            driver.get(timeline_url)
+            driver.get(timeline_url) # 元のタイムラインに戻る
             try:
-                # タイムラインに戻った後、フィードアイテムが再認識されるように少し待つ
+                # タイムラインに戻った後、主要な要素（例：フィードアイテム）が再認識されるように少し待つ
                 WebDriverWait(driver, 10).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, "li.TimelineList__Feed")) # 一般的なフィードアイテムセレクタ
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "li.TimelineList__Feed"))
                 )
-                logger.info(f"元のタイムライン ({timeline_url}) に戻りました。")
+                logger.info(f"元のタイムライン ({timeline_url}) に正常に戻りました。")
             except TimeoutException:
-                logger.error(f"タイムライン ({timeline_url}) に戻ろうとしましたが、フィードアイテムの再表示確認でタイムアウトしました。")
-                # この場合、さらなる処理は困難なため False を返す
-            return False # ページ遷移が発生した場合はDOMO成否不明のためFalse
+                logger.error(f"タイムライン ({timeline_url}) に戻ろうとしましたが、フィードアイテムの再表示確認でタイムアウトしました。このアイテムの処理は中断します。")
+            return False # ページ遷移が発生した場合は、DOMO成否に関わらずこのアイテムの処理は失敗として扱う
 
-        # 5. DOMO後の状態変化確認 (ページ遷移がなかった場合のみ)
+        # 5. DOMO後の状態変化確認 (ページ遷移がなかった場合のみ実行される)
         try:
             WebDriverWait(driver, 5).until(
                 lambda d: ("Domo済み" in (feed_item_element.find_element(By.CSS_SELECTOR, current_selector_used).get_attribute("aria-label") or "")) or \
@@ -564,53 +567,6 @@ def domo_activity_on_timeline(driver, feed_item_element, domo_button_selectors, 
     return False
 
 
-# --- 並列処理用タスク関数 ---
-def domo_activity_task(activity_url, shared_cookies, task_delay_sec):
-    """
-    単一の活動記録URLに対してDOMO処理を行うタスク関数です。
-    `ThreadPoolExecutor` から呼び出されることを想定しており、並列処理で使用されます。
-    新しいWebDriverインスタンスを作成し、共有されたCookieを使用してログイン状態を再現し、DOMO処理を実行します。
-
-    Args:
-        activity_url (str): DOMO対象の活動記録の完全なURL。
-        shared_cookies (list[dict]): メインのWebDriverから取得したログインセッションCookie。
-        task_delay_sec (float): このタスクを開始する前に挿入する遅延時間 (秒単位)。
-                                他のタスクとの同時アクセスを緩和するために使用。
-
-    Returns:
-        bool: DOMOに成功した場合はTrue、それ以外はFalse。
-    """
-    activity_id_for_log = activity_url.split('/')[-1]
-    logger.info(f"[TASK] 活動記録 ({activity_id_for_log}) のDOMOタスク開始。")
-    task_driver = None # このタスク専用のWebDriverインスタンス
-    domo_success = False
-    try:
-        time.sleep(task_delay_sec) # 他タスクとの実行タイミングをずらすための遅延
-        # 共有Cookieを使って新しいWebDriverインスタンスを作成 (ログイン状態を再現)
-        task_driver = create_driver_with_cookies(shared_cookies, BASE_URL)
-        if not task_driver: # WebDriver作成に失敗した場合
-            logger.error(f"[TASK] DOMOタスク用WebDriver作成失敗 ({activity_id_for_log})。")
-            return False
-
-        # (オプション) ここで task_driver が実際にログイン状態か確認するロジックを追加可能
-        # 例: 特定のログイン後要素が存在するかチェック
-
-        # 既存のDOMO関数を呼び出してDOMO処理を実行
-        domo_success = domo_activity(task_driver, activity_url, BASE_URL) # BASE_URL を引数に追加
-        if domo_success:
-            logger.info(f"[TASK] 活動記録 ({activity_id_for_log}) へのDOMO成功。")
-        else:
-            logger.info(f"[TASK] 活動記録 ({activity_id_for_log}) へのDOMO失敗または既にDOMO済み。")
-        return domo_success
-    except Exception as e: # タスク実行中の予期せぬエラー
-        logger.error(f"[TASK] 活動記録 ({activity_id_for_log}) のDOMOタスク中にエラー: {e}", exc_info=True)
-        return False
-    finally:
-        if task_driver: # タスク完了後、専用WebDriverを必ず閉じる
-            task_driver.quit()
-        logger.debug(f"[TASK] 活動記録 ({activity_id_for_log}) のDOMOタスク終了。")
-
-
 # --- タイムラインDOMO機能 (並列処理対応版) ---
 def domo_timeline_activities_parallel(driver, shared_cookies):
     """
@@ -634,89 +590,225 @@ def domo_timeline_activities_parallel(driver, shared_cookies):
         # 逐次版 (domo_timeline_activities) は既に一覧DOMOに対応済みのため、それを呼び出す
         return domo_timeline_activities(driver)
 
-    # --- 以下、並列処理版のロジック (現状はURL収集ベースのまま) ---
-    # TODO: この並列処理版も、domo_activity_on_timeline を使うように改修が必要。
-    #       WebElementをスレッド間で安全に扱うか、あるいはフィードアイテムの
-    #       一意な識別子（例：活動記録IDやdata属性）を収集し、各タスクで
-    #       再度要素を検索・操作する方式を検討する必要がある。
-    #       現状は、URLを収集して各URLのページに遷移してDOMOする古い方式のまま。
-    logger.warning("[PARALLEL] 現在のタイムラインDOMO並列処理版は、まだ一覧上での直接DOMOに対応していません。")
-    logger.warning("[PARALLEL] 各活動記録ページに遷移してDOMOする従来の並列処理を実行します。")
+    # --- 並列処理版のロジック (一覧上での直接DOMOに対応) ---
+    # メインのWebDriverでタイムラインからDOMO対象の活動記録アイテムのインデックスを収集し、
+    # 収集したインデックス群に対して `ThreadPoolExecutor` を使用して並列でDOMO処理を行います。
+    # 各タスクは新しいWebDriverインスタンスを生成し、`domo_activity_on_timeline` を実行します。
 
-    logger.info(">>> [PARALLEL - Legacy URL based] タイムラインDOMO機能を開始します...")
+    logger.info(">>> [PARALLEL] タイムラインDOMO機能 (一覧上で直接DOMO) を開始します...")
     timeline_page_url = TIMELINE_URL
-    logger.info(f"タイムラインページへアクセスし、DOMO対象URLを収集します: {timeline_page_url}")
-    driver.get(timeline_page_url)
+    # メインドライバーはタイムラインページにいる想定だが、念のため遷移または確認
+    current_url = driver.current_url
+    if current_url != timeline_page_url:
+        logger.info(f"メインドライバーをタイムラインページ ({timeline_page_url}) へ移動します。(現在URL: {current_url})")
+        driver.get(timeline_page_url)
+        try:
+            WebDriverWait(driver, 15).until(EC.url_to_be(timeline_page_url))
+            logger.info(f"メインドライバーのタイムラインページ ({timeline_page_url}) への移動を確認しました。")
+        except TimeoutException:
+            logger.error(f"メインドライバーをタイムラインページ ({timeline_page_url}) へ移動試行後、URL遷移確認でタイムアウト。処理を中止します。")
+            return # ページ遷移に失敗した場合は処理を続行できない
+    else:
+        logger.info(f"メインドライバーは既にタイムラインページ ({timeline_page_url}) にいます。")
 
     max_activities_to_domo = TIMELINE_DOMO_SETTINGS.get("max_activities_to_domo_on_timeline", 10)
     max_workers = PARALLEL_PROCESSING_SETTINGS.get("max_workers", 3)
-    task_delay_base = PARALLEL_PROCESSING_SETTINGS.get("delay_between_thread_tasks_sec", 1.0)
 
-    activity_urls_to_domo = []
-    processed_urls_for_collection = set()
+    # DOMO対象となるフィードアイテムの「インデックス」を収集する。
+    # 注意: DOM操作によりインデックスがずれる可能性あり。より堅牢なのは各アイテムの一意なID(例: data-activity-id)だが、
+    #       現状はインデックスベースで動作確認済みのため、この方式を維持。問題発生時に改善を検討。
+    feed_item_indices_to_domo = []
 
     try:
         feed_item_selector = "li.TimelineList__Feed"
-        activity_item_indicator_selector = "div.TimelineActivityItem"
-        activity_link_in_item_selector = "a.TimelineActivityItem__BodyLink[href^='/activities/']"
+        activity_item_indicator_selector = "div.TimelineActivityItem" # 活動記録アイテムであることの目印
 
-        logger.info(f"タイムラインのフィードアイテム ({feed_item_selector}) の出現を待ちます...")
+        logger.info(f"タイムラインのフィードアイテム ({feed_item_selector}) の出現を待ち、DOMO対象インデックスを収集します...")
         WebDriverWait(driver, 20).until(
             EC.presence_of_all_elements_located((By.CSS_SELECTOR, feed_item_selector))
         )
-        logger.info("タイムラインのフィードアイテム群を発見。URL収集を開始します。")
-        time.sleep(TIMELINE_DOMO_SETTINGS.get("wait_after_feed_load_sec", 1.5))
+        logger.info("タイムラインのフィードアイテム群を発見。DOMO対象の選定を開始します。")
+        time.sleep(TIMELINE_DOMO_SETTINGS.get("wait_after_feed_load_sec", 1.5)) # ページ描画安定待ち
 
-
-        feed_items = driver.find_elements(By.CSS_SELECTOR, feed_item_selector)
-        if not feed_items:
-            logger.info("タイムラインにフィードアイテムが見つかりませんでした（URL収集フェーズ）。")
+        # メインドライバーで表示されているフィードアイテムのリストを取得。
+        # ここでは活動記録アイテムであるかどうかのフィルタリングとインデックス収集のみを行う。
+        # DOMO済み判定や実際のDOMO処理は各並列タスクに委ねる。
+        all_feed_items_on_page = driver.find_elements(By.CSS_SELECTOR, feed_item_selector)
+        if not all_feed_items_on_page:
+            logger.info("タイムラインにフィードアイテムが見つかりませんでした（DOMO対象収集フェーズ）。")
             return
 
-        for idx, feed_item_element in enumerate(feed_items):
-            if len(activity_urls_to_domo) >= max_activities_to_domo:
-                logger.info(f"DOMO対象URLの収集上限 ({max_activities_to_domo}件) に達しました。")
+        logger.info(f"検出されたフィードアイテム総数: {len(all_feed_items_on_page)} 件。活動記録アイテムをフィルタリングします。")
+        collected_count = 0
+        for idx, feed_item_element in enumerate(all_feed_items_on_page):
+            if collected_count >= max_activities_to_domo:
+                logger.info(f"DOMO対象の収集上限 ({max_activities_to_domo}件) に達しました。")
                 break
             try:
-                if not feed_item_element.find_elements(By.CSS_SELECTOR, activity_item_indicator_selector):
-                    continue
-
-                link_element = feed_item_element.find_element(By.CSS_SELECTOR, activity_link_in_item_selector)
-                activity_url = link_element.get_attribute("href")
-
-                if activity_url:
-                    if activity_url.startswith("/"): activity_url = BASE_URL + activity_url
-                    if not activity_url.startswith(f"{BASE_URL}/activities/"): continue
-                    if activity_url in processed_urls_for_collection: continue
-
-                    activity_urls_to_domo.append(activity_url)
-                    processed_urls_for_collection.add(activity_url)
-                    logger.debug(f"DOMO候補URL追加 (Legacy Parallel): {activity_url.split('/')[-1]} (収集済み: {len(activity_urls_to_domo)}件)")
+                # このアイテムが活動記録アイテムであるかを確認
+                if feed_item_element.find_elements(By.CSS_SELECTOR, activity_item_indicator_selector):
+                    # DOMO済みかどうかをメインスレッドで判定するのはコストが高い場合がある。
+                    # (各アイテムのボタン状態を確認する必要があるため)
+                    # ここでは、活動記録アイテムであれば一旦インデックスを収集し、
+                    # DOMO済み判定は各並列タスク内の domo_activity_on_timeline に委ねる。
+                    feed_item_indices_to_domo.append(idx)
+                    collected_count +=1
+                    logger.debug(f"DOMO候補インデックス追加: {idx} (収集済み: {collected_count}件)")
+                else:
+                    logger.debug(f"フィードアイテム (インデックス: {idx}) は活動記録ではないためスキップ。")
             except Exception as e_collect:
-                logger.warning(f"タイムラインからのURL収集中にエラー (アイテム {idx+1}, Legacy Parallel): {e_collect}")
+                logger.warning(f"タイムラインからのDOMO対象収集中にエラー (アイテムインデックス {idx}): {e_collect}")
 
-        logger.info(f"収集したDOMO対象URLは {len(activity_urls_to_domo)} 件です (Legacy Parallel)。")
-        if not activity_urls_to_domo:
-            logger.info("DOMO対象となる活動記録URLが収集できませんでした (Legacy Parallel)。")
+        logger.info(f"収集したDOMO対象候補のフィードアイテムインデックスは {len(feed_item_indices_to_domo)} 件です。")
+        if not feed_item_indices_to_domo:
+            logger.info("DOMO対象となる活動記録アイテムが見つかりませんでした。")
             return
 
+        # 並列処理の実行
         total_domoed_count_parallel = 0
+        # domo_activity_on_timeline で使用するセレクタと設定を渡す
+        domo_button_selectors_for_timeline = TIMELINE_DOMO_SETTINGS.get(
+            "domo_button_selectors_on_timeline",
+            [
+                "button[data-testid='ActivityDomoButton']",
+                "button#DomoActionButton",
+                "div.ActivityItemActions__DomoActionContainer button"
+            ]
+        )
+
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = []
-            for i, url in enumerate(activity_urls_to_domo):
-                delay_for_this_task = task_delay_base + (i * 0.1)
-                futures.append(executor.submit(domo_activity_task, url, shared_cookies, delay_for_this_task))
+            # タスクに渡す引数を準備
+            # shared_cookies はこの関数の引数として渡されているものを使用
+            # timeline_url は TIMELINE_URL グローバル定数を使用
+            # timeline_domo_settings は TIMELINE_DOMO_SETTINGS グローバル/モジュールレベル変数を使用
+
+            for i, item_idx in enumerate(feed_item_indices_to_domo):
+                # タスク間の開始タイミングを少しずらすための遅延 (任意)
+                # task_start_delay = PARALLEL_PROCESSING_SETTINGS.get("delay_between_thread_starts_sec", 0.2) * i
+                # time.sleep(task_start_delay) # メインスレッドで遅延させるか、タスク側で遅延させるか
+
+                futures.append(executor.submit(
+                    domo_timeline_item_task, # 新しいタスク関数
+                    item_idx,
+                    shared_cookies,
+                    TIMELINE_URL, # タイムラインページのURL
+                    domo_button_selectors_for_timeline,
+                    TIMELINE_DOMO_SETTINGS, # timeline_domo_settings を渡す
+                    PARALLEL_PROCESSING_SETTINGS.get("delay_between_thread_tasks_sec", 0.1) * i # 個別タスク遅延
+                ))
 
             for future in as_completed(futures):
                 try:
-                    if future.result():
+                    if future.result(): # domo_timeline_item_task が True を返せばカウント
                         total_domoed_count_parallel += 1
                 except Exception as e_future:
-                    logger.error(f"並列DOMOタスクの実行結果取得中にエラー (Legacy Parallel): {e_future}", exc_info=True)
+                    logger.error(f"並列DOMOタスクの実行結果取得中にエラー: {e_future}", exc_info=True)
 
-        logger.info(f"<<< [PARALLEL - Legacy URL based] タイムラインDOMO機能完了。合計 {total_domoed_count_parallel} 件の活動記録にDOMOしました (試行対象: {len(activity_urls_to_domo)}件)。")
+        logger.info(f"<<< [PARALLEL] タイムラインDOMO機能 (一覧上で直接DOMO) 完了。合計 {total_domoed_count_parallel} 件の活動記録にDOMOしました (試行対象インデックス数: {len(feed_item_indices_to_domo)}件)。")
 
     except TimeoutException:
-        logger.warning("[PARALLEL - Legacy URL based] タイムライン活動記録のURL収集でタイムアウトしました。")
+        logger.warning("[PARALLEL] タイムライン活動記録のDOMO対象収集でタイムアウトしました。")
     except Exception as e:
-        logger.error(f"[PARALLEL - Legacy URL based] タイムラインDOMO処理中に予期せぬエラーが発生しました。", exc_info=True)
+        logger.error(f"[PARALLEL] タイムラインDOMO処理 (一覧上で直接DOMO) 中に予期せぬエラーが発生しました。", exc_info=True)
+
+# 新しい並列タスク関数
+def domo_timeline_item_task(
+    feed_item_index,
+    shared_cookies,
+    timeline_url_to_load,
+    domo_button_selectors,
+    timeline_domo_config_settings, # timeline_domo_settings全体を渡す
+    initial_delay_sec # このタスクが実際に処理を開始するまでの遅延
+):
+    """
+    単一のタイムラインフィードアイテムに対してDOMO処理を行うタスク関数（並列処理用）。
+    新しいWebDriverインスタンスを作成し、指定されたインデックスのフィードアイテムにDOMOを試みます。
+    """
+    task_driver = None
+    action_delays = main_config.get("action_delays", {}) # main_config はグローバルアクセス可能想定
+    # task_startup_delay = PARALLEL_PROCESSING_SETTINGS.get("task_startup_delay_sec", 0.5) # 設定から読み込む
+
+    log_prefix = f"[TASK Idx:{feed_item_index}]"
+    logger.info(f"{log_prefix} DOMOタスク開始。初期遅延: {initial_delay_sec:.2f}秒。")
+    time.sleep(initial_delay_sec)
+
+    try:
+        # 1. 新しいWebDriverインスタンスを作成し、共有Cookieでログイン状態を再現
+        #    create_driver_with_cookies はベースURLに一度アクセスする
+        #    timeline_url_to_load をベースURLとして渡せば、直接タイムラインを開く
+        task_driver = create_driver_with_cookies(shared_cookies, timeline_url_to_load)
+        if not task_driver:
+            logger.error(f"{log_prefix} WebDriver作成失敗。タスク中止。")
+            return False
+
+        # 2. タイムラインページが正しく読み込まれたか確認 (create_driver_with_cookies内で実施済みの場合もある)
+        #    念のためURLを確認し、必要なら明示的にgetする
+        if task_driver.current_url != timeline_url_to_load:
+            logger.info(f"{log_prefix} 指定されたタイムラインURL ({timeline_url_to_load}) に再アクセスします。")
+            task_driver.get(timeline_url_to_load)
+            WebDriverWait(task_driver, 15).until(EC.url_to_be(timeline_url_to_load))
+
+        logger.info(f"{log_prefix} タイムラインページ ({timeline_url_to_load}) にアクセス完了。")
+
+        # 3. タイムラインのフィードアイテムリストを再取得
+        feed_item_selector_in_task = "li.TimelineList__Feed" # domo_timeline_activities_parallel と同じセレクタ
+        # 要素が表示されるまで待機 (少し長めに設定)
+        wait_time_for_feed = timeline_domo_config_settings.get("wait_for_feed_items_in_task_sec", 20)
+        logger.debug(f"{log_prefix} フィードアイテム ({feed_item_selector_in_task}) の出現を待ちます (最大{wait_time_for_feed}秒)...")
+        WebDriverWait(task_driver, wait_time_for_feed).until(
+            EC.presence_of_all_elements_located((By.CSS_SELECTOR, feed_item_selector_in_task))
+        )
+        feed_items_in_task = task_driver.find_elements(By.CSS_SELECTOR, feed_item_selector_in_task)
+        logger.debug(f"{log_prefix} {len(feed_items_in_task)} 件のフィードアイテムを検出。")
+
+
+        if feed_item_index >= len(feed_items_in_task):
+            logger.warning(f"{log_prefix} 指定インデックス {feed_item_index} がフィードアイテム数 {len(feed_items_in_task)} を超えています。タスク中止。")
+            # StaleElement対策として、メインスレッドでの収集時とアイテム数が変わる可能性も考慮
+            save_screenshot(task_driver, "TimelineItemIndexError", f"idx_{feed_item_index}_total_{len(feed_items_in_task)}")
+            return False
+
+        target_feed_item_element = feed_items_in_task[feed_item_index]
+        logger.info(f"{log_prefix} 対象のフィードアイテム (インデックス: {feed_item_index}) を取得。")
+
+        # 4. 取得したフィードアイテム要素に対して domo_activity_on_timeline を呼び出し
+        #    この関数は既にページ遷移しないように修正されている前提
+        #    timeline_url_to_load は、万が一ページ遷移した場合の戻り先として渡す
+        domo_result = domo_activity_on_timeline(
+            task_driver,
+            target_feed_item_element,
+            domo_button_selectors, # メインから渡されたセレクタリスト
+            timeline_domo_config_settings, # メインから渡された設定辞書
+            timeline_url_to_load
+        )
+
+        if domo_result:
+            logger.info(f"{log_prefix} DOMO成功。")
+        else:
+            logger.info(f"{log_prefix} DOMO失敗または既にDOMO済み/対象外。")
+
+        # 短い遅延を入れてWebDriverの終了処理が早すぎないようにする (任意)
+        time.sleep(action_delays.get("after_task_completion_sec", 0.2))
+        return domo_result
+
+    except TimeoutException as e_timeout:
+        logger.error(f"{log_prefix} DOMOタスク処理中にタイムアウト発生: {e_timeout}", exc_info=False)
+        save_screenshot(task_driver, "TimelineItemTaskTimeout", f"idx_{feed_item_index}")
+        return False
+    except NoSuchElementException as e_no_such: # 個別の要素が見つからない場合など
+        logger.error(f"{log_prefix} DOMOタスク処理中に要素が見つかりません: {e_no_such}", exc_info=False)
+        save_screenshot(task_driver, "TimelineItemTaskNoSuchElement", f"idx_{feed_item_index}")
+        return False
+    except Exception as e:
+        logger.error(f"{log_prefix} DOMOタスク中に予期せぬエラー: {type(e).__name__} - {e}", exc_info=True)
+        save_screenshot(task_driver, "TimelineItemTaskError", f"idx_{feed_item_index}_{type(e).__name__}")
+        return False
+    finally:
+        if task_driver:
+            try:
+                task_driver.quit()
+                logger.debug(f"{log_prefix} WebDriverを終了しました。")
+            except Exception as e_quit:
+                logger.error(f"{log_prefix} WebDriver終了中にエラー: {e_quit}")
+        logger.info(f"{log_prefix} DOMOタスク終了。")
