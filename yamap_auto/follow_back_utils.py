@@ -278,6 +278,12 @@ def follow_back_users_new(driver, current_user_id, shared_cookies_from_main=None
 
                     # --- ここで逐次処理と並列処理の分岐 ---
                     if is_parallel_enabled and executor:
+                        # 新規追加: ワーカー起動前の遅延
+                        delay_before_start = fb_settings.get("delay_before_worker_start_sec", 0.5)
+                        if delay_before_start > 0 and len(futures) > 0: # 最初のタスク投入時は遅延させない場合もあるので len(futures) > 0 を追加検討
+                            logger.debug(f"次のワーカー起動前に {delay_before_start} 秒待機します...")
+                            time.sleep(delay_before_start)
+
                         # 並列処理: タスクを投入
                         logger.info(f"フォロワー「{user_name_main}」(URL: {profile_url_main.split('/')[-1]}) のフォローバックタスクを投入します...")
                         # fb_settings と action_delays をタスクに渡す
