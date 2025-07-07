@@ -60,22 +60,61 @@ def _follow_back_task(page_url, user_profile_url_to_find, user_name_to_find, sha
     task_driver = None
     followed_in_task = False
     status_message = f"ユーザー「{user_name_to_find}」({user_profile_url_to_find.split('/')[-1]}): "
+    log_prefix_task = f"[FB_TASK][{user_profile_url_to_find.split('/')[-1]}] "
     try:
         # Cookieを使って新しいWebDriverインスタンスを作成
         # (create_driver_with_cookies は driver_utils にある想定)
+        # page_url (フォロワー一覧ページ) を base_url_to_visit_first として渡す
+        logger.info(f"{log_prefix_task}WebDriverを作成し、Cookieを設定します。ベースURL: {page_url}")
         task_driver = create_driver_with_cookies(shared_cookies, base_url_to_visit_first=page_url)
         if not task_driver:
-            logger.error(f"{status_message}WebDriverの作成に失敗。タスクを中止。")
+            logger.error(f"{log_prefix_task}WebDriverの作成に失敗。タスクを中止。")
             return {"profile_url": user_profile_url_to_find, "followed": False, "error": "WebDriver作成失敗"}
 
-        # 念のため、再度ページURLにアクセス (create_driver_with_cookies内で既にアクセスしている場合もある)
-        task_driver.get(page_url)
+        # --- ログイン状態確認 ---
+        # create_driver_with_cookies 内である程度確認しているが、タスク側でも簡易確認
+        # YAMAPのログイン後に表示される共通ヘッダーのユーザーアイコンやマイページリンクなどを確認
+        login_check_selectors_task = {
+            "user_icon_task": "a[data-testid='header-avatar']",
+            # "my_page_link_task": f"a[href*='/users/{current_user_id_for_task}']" # current_user_id_for_task を使う
+        }
+        is_logged_in_task = False
+        for key, selector in login_check_selectors_task.items():
+            try:
+                element = WebDriverWait(task_driver, 5).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                )
+                if element.is_displayed():
+                    is_logged_in_task = True
+                    logger.info(f"{log_prefix_task}ログイン状態確認OK: 要素 '{key}' が表示されています。")
+                    break # いずれか一つでも確認できればOKとする
+            except TimeoutException:
+                logger.info(f"{log_prefix_task}ログイン状態確認: 要素 '{key}' が5秒以内に見つかりませんでした。")
+            except Exception as e_check_login_task:
+                logger.warning(f"{log_prefix_task}ログイン状態確認要素 '{key}' のチェック中にエラー: {e_check_login_task}")
+
+        if not is_logged_in_task:
+            logger.error(f"{log_prefix_task}タスク開始時のログイン状態確認に失敗。Cookieが正しく機能していない可能性があります。タスクを中止。")
+            # from .driver_utils import save_screenshot # 遅延インポート or driver_utilsをグローバルインポート
+            # save_screenshot(task_driver, "LoginCheckFail_FollowBackTask", f"user_{user_profile_url_to_find.split('/')[-1]}")
+            return {"profile_url": user_profile_url_to_find, "followed": False, "error": "タスク開始時ログイン確認失敗"}
+        # --- ログイン状態確認完了 ---
+
+
+        # 念のため、再度ページURLにアクセス (create_driver_with_cookies内で既にアクセスしている場合もあるが、
+        # ログイン確認後に改めて目的のページにいることを確実にする)
+        if task_driver.current_url != page_url:
+            logger.info(f"{log_prefix_task}現在のURL ({task_driver.current_url}) が期待されるフォロワーページ ({page_url}) と異なるため、再アクセスします。")
+            task_driver.get(page_url)
+
         WebDriverWait(task_driver, 20).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "ul.css-18aka15"))  # followers_list_container_selector
         )
+        logger.info(f"{log_prefix_task}フォロワーリストコンテナ ({'ul.css-18aka15'}) を確認。")
         time.sleep(0.5)  # 描画待ち
 
         # ページ内で対象ユーザーのカードを探す
+        logger.debug(f"{log_prefix_task}ページ内で対象ユーザーカード (div[data-testid='user']) を探します...")
         all_cards_on_page_in_task = task_driver.find_elements(By.CSS_SELECTOR, "div[data-testid='user']")
         target_card_element = None
         for card in all_cards_on_page_in_task:
