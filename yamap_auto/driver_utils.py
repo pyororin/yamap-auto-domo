@@ -17,6 +17,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
+from datetime import datetime # datetime をインポート
 
 # --- Loggerの設定 ---
 # このモジュール用のロガーを取得します。
@@ -265,6 +266,47 @@ def create_driver_with_cookies(cookies, base_url_to_visit_first=BASE_URL):
         if driver:
             driver.quit()
         return None
+
+def save_screenshot(driver, error_type="error", context_info=""):
+    """
+    現在のブラウザのスクリーンショットを指定されたディレクトリに保存します。
+    ファイル名にはタイムスタンプ、エラータイプ、コンテキスト情報が含まれます。
+
+    Args:
+        driver (webdriver.Chrome): Selenium WebDriverインスタンス。
+        error_type (str, optional): エラーの種類 (例: "Timeout", "NoSuchElement")。
+                                    ファイル名の一部として使用されます。デフォルトは "error"。
+        context_info (str, optional): エラー発生時のコンテキスト情報 (例: activity_id)。
+                                     ファイル名の一部として使用されます。デフォルトは空文字列。
+    """
+    try:
+        # スクリーンショット保存ディレクトリの準備
+        # _MODULE_DIR は driver_utils.py があるディレクトリ (yamap_auto) を指す
+        # その親ディレクトリ (リポジトリルート) の下に logs/screenshots を作成
+        screenshots_dir = os.path.join(os.path.dirname(_MODULE_DIR), "logs", "screenshots")
+        if not os.path.exists(screenshots_dir):
+            os.makedirs(screenshots_dir)
+            logger.info(f"スクリーンショット保存ディレクトリを作成しました: {screenshots_dir}")
+
+        # ファイル名の生成
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename_parts = [timestamp, error_type]
+        if context_info:
+            filename_parts.append(str(context_info).replace("/", "_")) # context_info をサニタイズ
+
+        filename = "_".join(filename_parts) + ".png"
+        filepath = os.path.join(screenshots_dir, filename)
+
+        # スクリーンショットの保存
+        if driver.save_screenshot(filepath):
+            logger.info(f"スクリーンショットを保存しました: {filepath}")
+        else:
+            logger.error(f"スクリーンショットの保存に失敗しました: {filepath}")
+            # driver.get_screenshot_as_png() を試すこともできるが、
+            # save_screenshotがFalseを返す場合はより根本的な問題の可能性あり
+
+    except Exception as e:
+        logger.error(f"スクリーンショット保存処理中にエラーが発生しました: {e}", exc_info=True)
 
 # モジュールロード時に設定を読み込む (オプション)
 # load_settings()
