@@ -34,34 +34,6 @@ action_delays:
 # password: "your_password"
 # user_id: "1234567"  # 必ずシングルクォートまたはダブルクォートで囲ってください (数値の場合も)
 
-# === 旧スクリプト (yamap_auto.py) の設定項目 (参考情報) ===
-# 以下は、以前の `yamap_auto.py` スクリプトで使用されていた設定項目です。
-# 現在の `yamap_auto_domo.py` では直接参照されていませんが、機能の意図を理解する上での参考情報として残しています。
-# 必要に応じて、これらの設定を参考に新しい機能の設定セクションに値を移すか、
-# `yamap_auto_domo.py` にこれらの設定値を参照するカスタムロジックを実装することも可能です。
-
-# domo_settings: (旧設定)
-#   domo_users_who_domoed_my_posts: true # (旧) 自身の投稿にDOMOしてくれたユーザーの最新投稿へDOMOする機能
-#   max_my_activities_to_check_domo: 5   # (旧) 上記でDOMOユーザーを確認する自身の活動日記の最大数
-#   delay_between_domo_check_sec: 3    # (旧) 上記で各活動日記のDOMOリスト確認後の待機時間
-#
-#   domo_recommended_posts: true         # (旧) トップページの「おすすめ」投稿へDOMOする機能
-#   max_recommended_posts_to_domo: 5     # (旧) 上記でDOMOするおすすめ投稿の最大数
-#   delay_between_recommended_domo_sec: 3 # (旧) 上記でおすすめ投稿DOMO後の待機時間
-
-# follow_settings: (旧設定)
-#   follow_users_who_followed_me: true   # (旧) 自身をフォローしてくれた未フォローバックユーザーをフォローする機能
-#   max_followers_to_follow_back: 10     # (旧) 上記で一度にフォローバックする最大ユーザー数
-#   delay_between_follow_back_sec: 5   # (旧) 上記で各ユーザーフォローバック後の待機時間 (現在は action_delays.after_follow_action_sec で代替)
-#
-#   follow_users_who_domoed_and_high_follow_ratio: true # (旧) DOMOをくれ、特定のRatio条件を満たすユーザーをフォローする機能
-#   max_domo_activities_for_ratio_follow: 5 # (旧) 上記でDOMOユーザーを探すためにチェックする自身の活動日記の最大数
-#   min_followers_for_ratio_follow: 30      # (旧) 上記のRatioチェック対象とする相手の最低フォロワー数
-#   follow_to_follower_ratio_threshold: 0.7 # (旧) 上記でフォローするための「相手のフォロー中/フォロワー数」比率上限
-#   delay_between_ratio_follow_sec: 5     # (旧) 上記でユーザー処理後の待機時間
-
-
-# === 新しい `yamap_auto_domo.py` 用の機能別設定 ===
 # これらの設定は、主に `yamap_auto_domo.py` スクリプトから参照され、各自動化機能の動作を制御します。
 
 follow_back_settings:
@@ -70,11 +42,11 @@ follow_back_settings:
   # true: フォローバック機能を有効にします。
   # false: フォローバック機能を無効にします。
 
-  max_users_to_follow_back: 3 # テスト用に変更
+  max_users_to_follow_back: 10 # テスト用に変更
   # 一度のスクリプト実行でフォローバックする最大のユーザー数。
   # フォロワーリストの複数ページをチェックする場合、この合計数に達すると処理を停止します。
 
-  max_pages_for_follow_back: 1 # テスト用に変更
+  max_pages_for_follow_back: 5 # テスト用に変更
   # フォローバック対象者を探すために、フォロワーリストの何ページ目まで確認するかを指定します。
   # 例えば `5` を指定すると、最新のフォロワーから最大5ページ分遡って確認します。
 
@@ -82,7 +54,7 @@ follow_back_settings:
   # true: フォローバック機能の並列処理を有効にします。
   # false: 従来の逐次処理を実行します。
 
-  max_workers_follow_back: 2
+  max_workers_follow_back: 24
   # フォローバック機能を並列処理する場合の最大ワーカー（スレッド）数。
   # enable_parallel_follow_back が true の場合に参照されます。
 
@@ -98,7 +70,7 @@ timeline_domo_settings:
   # true: タイムラインDOMO機能を有効にします。
   # false: タイムラインDOMO機能を無効にします。
 
-  max_activities_to_domo_on_timeline: 10
+  max_activities_to_domo_on_timeline: 20
   # タイムライン上でDOMOする活動記録の最大数。
   # タイムラインの新しい投稿から順に、この数に達するまでDOMOを試みます。
 
@@ -139,14 +111,14 @@ search_and_follow_settings:
   # 処理を開始する活動記録の検索結果ページのURL。
   # 通常はデフォルトのままで問題ありませんが、特定の検索条件で開始したい場合にカスタマイズ可能です。
 
-  max_pages_to_process_search: 1 # テスト用に変更
+  max_pages_to_process_search: 5 # テスト用に変更
   # 検索結果の何ページ目まで処理を続けるかを指定します。
   # 例えば `3` を指定すると、最初のページから3ページ目まで処理します。
 
-  max_users_to_process_per_page: 3 # テスト用に変更
+  max_users_to_process_per_page: 24 # テスト用に変更
   # 検索結果の各ページで、最大何人のユーザー（活動記録の投稿者）を処理対象とするかを指定します。
 
-  min_followers_for_search_follow: 20
+  min_followers_for_search_follow: 8
   # フォローを検討するユーザーの最低フォロワー数。
   # この数未満のフォロワーしか持たないユーザーは、フォローの対象外となります。
 
@@ -171,7 +143,7 @@ search_and_follow_settings:
   # true: 検索＆フォロー機能のユーザー処理部分を並列化します。
   # false: 従来の逐次処理を実行します。
 
-  max_workers_search_follow: 2
+  max_workers_search_follow: 24
   # 検索＆フォロー機能を並列処理する場合の最大ワーカー（スレッド）数。
   # enable_parallel_search_follow が true の場合に参照されます。
 
@@ -189,7 +161,7 @@ parallel_processing_settings:
   # true: 並列処理を有効にします (現在はタイムラインDOMO機能が対象)。
   # false: 並列処理を無効にし、全ての処理を逐次実行します。
 
-  max_workers: 3
+  max_workers: 24
   # 並列処理に使用する最大ワーカー（スレッド）数。
   # PCのスペックやネットワーク環境に応じて調整してください。推奨値は 2〜5 程度です。
   # 大きすぎる値を設定すると、かえってパフォーマンスが低下したり、アカウントへの負荷が高まる可能性があります。
