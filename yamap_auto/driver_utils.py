@@ -246,23 +246,77 @@ def create_driver_with_cookies(cookies, base_url_to_visit_first=BASE_URL):
 
         logger.debug(f"Cookie設定のため、ベースURL ({base_url_to_visit_first}) にアクセスします。")
         driver.get(base_url_to_visit_first)
-        time.sleep(0.5)
+        time.sleep(0.5) # ページロード待機
 
-        for cookie in cookies:
-            if 'domain' in cookie and not base_url_to_visit_first.endswith(cookie['domain'].lstrip('.')):
-                logger.warning(f"Cookieのドメイン '{cookie['domain']}' とアクセス先ドメインが一致しないため、このCookieのドメイン情報を削除して試みます: {cookie}")
+        logger.debug(f"受け取ったCookie (計{len(cookies)}個) を設定します。")
+        for idx, cookie in enumerate(cookies):
+            cookie_info_for_log = {k: v for k, v in cookie.items() if k != 'value'} # 値はログ出力しない
+            logger.debug(f"Cookie {idx+1}/{len(cookies)}: {cookie_info_for_log}")
+            if 'domain' in cookie and cookie['domain'] and not base_url_to_visit_first.endswith(cookie['domain'].lstrip('.')):
+                original_domain = cookie['domain']
                 del cookie['domain']
+                logger.warning(
+                    f"Cookie {idx+1} のドメイン '{original_domain}' がベースURLのドメイン '{base_url_to_visit_first}' "
+                    f"と一致しないため、ドメイン情報を削除して試みます。Cookie名: {cookie.get('name', 'N/A')}"
+                )
             try:
                 driver.add_cookie(cookie)
+                # logger.debug(f"Cookie {idx+1} ({cookie.get('name', 'N/A')}) を追加成功。") # 詳細すぎる可能性があるのでコメントアウト
             except Exception as e_cookie_add:
-                logger.error(f"Cookie追加中にエラーが発生しました: {cookie}, エラー: {e_cookie_add}")
+                logger.error(f"Cookie {idx+1} ({cookie.get('name', 'N/A')}) の追加中にエラー: {e_cookie_add}", exc_info=True)
 
-        logger.debug(f"{len(cookies)}個のCookieを新しいWebDriverインスタンスに設定しました。")
-        driver.get(base_url_to_visit_first) # 再度アクセスしてセッション確認
-        time.sleep(0.5)
+        logger.info(f"{len(cookies)}個のCookieを新しいWebDriverインスタンスに設定試行完了。")
+        logger.info(f"Cookie設定後、再度ベースURL ({base_url_to_visit_first}) にアクセスしてセッション状態を確認します。")
+        driver.get(base_url_to_visit_first)
+        time.sleep(1) # ページが完全にロードされるのを待つ
+
+        current_url_after_cookie = driver.current_url
+        current_title_after_cookie = driver.title
+        logger.info(f"Cookie設定後のアクセス結果: URL='{current_url_after_cookie}', Title='{current_title_after_cookie}'")
+
+        # ログイン状態を示す可能性のある要素を確認 (例)
+        # 注意: これらのセレクタはYAMAPの実際のHTML構造に合わせて調整が必要です。
+        # ここでは汎用的な例として、存在しそうなものをいくつか試します。
+        # 実際にYAMAPのページを確認して、確実なセレクタに置き換える必要があります。
+        login_check_selectors = {
+            "user_icon": "a[data-testid='header-avatar'], img[alt*='マイページ'], a[href*='/users/']", # ユーザーアイコンやマイページリンク
+            "logout_button": "button[data-testid*='logout'], a[href*='logout']", # ログアウトボタン
+            "timeline_link_active": "a[href='/timeline'][class*='active']" # タイムラインリンクがアクティブになっているか
+        }
+        login_status_indicators_found = {}
+
+        for key, selector in login_check_selectors.items():
+            try:
+                element = driver.find_element(By.CSS_SELECTOR, selector)
+                if element.is_displayed():
+                    login_status_indicators_found[key] = True
+                    logger.info(f"ログイン状態確認: 要素 '{key}' (セレクタ: {selector}) が表示されています。")
+                else:
+                    login_status_indicators_found[key] = False
+                    logger.info(f"ログイン状態確認: 要素 '{key}' (セレクタ: {selector}) は存在しますが非表示です。")
+            except NoSuchElementException:
+                login_status_indicators_found[key] = False
+                logger.info(f"ログイン状態確認: 要素 '{key}' (セレクタ: {selector}) は見つかりませんでした。")
+            except Exception as e_check_sel:
+                 logger.warning(f"ログイン状態確認要素 '{key}' のチェック中にエラー: {e_check_sel}", exc_info=True)
+
+
+        # 総合的なログイン状態の判断 (簡易版)
+        # ここでは、いずれかのインジケータが見つかれば「ログインしている可能性が高い」と判断する
+        # より厳密な判定が必要な場合は、YAMAPの仕様に合わせて調整する
+        if any(login_status_indicators_found.values()):
+            logger.info("いくつかのログイン状態を示す要素が見つかりました。ログインしている可能性が高いです。")
+        else:
+            logger.warning(
+                "ログイン状態を示す明確な要素が見つかりませんでした。Cookieによるセッションが正しく確立されていない可能性があります。"
+                f"URL: {current_url_after_cookie}, Title: {current_title_after_cookie}"
+            )
+            # 必要であればここでスクリーンショットを保存
+            # save_screenshot(driver, "LoginCheckFail", f"URL_{current_url_after_cookie.replace('/', '_')}")
+
         return driver
     except Exception as e:
-        logger.error(f"Cookie付きWebDriver作成中にエラー: {e}", exc_info=True)
+        logger.error(f"Cookie付きWebDriver作成中に致命的なエラー: {e}", exc_info=True)
         if driver:
             driver.quit()
         return None
