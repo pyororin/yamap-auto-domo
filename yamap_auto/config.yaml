@@ -70,15 +70,27 @@ follow_back_settings:
   # true: フォローバック機能を有効にします。
   # false: フォローバック機能を無効にします。
 
-  max_users_to_follow_back: 15
+  max_users_to_follow_back: 3 # テスト用に変更
   # 一度のスクリプト実行でフォローバックする最大のユーザー数。
   # フォロワーリストの複数ページをチェックする場合、この合計数に達すると処理を停止します。
 
-  max_pages_for_follow_back: 5
+  max_pages_for_follow_back: 1 # テスト用に変更
   # フォローバック対象者を探すために、フォロワーリストの何ページ目まで確認するかを指定します。
   # 例えば `5` を指定すると、最新のフォロワーから最大5ページ分遡って確認します。
 
-  # フォローバック実行後の待機時間は `action_delays.after_follow_action_sec` を参照します。
+  enable_parallel_follow_back: true # テスト用に変更
+  # true: フォローバック機能の並列処理を有効にします。
+  # false: 従来の逐次処理を実行します。
+
+  max_workers_follow_back: 2
+  # フォローバック機能を並列処理する場合の最大ワーカー（スレッド）数。
+  # enable_parallel_follow_back が true の場合に参照されます。
+
+  delay_per_worker_action_sec: 2.5 # (追加)
+  # 並列フォローバック時、各ワーカースレッドがフォローアクションを実行した後の個別の遅延時間 (秒単位)。
+  # 逐次処理の場合は action_delays.after_follow_action_sec が使用されます。
+
+  # 従来の逐次処理でのフォローバック実行後の待機時間は `action_delays.after_follow_action_sec` を参照します。
 
 timeline_domo_settings:
   # タイムラインDOMO機能に関する設定 (YAMAPのタイムライン上の活動記録に自動でDOMOする)
@@ -127,11 +139,11 @@ search_and_follow_settings:
   # 処理を開始する活動記録の検索結果ページのURL。
   # 通常はデフォルトのままで問題ありませんが、特定の検索条件で開始したい場合にカスタマイズ可能です。
 
-  max_pages_to_process_search: 3
+  max_pages_to_process_search: 1 # テスト用に変更
   # 検索結果の何ページ目まで処理を続けるかを指定します。
   # 例えば `3` を指定すると、最初のページから3ページ目まで処理します。
 
-  max_users_to_process_per_page: 5
+  max_users_to_process_per_page: 3 # テスト用に変更
   # 検索結果の各ページで、最大何人のユーザー（活動記録の投稿者）を処理対象とするかを指定します。
 
   min_followers_for_search_follow: 20
@@ -154,6 +166,18 @@ search_and_follow_settings:
   delay_after_pagination_sec: 3.0
   # 検索結果のページネーション（「次へ」ボタンクリックなど）を実行した後の待機時間 (秒単位)。
   # 新しいページのコンテンツが完全に読み込まれるのを待つために使用します。
+
+  enable_parallel_search_follow: true # テスト用に変更
+  # true: 検索＆フォロー機能のユーザー処理部分を並列化します。
+  # false: 従来の逐次処理を実行します。
+
+  max_workers_search_follow: 2
+  # 検索＆フォロー機能を並列処理する場合の最大ワーカー（スレッド）数。
+  # enable_parallel_search_follow が true の場合に参照されます。
+
+  delay_per_worker_user_processing_sec: 3.5 # (追加)
+  # 並列検索＆フォロー時、各ワーカースレッドが1ユーザーの処理を完了した後の個別の遅延時間 (秒単位)。
+  # 逐次処理の場合は delay_between_user_processing_in_search_sec が使用されます。
 
 # === 並列処理設定 ===
 # スクリプト内の一部の処理（現在はタイムラインDOMO）を並列実行するための設定です。
