@@ -90,6 +90,31 @@ timeline_domo_settings:
   # タイムライン上でDOMOする活動記録の最大数。
   # タイムラインの新しい投稿から順に、この数に達するまでDOMOを試みます。
 
+  # === タイムライン一覧上での直接DOMOに関する追加設定 (vX.Y.Z以降) ===
+  # 以下の設定は、タイムラインの各活動記録ページに遷移せず、一覧上で直接DOMOを行う場合の動作を調整します。
+  # これにより、処理速度の向上が期待できます。
+
+  # domo_button_selectors_on_timeline:
+  #   - "button[data-testid='ActivityDomoButton']"
+  #   - "button#DomoActionButton"
+  #   - "div.ActivityItemActions__DomoActionContainer button" # ユーザー提供HTMLに基づく候補
+  # タイムラインのフィードアイテム内でDOMOボタンを見つけるためのCSSセレクタのリスト。
+  # 上から順に試行されます。YAMAPのUI変更に合わせて調整が必要になる場合があります。
+  # デフォルトでは、活動記録ページと同じセレクタと、一般的な候補が使用されます。
+
+  # domo_button_wait_sec_on_timeline: 3
+  # タイムラインのフィードアイテム内でDOMOボタンがクリック可能になるまでの最大待機時間 (秒単位)。
+  # デフォルトは3秒です。
+
+  # wait_after_feed_load_sec: 1.5
+  # タイムラインのフィードアイテム群が最初に読み込まれた後、処理を開始するまでの安定待ち時間 (秒単位)。
+  # デフォルトは1.5秒です。
+
+  # delay_between_item_processing_sec: 0.3
+  # タイムライン上の各フィードアイテムの処理（DOMO試行またはスキップ）が完了した後、
+  # 次のアイテムの処理を開始するまでの短い遅延時間 (秒単位)。 StaleElement対策や負荷軽減が目的です。
+  # デフォルトは0.3秒です。
+
   # タイムラインでの各DOMO実行後の待機時間は `action_delays.after_domo_sec` を参照します。
 
 search_and_follow_settings:
