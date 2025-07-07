@@ -115,9 +115,11 @@ Selenium WebDriverを使用してブラウザを操作し、設定ファイル (
 3.  以下のコマンドを実行します。
 
     ```bash
-    python yamap_auto/yamap_auto_domo.py
+    python -m yamap_auto.yamap_auto_domo
     ```
     ログは `yamap_auto/yamap_auto_domo.log` に出力されます。
+
+    **重要**: 上記のコマンドは、プロジェクトのルートディレクトリ (この `README.md` があるディレクトリ) から実行してください。`-m` オプションを使用することで、Pythonは `yamap_auto` ディレクトリをパッケージとして正しく認識し、スクリプト内の相対インポート (`from .driver_utils import ...` など) が正常に動作します。直接 `python yamap_auto/yamap_auto_domo.py` を実行すると `ImportError` が発生します。
 
 4.  スクリプトが起動すると、設定に基づいてブラウザが自動的に操作されます。
 5.  実行状況はコンソールに出力され、より詳細なログは `yamap_auto_domo.log` ファイルに記録されます。
