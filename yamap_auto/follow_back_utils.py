@@ -72,6 +72,7 @@ def follow_back_users_new(driver, current_user_id):
     user_card_selector = "div[data-testid='user']" # 各ユーザーカードのコンテナ
     user_link_in_card_selector = "a.css-e5vv35[href^='/users/']" # カード内のユーザープロフへのリンク
     next_button_selectors = [ # 次のページボタンの可能性のあるセレクタリスト
+        "button[aria-label=\"次のページに移動する\"]", # 提供されたHTMLに完全一致するセレクタを先頭に追加
         "a[data-testid='pagination-next-button']", "a[rel='next']", "a.next",
         "a.pagination__next", "button.next", "button.pagination__next",
         "a[aria-label*='次へ']:not([aria-disabled='true'])", "a[aria-label*='Next']:not([aria-disabled='true'])",
@@ -91,20 +92,22 @@ def follow_back_users_new(driver, current_user_id):
             logger.info(f"{current_page_number} ページ目から {len(user_cards_all_on_page)} 件のユーザーカード候補を検出しました。")
 
             user_cards_to_process_this_page = user_cards_all_on_page
-            # YAMAPのフォロワー一覧ページでは、最初の数件が「おすすめユーザー」の場合があるため除外するロジック
-            # この除外数は設定可能にしてもよいが、ここでは固定値3で仮実装
-            # (このロジックは、実際のYAMAPのUIに応じて調整が必要)
-            if FOLLOW_BACK_SETTINGS.get("skip_recommended_users_on_first_page", True) and current_page_number == 1 and len(user_cards_all_on_page) > 3 : # 設定でON/OFFできるようにしても良い
-                skip_count = FOLLOW_BACK_SETTINGS.get("recommended_users_to_skip_count", 3)
-                if len(user_cards_all_on_page) > skip_count:
+            # 各ページの先頭N件をスキップするロジック (設定により有効化)
+            if FOLLOW_BACK_SETTINGS.get("enable_per_page_skip", False): # デフォルトはFalseに変更しても良いかもしれません
+                skip_count = FOLLOW_BACK_SETTINGS.get("users_to_skip_per_page", 3)
+                if skip_count > 0 and len(user_cards_all_on_page) > skip_count:
                     user_cards_to_process_this_page = user_cards_all_on_page[skip_count:]
-                    logger.info(f"最初の{skip_count}件（レコメンドと仮定）を除いた {len(user_cards_to_process_this_page)} 件のフォロワー候補を処理対象とします。")
-                else:
-                    logger.info(f"レコメンド除外設定ですが、ユーザーカードが{len(user_cards_all_on_page)}件のため、全件処理します。")
+                    logger.info(f"各ページ先頭{skip_count}件のスキップ設定が有効なため、このページの先頭{skip_count}件を除いた {len(user_cards_to_process_this_page)} 件のフォロワー候補を処理対象とします。")
+                elif skip_count > 0: # スキップ数がカード数以上の場合
+                    logger.info(f"各ページ先頭{skip_count}件のスキップ設定が有効ですが、ユーザーカードが{len(user_cards_all_on_page)}件のため、このページでは全件スキップ（処理対象なし）となります。")
+                    user_cards_to_process_this_page = [] # 処理対象を空にする
+                # skip_countが0以下の場合は何もしない (全件処理)
+            else:
+                logger.info("各ページ先頭のユーザースキップ機能は無効です。検出された全ユーザーを処理対象とします。")
 
 
             if not user_cards_to_process_this_page:
-                logger.info(f"{current_page_number} ページ目には処理対象となるフォロワーが見つかりませんでした。")
+                logger.info(f"{current_page_number} ページ目には処理対象となるフォロワーが見つかりませんでした（スキップ処理後を含む）。")
                 # 「次へ」ボタンがない場合はここでループを抜けるべき
                 # (次の「次へ」ボタン探索ロジックで対応される)
 
@@ -176,8 +179,8 @@ def follow_back_users_new(driver, current_user_id):
 
             for selector_idx, selector in enumerate(next_button_selectors):
                 try:
-                    # WebDriverWaitで要素がクリック可能になるまで待つ
-                    next_button = WebDriverWait(driver, 3).until(
+                    # WebDriverWaitで要素がクリック可能になるまで待つ (タイムアウトを5秒に延長)
+                    next_button = WebDriverWait(driver, 5).until(
                         EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
                     )
                     if next_button.is_displayed() and next_button.is_enabled(): # 表示されていて有効か
