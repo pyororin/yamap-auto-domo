@@ -102,7 +102,7 @@ def domo_activity(driver, activity_url, base_url="https://yamap.com"): # base_ur
                 continue
 
         if not domo_button:
-            logger.warning(f"DOMOボタンが見つかりませんでした: {activity_id_for_log}")
+            logger.warning(f"DOMOボタンが見つかりませんでした (試行セレクタ: '{primary_domo_button_selector}', '{id_domo_button_selector}'): {activity_id_for_log}")
             return False
 
         # 3. DOMO済みかどうかの判定
@@ -141,7 +141,7 @@ def domo_activity(driver, activity_url, base_url="https://yamap.com"): # base_ur
                 time.sleep(delay_after_action)
                 return True
             except TimeoutException:
-                logger.warning(f"DOMO実行後、状態変化の確認でタイムアウト: {activity_id_for_log}")
+                logger.warning(f"DOMO実行後、状態変化の確認でタイムアウト (期待: aria-labelに'Domo済み'またはアイコンに'is-active'): {activity_id_for_log}", exc_info=True)
                 time.sleep(delay_after_action)
                 return False
         else:
@@ -154,7 +154,6 @@ def domo_activity(driver, activity_url, base_url="https://yamap.com"): # base_ur
     except Exception as e:
         logger.error(f"DOMO実行中に予期せぬエラー ({activity_id_for_log}):", exc_info=True)
     return False
-
 
 # --- タイムラインDOMO機能 ---
 def domo_timeline_activities(driver):
