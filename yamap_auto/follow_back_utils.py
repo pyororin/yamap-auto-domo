@@ -62,85 +62,39 @@ def _follow_back_task(page_url, user_profile_url_to_find, user_name_to_find, sha
     status_message = f"ユーザー「{user_name_to_find}」({user_profile_url_to_find.split('/')[-1]}): "
     log_prefix_task = f"[FB_TASK][{user_profile_url_to_find.split('/')[-1]}] "
     try:
-        # Cookieを使って新しいWebDriverインスタンスを作成
-        # (create_driver_with_cookies は driver_utils にある想定)
-        # page_url (フォロワー一覧ページ) を base_url_to_visit_first として渡す
-        logger.info(f"{log_prefix_task}WebDriverを作成し、Cookieを設定します。ベースURL: {page_url} (User ID: {current_user_id_for_task})")
-        task_driver = create_driver_with_cookies(shared_cookies, current_user_id_for_task, base_url_to_visit_first=page_url)
+        # Cookieを使って新しいWebDriverインスタンスを作成し、ログイン状態を検証。
+        # create_driver_with_cookies は内部でBASE_URLにアクセスしCookieを設定後、
+        # マイページに遷移してログイン状態を検証する。成功すればマイページにいる状態でdriverを返す。
+        logger.info(f"{log_prefix_task}WebDriverを作成し、Cookieを設定・検証します。(User ID: {current_user_id_for_task})")
+        task_driver = create_driver_with_cookies(shared_cookies, current_user_id_for_task) # base_url_to_visit_first は不要になった
+
         if not task_driver:
-            logger.error(f"{log_prefix_task}WebDriverの作成に失敗。タスクを中止。")
-            return {"profile_url": user_profile_url_to_find, "followed": False, "error": "WebDriver作成失敗"}
+            # create_driver_with_cookies が None を返した場合、内部でエラーログとスクリーンショット取得済みのはず
+            logger.error(f"{log_prefix_task}WebDriverの作成またはCookie/ログイン検証に失敗。タスクを中止。")
+            return {"profile_url": user_profile_url_to_find, "followed": False, "error": "WebDriver/ログイン検証失敗"}
 
-        # --- ログイン状態確認 ---
-        # create_driver_with_cookies 内でも確認しているが、タスク側でも再確認
-        login_check_selector_avatar = "a[data-testid='header-avatar']" # ヘッダーのユーザーアバターアイコン
-        profile_edit_button_selector = "a[href$='/profile/edit'], button[data-testid='profile-edit-button']" # プロフィール編集ボタン (マイページ確認用)
-        is_logged_in_task = False
+        # create_driver_with_cookies が成功した場合、ドライバーはログイン済みで、
+        # 現在のページはユーザー自身のマイページのはず。
+        # 次に、このタスクの目的であるフォロワーリストページに遷移する。
+        logger.info(f"{log_prefix_task}ログイン検証済み。対象のフォロワーページ ({page_url}) にアクセスします。")
+        task_driver.get(page_url)
 
+        # フォロワーリストページで、リストコンテナが表示されるのを待つ
         try:
-            logger.info(f"{log_prefix_task}ヘッダーアバター ({login_check_selector_avatar}) の表示を確認します (最大15秒)。")
-            avatar_element = WebDriverWait(task_driver, 15).until(
-                EC.visibility_of_element_located((By.CSS_SELECTOR, login_check_selector_avatar))
+            WebDriverWait(task_driver, 20).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "ul.css-18aka15"))  # followers_list_container_selector
             )
-            if avatar_element.is_displayed():
-                is_logged_in_task = True
-                logger.info(f"{log_prefix_task}ログイン状態確認OK: ヘッダーアバターが表示されています。")
-            else:
-                logger.warning(f"{log_prefix_task}ログイン状態確認: ヘッダーアバターは存在しますが非表示でした。")
+            logger.info(f"{log_prefix_task}フォロワーリストコンテナ ({'ul.css-18aka15'}) をターゲットページ ({page_url}) で確認。")
         except TimeoutException:
-            logger.warning(f"{log_prefix_task}ログイン状態確認: ヘッダーアバターが15秒以内に表示されませんでした。")
-            logger.debug(f"{log_prefix_task}アバター確認失敗時のURL: {task_driver.current_url}, タイトル: {task_driver.title}")
-            try:
-                body_start = task_driver.find_element(By.TAG_NAME, "body").get_attribute('innerHTML')[:500]
-                logger.debug(f"{log_prefix_task}アバター確認失敗時のBody先頭:\n{body_start}")
-            except Exception as e_body:
-                logger.debug(f"{log_prefix_task}アバター確認失敗時のBody取得エラー: {e_body}")
-        except Exception as e_check_login_task:
-            logger.warning(f"{log_prefix_task}ヘッダーアバター確認中に予期せぬエラー: {e_check_login_task}", exc_info=True)
+            logger.error(f"{log_prefix_task}ターゲットフォロワーページ ({page_url}) でリストコンテナの表示タイムアウト。タスク中止。")
+            # スクリーンショットを保存
+            context_info = f"UID_{current_user_id_for_task}_TargetURL_{page_url.replace('/', '_').replace(':', '_')}"
+            save_screenshot(task_driver, "FollowerListLoadFail_FBTask", context_info)
+            if task_driver: task_driver.quit()
+            return {"profile_url": user_profile_url_to_find, "followed": False, "error": "フォロワーページ読み込み失敗"}
 
-        if not is_logged_in_task:
-            # ヘッダーアバター確認に失敗した場合の追加処理
-            # 現在のURLがユーザー自身の「マイページURL」（クエリパラメータ等なし）と一致するか確認
-            expected_my_page_url = f"{BASE_URL}/users/{current_user_id_for_task}"
-            current_url_normalized = task_driver.current_url.split('?')[0].split('#')[0]
-
-            if current_url_normalized == expected_my_page_url:
-                logger.info(f"{log_prefix_task}ヘッダーアバター確認失敗。しかし、現在のURL ({task_driver.current_url}) がマイページURL ({expected_my_page_url}) と一致するため、追加でプロフィール編集ボタンの存在を確認します。")
-                try:
-                    edit_button = WebDriverWait(task_driver, 5).until( # 短時間で確認
-                        EC.visibility_of_element_located((By.CSS_SELECTOR, profile_edit_button_selector))
-                    )
-                    if edit_button.is_displayed():
-                        is_logged_in_task = True
-                        logger.info(f"{log_prefix_task}ログイン状態確認OK: マイページでプロフィール編集ボタンが表示されています。")
-                    else:
-                        logger.warning(f"{log_prefix_task}ログイン状態確認NG: マイページでプロフィール編集ボタンは存在しますが非表示でした。")
-                except TimeoutException:
-                    logger.warning(f"{log_prefix_task}ログイン状態確認NG: マイページでプロフィール編集ボタンが5秒以内に表示されませんでした。")
-                except Exception as e_edit_button:
-                    logger.warning(f"{log_prefix_task}マイページでのプロフィール編集ボタン確認中にエラー: {e_edit_button}")
-            else:
-                logger.info(f"{log_prefix_task}ヘッダーアバター確認失敗。現在のURL ({task_driver.current_url}) はマイページURL ({expected_my_page_url}) と異なるため、追加確認は行いません。")
-
-        if not is_logged_in_task:
-            logger.error(f"{log_prefix_task}タスク開始時の最終的なログイン状態確認に失敗（アバターおよび該当すればマイページ要素確認後）。タスクを中止。")
-            context_info = f"FollowBack_LoginFail_User_{user_profile_url_to_find.split('/')[-1]}"
-            save_screenshot(task_driver, "LoginCheckFail_FollowBackTask", context_info)
-            return {"profile_url": user_profile_url_to_find, "followed": False, "error": "タスク開始時最終ログイン確認失敗"}
-        # --- ログイン状態確認完了 ---
-
-
-        # 念のため、再度ページURLにアクセス (create_driver_with_cookies内で既にアクセスしている場合もあるが、
-        # ログイン確認後に改めて目的のページにいることを確実にする)
-        if task_driver.current_url != page_url:
-            logger.info(f"{log_prefix_task}現在のURL ({task_driver.current_url}) が期待されるフォロワーページ ({page_url}) と異なるため、再アクセスします。")
-            task_driver.get(page_url)
-
-        WebDriverWait(task_driver, 20).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, "ul.css-18aka15"))  # followers_list_container_selector
-        )
-        logger.info(f"{log_prefix_task}フォロワーリストコンテナ ({'ul.css-18aka15'}) を確認。")
         time.sleep(0.5)  # 描画待ち
+        # 以前のタスク内での冗長なログイン確認ブロックは削除済み
 
         # ページ内で対象ユーザーのカードを探す
         logger.debug(f"{log_prefix_task}ページ内で対象ユーザーカード (div[data-testid='user']) を探します...")
