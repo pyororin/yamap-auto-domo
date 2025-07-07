@@ -297,7 +297,8 @@ def create_driver_with_cookies(cookies, current_user_id, initial_page_for_cookie
         my_page_login_ok = False
         profile_edit_button_selector = "a[href$='/profile/edit'], button[data-testid='profile-edit-button']"
         try:
-            edit_element = WebDriverWait(driver, 10).until(
+            # Increased timeout from 10 to 20 seconds
+            edit_element = WebDriverWait(driver, 20).until(
                 EC.visibility_of_element_located((By.CSS_SELECTOR, profile_edit_button_selector))
             )
             if edit_element.is_displayed():
@@ -306,7 +307,7 @@ def create_driver_with_cookies(cookies, current_user_id, initial_page_for_cookie
             else:
                 logger.warning(f"マイページ ({my_page_url}) でプロフィール編集関連要素は存在しますが非表示です。")
         except TimeoutException:
-            logger.warning(f"マイページ ({my_page_url}) の特有要素 ({profile_edit_button_selector}) の表示が10秒以内にタイムアウトしました。")
+            logger.warning(f"マイページ ({my_page_url}) の特有要素 ({profile_edit_button_selector}) の表示が20秒以内にタイムアウトしました。") # Updated log message
         except Exception as e_mypage_check:
             logger.warning(f"マイページ ({my_page_url}) 確認中に予期せぬエラー: {e_mypage_check}", exc_info=True)
 
