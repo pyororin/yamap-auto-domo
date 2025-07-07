@@ -217,7 +217,7 @@ if __name__ == "__main__":
                 if TIMELINE_DOMO_SETTINGS.get("enable_timeline_domo", False):
                     start_time = time.time()
                     if PARALLEL_PROCESSING_SETTINGS.get("enable_parallel_processing", False) and shared_cookies:
-                        domo_timeline_activities_parallel(driver, shared_cookies) # メインドライバーとCookieを渡す
+                        domo_timeline_activities_parallel(driver, shared_cookies, MY_USER_ID) # MY_USER_ID を追加
                     else:
                         if PARALLEL_PROCESSING_SETTINGS.get("enable_parallel_processing", False) and not shared_cookies:
                             logger.warning("並列処理が有効ですがCookie共有ができなかったため、タイムラインDOMOは逐次実行されます。")
