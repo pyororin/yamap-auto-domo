@@ -58,12 +58,27 @@ def get_my_activities_within_period(driver, user_profile_url, days_to_check):
 
     # 活動記録一覧が表示されるまで待機
     activity_list_selector = "div[class*='UserProfileScreen_activities']" # プロフィールページの活動記録リストコンテナ
+    # activity_list_selector_alt = "section[aria-label*='活動日記']" # 代替候補 (もしあれば)
     try:
-        WebDriverWait(driver, 15).until(
+        # 待機時間を15秒から20秒に延長
+        WebDriverWait(driver, 20).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, activity_list_selector))
         )
+        logger.info(f"プロフィールページで活動記録リスト ({activity_list_selector}) を確認しました。")
     except TimeoutException:
-        logger.warning(f"プロフィールページで活動記録リスト ({activity_list_selector}) の読み込みタイムアウト。")
+        logger.warning(f"プロフィールページで活動記録リスト ({activity_list_selector}) の読み込みタイムアウト (20秒)。")
+        # 代替セレクタを試す場合はここにロジックを追加
+        # try:
+        #     WebDriverWait(driver, 10).until(
+        #         EC.presence_of_element_located((By.CSS_SELECTOR, activity_list_selector_alt))
+        #     )
+        #     activity_list_selector = activity_list_selector_alt # 代替セレクタを使用
+        #     logger.info(f"プロフィールページで活動記録リスト (代替セレクタ: {activity_list_selector}) を確認しました。")
+        # except TimeoutException:
+        #     logger.warning(f"プロフィールページで活動記録リスト (代替セレクタ: {activity_list_selector_alt}) も読み込みタイムアウト。")
+        #     save_screenshot(driver, "ActivityListLoadTimeout", user_profile_url.split('/')[-1])
+        #     return activities_within_period
+        save_screenshot(driver, "ActivityListLoadTimeout", user_profile_url.split('/')[-1])
         return activities_within_period
 
     # 活動記録アイテムのセレクタ (日付とリンクを含む)
