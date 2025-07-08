@@ -52,32 +52,66 @@ def get_my_activities_within_period(driver, user_profile_url, days_to_check):
     activities_within_period = []
 
     current_url = driver.current_url
-    if user_profile_url not in current_url:
-        driver.get(user_profile_url)
-        WebDriverWait(driver, 10).until(EC.url_contains(user_profile_url.split('/')[-1]))
+    target_profile_page_url_base = user_profile_url.split('?')[0] # user_id部分のみ
+    activities_tab_url_part = "?tab=activities"
 
-    # 活動記録一覧が表示されるまで待機
-    # activity_list_selector = "div[class*='UserProfileScreen_activities']" # 旧セレクタ
-    activity_list_selector = "section[aria-label='活動日記'] div[data-testid='user-activities-tab-panel']" # 新セレクタ (ユーザー提供情報に基づく)
+    # ベースのプロフィールページにアクセスし、必要であれば活動日記タブに切り替え
+    if target_profile_page_url_base not in current_url:
+        logger.info(f"プロフィールページ ({target_profile_page_url_base}) にアクセスします。")
+        driver.get(target_profile_page_url_base)
+        WebDriverWait(driver, 15).until(EC.url_contains(target_profile_page_url_base.split('/')[-1]))
+
+    if activities_tab_url_part not in driver.current_url:
+        activity_tab_selector = "a.UsersId__Tab__Link[href*='?tab=activities']"
+        try:
+            logger.info(f"活動日記タブ ({activity_tab_selector}) を探しています...")
+            activity_tab_link = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, activity_tab_selector))
+            )
+            # タブがアクティブでないことを確認するより確実な方法は、現在のURLを確認すること
+            # ただし、YAMAPのSPA実装によってはURLが即時変わらない可能性もあるため、
+            # ここではクラス属性の存在も補助的に確認するが、主に要素クリック後の待機に頼る
+            if "UsersId__Tab__Link--active" not in (activity_tab_link.get_attribute("class") or ""):
+                logger.info("活動日記タブに切り替えます...")
+                activity_tab_link.click()
+                # タブ切り替え後、リストコンテナが表示されるまで待機
+                WebDriverWait(driver, 15).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "ul.UserActivityList__List"))
+                )
+                logger.info("活動日記タブへの切り替えを確認しました。")
+            else:
+                logger.info("既に活動日記タブが表示されているようです。")
+        except TimeoutException:
+            logger.warning(f"活動日記タブ ({activity_tab_selector}) の特定またはクリック後のリスト表示でタイムアウトしました。")
+            save_screenshot(driver, "ActivityTabSwitchFail", user_profile_url.split('/')[-1])
+            return activities_within_period
+        except Exception as e_tab_switch:
+            logger.error(f"活動日記タブへの切り替え中に予期せぬエラー: {e_tab_switch}", exc_info=True)
+            save_screenshot(driver, "ActivityTabSwitchError", user_profile_url.split('/')[-1])
+            return activities_within_period
+    else:
+        logger.info("既に活動日記タブのURLです。")
+
+    # 活動記録一覧が表示されるまで待機 (ユーザー提供HTMLに基づく)
+    activity_list_container_selector = "ul.UserActivityList__List"
     try:
-        WebDriverWait(driver, 20).until( # 待機時間は20秒を維持
-            EC.presence_of_element_located((By.CSS_SELECTOR, activity_list_selector))
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, activity_list_container_selector))
         )
-        logger.info(f"プロフィールページで活動記録リスト ({activity_list_selector}) を確認しました。")
+        logger.info(f"プロフィールページで活動記録リストコンテナ ({activity_list_container_selector}) を確認しました。")
     except TimeoutException:
-        logger.warning(f"プロフィールページで活動記録リスト ({activity_list_selector}) の読み込みタイムアウト (20秒)。")
-        save_screenshot(driver, "ActivityListLoadTimeout", user_profile_url.split('/')[-1])
+        logger.warning(f"プロフィールページで活動記録リストコンテナ ({activity_list_container_selector}) の読み込みタイムアウト (10秒)。")
+        save_screenshot(driver, "ActivityListContainerTimeout", user_profile_url.split('/')[-1])
         return activities_within_period
 
-    # 活動記録アイテムのセレクタ (日付とリンクを含む) - ユーザー提供情報に基づき更新
-    activity_item_selector = "article[data-testid='activity-card']"  # 個々の活動記録 (更新)
-    activity_link_selector = "a[data-testid='activity-card-link']"  # 活動記録へのリンク (変更なし)
-    activity_date_selector = "div[data-testid='activity-card-date'] time" # 活動記録の日付 (更新)
+    # 活動記録アイテムのセレクタ (日付とリンクを含む) - ユーザー提供HTMLに基づき更新
+    activity_item_selector = "li.UserActivityList__Item"
+    # activity_item_selector_article_check = "article.ActivityItem" # li の中に article があることを確認するための補助
+    activity_link_selector = "a.ActivityItem__Link"
+    activity_date_selector = "span.ActivityItem__Date"
 
     try:
-        # リストコンテナ要素をまず取得
-        list_container = driver.find_element(By.CSS_SELECTOR, activity_list_selector)
-        # そのコンテナ内で活動記録アイテムを検索
+        list_container = driver.find_element(By.CSS_SELECTOR, activity_list_container_selector)
         activity_elements = list_container.find_elements(By.CSS_SELECTOR, activity_item_selector)
         logger.info(f"{len(activity_elements)} 件の活動記録をプロフィールから検出しました。")
 
