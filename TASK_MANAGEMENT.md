@@ -5,7 +5,9 @@
 ---
 
 ## 🛠 仕掛中タスク
-*   [ ] **修正:** `user_profile_utils.py` のフォロー/フォロワーリスト関連CSSセレクタを詳細化 (コミット: `[THIS_COMMIT_HASH]`)
+*   [ ] **修正:** `user_profile_utils.py` のリストアイテム取得時のWebDriverWaitタイムアウトを30秒に延長 (コミット: `[THIS_COMMIT_HASH]`)
+    *   動的読み込みされるリストアイテムの表示待ち時間延長のため。
+*   [ ] **修正:** `user_profile_utils.py` のフォロー/フォロワーリスト関連CSSセレクタを詳細化 (コミット: `[PREVIOUS_COMMIT_HASH]`)
     *   `main.css-1ed9ptx ul.UserFollowList__List` 等、より具体的なパスを指定。
 *   [ ] **デバッグ:** `driver_utils.py` の `wait_for_page_transition` 関数にタイムアウト時のHTMLソース保存機能を追加 (コミット: `[PREVIOUS_COMMIT_HASH]`)
     *   要素取得失敗時の原因調査のため。
