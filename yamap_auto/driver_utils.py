@@ -546,6 +546,81 @@ def save_screenshot(driver, error_type="error", context_info=""):
     except Exception as e:
         logger.error(f"スクリーンショット保存処理中にエラーが発生しました: {e}", exc_info=True)
 
+
+def wait_for_page_transition(driver, timeout=10, expected_url_part=None, expected_element_selector=None, previous_url=None):
+    """
+    ページ遷移やコンテンツの読み込みを待機します。
+    URLの変更、特定の要素の出現、またはその両方を待機条件とすることができます。
+
+    Args:
+        driver (webdriver.Chrome): Selenium WebDriverインスタンス。
+        timeout (int, optional): 最大待機時間 (秒)。デフォルトは10秒。
+        expected_url_part (str, optional): 遷移後のURLに含まれることを期待する部分文字列。
+                                           Noneの場合、URLのチェックは行われません。
+        expected_element_selector (tuple, optional): (By, value) の形式で、出現を待つ要素のセレクタ。
+                                                    例: (By.CSS_SELECTOR, "h1.title")
+                                                    Noneの場合、要素のチェックは行われません。
+        previous_url (str, optional): 遷移前のURL。指定された場合、URLが実際に変更されたかも確認します。
+                                      主にページネーションなどで、同じURL構造だがコンテンツが変わる場合に利用。
+
+    Returns:
+        bool: 待機条件が満たされればTrue、タイムアウトした場合はFalse。
+    """
+    logger.debug(f"ページ遷移/読み込み待機開始 (timeout={timeout}s, url_part='{expected_url_part}', element='{expected_element_selector}', prev_url='{previous_url}')")
+    original_url = driver.current_url # ログおよび比較用
+
+    try:
+        conditions = []
+        if previous_url:
+            # URLが実際に変わったか、または指定された要素が出現したか
+            conditions.append(EC.url_changes(previous_url))
+            if expected_element_selector:
+                # previous_url が指定されている場合、URL変更 OR 要素出現でOKとする
+                # ただし、URLが変わらず要素だけ出現しても困るので、基本はURL変更を主軸に
+                # WebDriverWait は any_of がないので、ここでは URL変更をまず待つ
+                WebDriverWait(driver, timeout).until(EC.url_changes(previous_url))
+                # その後、要素が出現するのを待つ（オプション）
+                if expected_element_selector:
+                    WebDriverWait(driver, timeout).until(EC.presence_of_element_located(expected_element_selector))
+                logger.info(f"ページ遷移完了 (URL変更 from '{previous_url}' to '{driver.current_url}'、要素 '{expected_element_selector}' も確認)。")
+                return True
+
+        # previous_url がない場合、または上記でリターンしなかった場合
+        if expected_url_part:
+            conditions.append(EC.url_contains(expected_url_part))
+        if expected_element_selector:
+            conditions.append(EC.presence_of_element_located(expected_element_selector))
+
+        if not conditions:
+            logger.warning("待機条件が何も指定されていません。即時Trueを返します。")
+            return True # 何も待たないなら成功
+
+        # 複数の条件を組み合わせる (any_of はないので、ここでは最も基本的なものを一つ選ぶか、個別に待つ)
+        # ここでは、まずURL条件、次に要素条件で待つ形にする
+        if expected_url_part:
+            WebDriverWait(driver, timeout).until(EC.url_contains(expected_url_part))
+            logger.debug(f"URLに '{expected_url_part}' が含まれることを確認。現在のURL: {driver.current_url}")
+
+        if expected_element_selector:
+             WebDriverWait(driver, timeout).until(EC.presence_of_element_located(expected_element_selector))
+             logger.debug(f"要素 '{expected_element_selector}' の出現を確認。")
+
+        logger.info(f"ページ遷移/読み込み完了。最終URL: {driver.current_url}")
+        return True
+
+    except TimeoutException:
+        logger.warning(f"ページ遷移/読み込み待機中にタイムアウト ({timeout}秒)。")
+        logger.warning(f"  遷移前URL: {original_url}")
+        logger.warning(f"  タイムアウト時URL: {driver.current_url}")
+        logger.warning(f"  期待したURL部分: '{expected_url_part}', 期待した要素: '{expected_element_selector}'")
+        save_screenshot(driver, "PageTransitionTimeout", f"Timeout_{timeout}s_URLPart_{expected_url_part or 'None'}_Elem_{expected_element_selector or 'None'}")
+        return False
+    except Exception as e:
+        logger.error(f"ページ遷移/読み込み待機中に予期せぬエラー: {e}", exc_info=True)
+        save_screenshot(driver, "PageTransitionError", f"Error_URLPart_{expected_url_part or 'None'}_Elem_{expected_element_selector or 'None'}")
+        return False
+
+
 # モジュールロード時に設定を読み込む (オプション)
 # load_settings()
 # アプリケーションの起動時に明示的に呼び出す方が制御しやすい場合もある。

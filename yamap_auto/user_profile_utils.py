@@ -16,7 +16,7 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from datetime import datetime, timezone # datetime をインポート
 
 # driver_utilsから必要なものをインポート
-from .driver_utils import get_main_config, BASE_URL, wait_for_page_load
+from .driver_utils import get_main_config, BASE_URL, wait_for_page_transition
 
 # --- Loggerの設定 ---
 # このモジュール用のロガーを取得します。
@@ -453,8 +453,11 @@ def get_my_following_users_profiles(driver, my_user_id, max_users_to_fetch=None,
     logger.info(f"自分のフォロー中ユーザーリスト ({following_list_url}) からプロフィールURLを取得します。")
     logger.info(f"取得上限: ユーザー数={max_users_to_fetch or '無制限'}, ページ数={max_pages_to_check or '無制限'}")
 
+    current_url_before_get = driver.current_url
     driver.get(following_list_url)
-    wait_for_page_load(driver, timeout=15, check_title=False) # ページ遷移とリスト表示の待機
+    # ページ遷移とリスト表示の待機 (URL変更とリストアイテムの出現を期待)
+    wait_for_page_transition(driver, timeout=15, expected_element_selector=(By.CSS_SELECTOR, user_list_item_selector), previous_url=current_url_before_get if current_url_before_get != following_list_url else None)
+
 
     user_profile_urls = []
     processed_pages = 0
@@ -508,10 +511,12 @@ def get_my_following_users_profiles(driver, my_user_id, max_users_to_fetch=None,
                 next_button = driver.find_element(By.CSS_SELECTOR, next_page_button_selector)
                 if next_button.is_displayed() and next_button.is_enabled():
                     logger.info("「次へ」ボタンをクリックします。")
+                    prev_url = driver.current_url
                     driver.execute_script("arguments[0].scrollIntoView(true);", next_button)
                     time.sleep(0.5) # スクロール後の安定待ち
                     next_button.click()
-                    wait_for_page_load(driver, timeout=10, check_title=False, previous_url=driver.current_url) # ページ遷移待機
+                    # ページ遷移待機 (URL変更とリストアイテムの出現を期待)
+                    wait_for_page_transition(driver, timeout=10, expected_element_selector=(By.CSS_SELECTOR, user_list_item_selector), previous_url=prev_url)
                     time.sleep(1) # 追加の安定待ち
                 else:
                     logger.info("「次へ」ボタンが見つからないか、無効です。最後のページと判断します。")
@@ -557,8 +562,10 @@ def get_my_followers_profiles(driver, my_user_id, max_users_to_fetch=None, max_p
     logger.info(f"取得上限: ユーザー数={max_users_to_fetch or '無制限'}, ページ数={max_pages_to_check or '無制限'}")
 
     # 以降のロジックは get_my_following_users_profiles とほぼ同じ
+    current_url_before_get = driver.current_url
     driver.get(followers_list_url)
-    wait_for_page_load(driver, timeout=15, check_title=False)
+    # ページ遷移とリスト表示の待機 (URL変更とリストアイテムの出現を期待)
+    wait_for_page_transition(driver, timeout=15, expected_element_selector=(By.CSS_SELECTOR, user_list_item_selector), previous_url=current_url_before_get if current_url_before_get != followers_list_url else None)
 
     user_profile_urls = []
     processed_pages = 0
