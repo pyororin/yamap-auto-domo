@@ -449,7 +449,7 @@ def get_my_following_users_profiles(driver, my_user_id, max_users_to_fetch=None,
         logger.error("自分のユーザーIDが指定されていないため、フォロー中ユーザーリストを取得できません。")
         return []
 
-    following_list_url = f"{BASE_URL}/users/{my_user_id}/follows"
+    following_list_url = f"{BASE_URL}/users/{my_user_id}?tab=follows#tabs" # URL形式を修正
     logger.info(f"自分のフォロー中ユーザーリスト ({following_list_url}) からプロフィールURLを取得します。")
     logger.info(f"取得上限: ユーザー数={max_users_to_fetch or '無制限'}, ページ数={max_pages_to_check or '無制限'}")
 
@@ -556,7 +556,7 @@ def get_my_followers_profiles(driver, my_user_id, max_users_to_fetch=None, max_p
         logger.error("自分のユーザーIDが指定されていないため、フォロワーリストを取得できません。")
         return []
 
-    followers_list_url = f"{BASE_URL}/users/{my_user_id}/followers" # URLが異なる
+    followers_list_url = f"{BASE_URL}/users/{my_user_id}?tab=followers#tabs" # URL形式を修正
     logger.info(f"自分のフォロワーリスト ({followers_list_url}) からプロフィールURLを取得します。")
     logger.info(f"取得上限: ユーザー数={max_users_to_fetch or '無制限'}, ページ数={max_pages_to_check or '無制限'}")
 
