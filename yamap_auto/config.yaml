@@ -111,7 +111,7 @@ search_and_follow_settings:
   # 処理を開始する活動記録の検索結果ページのURL。
   # 通常はデフォルトのままで問題ありませんが、特定の検索条件で開始したい場合にカスタマイズ可能です。
 
-  max_pages_to_process_search: 5 # テスト用に変更
+  max_pages_to_process_search: 1 # テスト用に変更
   # 検索結果の何ページ目まで処理を続けるかを指定します。
   # 例えば `3` を指定すると、最初のページから3ページ目まで処理します。
 
@@ -184,10 +184,10 @@ unfollow_inactive_users_settings:
   # true: この機能を有効にします。
   # false: この機能を無効にします。
 
-  inactive_threshold_days: 90
+  inactive_threshold_days: 30
   # ユーザーの活動がこの日数以上ない場合に「非アクティブ」と見なします。
 
-  max_users_to_unfollow_per_run: 5
+  max_users_to_unfollow_per_run: 10
   # 1回のスクリプト実行でアンフォローする最大のユーザー数。
   # 多数の対象者がいる場合に、一度に大量のアンフォローが発生するのを防ぎます。
 
