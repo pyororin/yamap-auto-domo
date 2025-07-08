@@ -453,6 +453,12 @@ def get_my_following_users_profiles(driver, my_user_id, max_users_to_fetch=None,
     logger.info(f"自分のフォロー中ユーザーリスト ({following_list_url}) からプロフィールURLを取得します。")
     logger.info(f"取得上限: ユーザー数={max_users_to_fetch or '無制限'}, ページ数={max_pages_to_check or '無制限'}")
 
+    # ユーザーリストアイテムとユーザーリンクのセレクタ (YAMAPのUIに依存)
+    user_list_item_selector = "li.UserFollowList__Item" # ユーザー提供情報に基づき修正
+    user_profile_link_selector = "div.UserItem a[href^='/users/']" # ユーザー提供情報に基づき修正
+    # 「次へ」ボタンのセレクタ (YAMAPのUIに依存)
+    next_page_button_selector = "button.btn-next" # ユーザー提供情報に基づき修正
+
     current_url_before_get = driver.current_url
     driver.get(following_list_url)
     # ページ遷移とリスト表示の待機 (URL変更とリストアイテムの出現を期待)
@@ -461,13 +467,6 @@ def get_my_following_users_profiles(driver, my_user_id, max_users_to_fetch=None,
 
     user_profile_urls = []
     processed_pages = 0
-
-    # ユーザーリストアイテムとユーザーリンクのセレクタ (YAMAPのUIに依存)
-    user_list_item_selector = "li.UserFollowList__Item" # ユーザー提供情報に基づき修正
-    user_profile_link_selector = "div.UserItem a[href^='/users/']" # ユーザー提供情報に基づき修正
-
-    # 「次へ」ボタンのセレクタ (YAMAPのUIに依存)
-    next_page_button_selector = "button.btn-next" # ユーザー提供情報に基づき修正
 
     while True:
         if max_pages_to_check is not None and processed_pages >= max_pages_to_check:
@@ -561,6 +560,11 @@ def get_my_followers_profiles(driver, my_user_id, max_users_to_fetch=None, max_p
     logger.info(f"自分のフォロワーリスト ({followers_list_url}) からプロフィールURLを取得します。")
     logger.info(f"取得上限: ユーザー数={max_users_to_fetch or '無制限'}, ページ数={max_pages_to_check or '無制限'}")
 
+    # ユーザーリストアイテムとユーザーリンクのセレクタ (YAMAPのUIに依存)
+    user_list_item_selector = "li.UserFollowList__Item" # ユーザー提供情報に基づき修正
+    user_profile_link_selector = "div.UserItem a[href^='/users/']" # ユーザー提供情報に基づき修正
+    next_page_button_selector = "button.btn-next" # ユーザー提供情報に基づき修正
+
     # 以降のロジックは get_my_following_users_profiles とほぼ同じ
     current_url_before_get = driver.current_url
     driver.get(followers_list_url)
@@ -569,9 +573,6 @@ def get_my_followers_profiles(driver, my_user_id, max_users_to_fetch=None, max_p
 
     user_profile_urls = []
     processed_pages = 0
-    user_list_item_selector = "li.UserFollowList__Item" # ユーザー提供情報に基づき修正
-    user_profile_link_selector = "div.UserItem a[href^='/users/']" # ユーザー提供情報に基づき修正
-    next_page_button_selector = "button.btn-next" # ユーザー提供情報に基づき修正
 
     while True:
         if max_pages_to_check is not None and processed_pages >= max_pages_to_check:
