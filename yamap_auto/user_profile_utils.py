@@ -615,10 +615,11 @@ def get_my_followers_profiles(driver, my_user_id, max_users_to_fetch=None, max_p
                 next_button = driver.find_element(By.CSS_SELECTOR, next_page_button_selector)
                 if next_button.is_displayed() and next_button.is_enabled():
                     logger.info("「次へ」ボタンをクリックします。")
+                    prev_url = driver.current_url
                     driver.execute_script("arguments[0].scrollIntoView(true);", next_button)
                     time.sleep(0.5)
                     next_button.click()
-                    wait_for_page_load(driver, timeout=10, check_title=False, previous_url=driver.current_url)
+                    wait_for_page_transition(driver, timeout=10, expected_element_selector=(By.CSS_SELECTOR, user_list_item_selector), previous_url=prev_url)
                     time.sleep(1)
                 else:
                     logger.info("「次へ」ボタンが見つからないか、無効です。最後のページと判断します。")
