@@ -339,7 +339,8 @@ def _fetch_user_last_activity_task(user_profile_url, shared_cookies_for_task, cu
         # It's crucial that create_driver_with_cookies correctly initializes and applies cookies
         # for a valid session.
         # The current_user_id_for_login_check helps verify the login based on expected mypage elements.
-        task_driver = create_driver_with_cookies(shared_cookies_for_task, current_user_id_for_login_check, for_task=True)
+        # Removed for_task=True as it's not a valid argument for create_driver_with_cookies
+        task_driver = create_driver_with_cookies(shared_cookies_for_task, current_user_id_for_login_check)
         if not task_driver:
             logger.error(f"{log_prefix_task}Failed to create WebDriver or verify login for task. Cannot fetch activity date.")
             return {'url': user_profile_url, 'last_activity_date': None, 'error': 'WebDriver/Login failure in task'}
