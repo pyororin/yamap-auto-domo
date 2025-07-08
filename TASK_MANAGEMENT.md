@@ -107,6 +107,7 @@
 
 ## ✅ 完了タスク
 
+*   [x] スクリプト実行結果のサマリー情報（フォロー数、DOMO数など）を最後にまとめてログ出力する ([THIS_COMMIT_HASH])
 *   [x] タイムラインDOMO機能について、個別の記事に飛ばずに一覧上でDOMOするよう改修 ([PREVIOUS_DIRECT_DOMO_COMMIT_HASH]) (意図しないページ遷移発生時の復帰処理追加 [THIS_FIX_COMMIT_HASH])
 *   [x] `domo_utils.py` の `domo_activity` 関数のエラーハンドリングとログ出力を強化 `[THIS_COMMIT_HASH]`
 *   [x] `yamap_auto_domo.py` 内のフォローバック処理 (`follow_back_users_new`) を `follow_back_utils.py` 等に分割 (現状 `follow_utils.py` に存在、これから `follow_back_utils.py` へ移動、実際には既に `follow_back_utils.py` に存在することを確認) `[THIS_COMMIT_HASH]`
