@@ -633,8 +633,8 @@ def wait_for_page_transition(driver, timeout=10, expected_url_part=None, expecte
         logger.warning(f"  期待したURL部分: '{expected_url_part}', 期待した要素: '{expected_element_selector}'")
         try:
             html_source_on_timeout = driver.page_source
-            # logs/debug_html ディレクトリを _MODULE_DIR (yamap_auto) の親の logs サブディレクトリとして構築
-            debug_html_dir = os.path.join(os.path.dirname(os.path.dirname(_MODULE_DIR)), "logs", "debug_html")
+            # logs/debug_html ディレクトリを _MODULE_DIR (yamap_auto) の親 (リポジトリルート) の logs サブディレクトリとして構築
+            debug_html_dir = os.path.join(os.path.dirname(_MODULE_DIR), "logs", "debug_html")
             os.makedirs(debug_html_dir, exist_ok=True)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             # URLからファイル名に使えない文字を除去または置換 (簡易的)
