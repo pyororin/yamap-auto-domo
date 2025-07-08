@@ -125,41 +125,71 @@ def get_my_activities_within_period(driver, user_profile_url, days_to_check):
         for item_idx, item in enumerate(activity_elements):
             try:
                 date_element = item.find_element(By.CSS_SELECTOR, activity_date_selector)
-                date_str = date_element.get_attribute("datetime") # 'YYYY-MM-DDTHH:mm:ssZ' 形式など
-                if not date_str:
-                    date_str_text = date_element.text # 'YYYY.MM.DD' 形式など
-                    # 'YYYY.MM.DD' を 'YYYY-MM-DD' に変換しようと試みる
+                date_element = item.find_element(By.CSS_SELECTOR, activity_date_selector)
+                # 日付取得ロジックの堅牢性向上
+                activity_date = None
+                date_str_iso = date_element.get_attribute("datetime")
+                date_str_text = date_element.text.strip()
+
+                if date_str_iso:
+                    try:
+                        activity_date = datetime.fromisoformat(date_str_iso.replace('Z', '+00:00'))
+                        logger.debug(f"活動記録 {item_idx+1}: ISO日付 '{date_str_iso}' -> {activity_date.strftime('%Y-%m-%d')}")
+                    except ValueError:
+                        logger.warning(f"活動記録 {item_idx+1}: ISO日付形式 ({date_str_iso}) の解析に失敗。テキスト日付を試みます。")
+
+                if not activity_date and date_str_text: # ISO日付が取得できない、またはパース失敗した場合
                     try:
                         activity_date = datetime.strptime(date_str_text, "%Y.%m.%d")
+                        logger.debug(f"活動記録 {item_idx+1}: テキスト日付 '{date_str_text}' -> {activity_date.strftime('%Y-%m-%d')}")
                     except ValueError:
-                         logger.warning(f"活動記録 {item_idx+1} の日付形式 ({date_str_text}) が不明です。スキップします。")
-                         continue
-                else:
-                    activity_date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                         logger.warning(f"活動記録 {item_idx+1}: テキスト日付形式 ({date_str_text}) も不明です。スキップします。")
+                         continue # このアイテムの処理をスキップ
+                elif not activity_date and not date_str_text: # 両方とも取得できない場合
+                    logger.warning(f"活動記録 {item_idx+1}: 日付情報が取得できませんでした。スキップします。")
+                    continue
 
-                logger.debug(f"活動記録 {item_idx+1}: 日付 '{activity_date.strftime('%Y-%m-%d')}'")
+                if not activity_date: # activity_date が None のままならスキップ
+                    logger.warning(f"活動記録 {item_idx+1}: 有効な日付が特定できませんでした。スキップします。")
+                    continue
+
+                logger.debug(f"活動記録 {item_idx+1}: 最終的な解析日付 '{activity_date.strftime('%Y-%m-%d')}'")
 
                 if activity_date.date() >= cutoff_date.date():
-                    link_element = item.find_element(By.CSS_SELECTOR, activity_link_selector)
-                    activity_url = link_element.get_attribute("href")
-                    if activity_url:
-                        if activity_url.startswith("/"):
-                            activity_url = BASE_URL + activity_url
-                        if "/activities/" in activity_url:
-                            logger.info(f"  対象期間内の活動記録を発見: {activity_url} (日付: {activity_date.strftime('%Y-%m-%d')})")
-                            activities_within_period.append(activity_url)
+                    activity_url = None
+                    try:
+                        link_element = item.find_element(By.CSS_SELECTOR, activity_link_selector)
+                        activity_url_path = link_element.get_attribute("href")
+                        if activity_url_path:
+                            if activity_url_path.startswith("/"):
+                                activity_url = BASE_URL + activity_url_path
+                            elif activity_url_path.startswith(BASE_URL): # フルURLの場合
+                                activity_url = activity_url_path
+
+                            if activity_url and "/activities/" in activity_url:
+                                logger.info(f"  対象期間内の活動記録を発見: {activity_url.split('/')[-1]} (日付: {activity_date.strftime('%Y-%m-%d')})")
+                                activities_within_period.append(activity_url)
+                            else:
+                                logger.warning(f"  取得したURLが無効か、活動記録ではありません: {activity_url_path}。アイテム {item_idx+1}")
                         else:
-                            logger.warning(f"  取得したURLが無効です: {activity_url}")
+                            logger.warning(f"  活動記録アイテム {item_idx+1}: href属性が空でした。")
+                    except NoSuchElementException:
+                        logger.warning(f"  活動記録アイテム {item_idx+1}: リンク要素 ({activity_link_selector}) が見つかりません。")
                 else:
-                    logger.info(f"活動記録 {activity_url.split('/')[-1] if 'activity_url' in locals() else item_idx+1} (日付: {activity_date.strftime('%Y-%m-%d')}) は対象期間外です。これ以降の投稿も期間外とみなし処理を終了。")
-                    break # 日付順に並んでいると仮定し、古すぎるものが見つかったら終了
-            except NoSuchElementException:
-                logger.warning(f"活動記録アイテム {item_idx+1} 内で日付またはリンク要素が見つかりません。スキップします。")
+                    activity_id_log = "不明"
+                    if activity_url and "/activities/" in activity_url : activity_id_log = activity_url.split('/')[-1]
+                    elif 'activity_url_path' in locals() and activity_url_path and "/activities/" in activity_url_path: activity_id_log = activity_url_path.split('/')[-1]
+                    else: activity_id_log = f"アイテムインデックス {item_idx+1}"
+
+                    logger.info(f"活動記録 {activity_id_log} (日付: {activity_date.strftime('%Y-%m-%d')}) は対象期間外です。これ以降の投稿も期間外とみなし処理を終了。")
+                    break
+            except NoSuchElementException as e_nse:
+                logger.warning(f"活動記録アイテム {item_idx+1} 内で必須要素 (日付等) が見つかりません: {e_nse}。スキップします。")
             except Exception as e_item:
-                logger.error(f"活動記録アイテム {item_idx+1} の処理中にエラー: {e_item}", exc_info=True)
+                logger.error(f"活動記録アイテム {item_idx+1} の処理中に予期せぬエラー: {e_item}", exc_info=True)
 
     except Exception as e_list:
-        logger.error(f"活動記録リストの処理中にエラー: {e_list}", exc_info=True)
+        logger.error(f"活動記録リストの処理中に予期せぬエラー: {e_list}", exc_info=True)
 
     logger.info(f"取得した対象期間内の活動記録URL数: {len(activities_within_period)} 件")
     return activities_within_period
