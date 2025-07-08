@@ -5,7 +5,9 @@
 ---
 
 ## 🛠 仕掛中タスク
-*   [ ] **デバッグ:** `driver_utils.py` の `wait_for_page_transition` 関数にタイムアウト時のHTMLソース保存機能を追加 (コミット: `[THIS_COMMIT_HASH]`)
+*   [ ] **修正:** `user_profile_utils.py` のフォロー/フォロワーリスト関連CSSセレクタを詳細化 (コミット: `[THIS_COMMIT_HASH]`)
+    *   `main.css-1ed9ptx ul.UserFollowList__List` 等、より具体的なパスを指定。
+*   [ ] **デバッグ:** `driver_utils.py` の `wait_for_page_transition` 関数にタイムアウト時のHTMLソース保存機能を追加 (コミット: `[PREVIOUS_COMMIT_HASH]`)
     *   要素取得失敗時の原因調査のため。
 *   [ ] **修正:** `user_profile_utils.py` の `wait_for_page_transition` 呼び出し時の待機対象セレクタを `ul.UserFollowList__List` に変更 (コミット: `[PREVIOUS_COMMIT_HASH]`)
     *   リストアイテム個々ではなく、リスト全体を囲む要素の出現を待つように修正。
