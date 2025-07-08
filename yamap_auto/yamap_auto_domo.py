@@ -30,9 +30,12 @@ import time
 import json # 現状直接は使われていないが、将来的な拡張のために残す (Cookie保存/読込など)
 import os
 import re # 現状直接は使われていないが、将来的な拡張のために残す (URLやテキストのパターンマッチなど)
-import logging
+# import logging # logging_utils に集約
 # import yaml # driver_utils に移動
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+# logging_utils からロガー設定関数をインポート
+from .logging_utils import setup_logger
 
 # driver_utils から必要なものをインポート
 from .driver_utils import (
@@ -70,43 +73,22 @@ from .search_utils import search_follow_and_domo_users
 from .follow_back_utils import follow_back_users_new
 
 
+import logging # logging_utils.setup_logger() の後で、getLogger を使うために必要
+
 # --- Loggerの設定 ---
-# スクリプトの動作状況やエラー情報をログとして記録するための設定。
-# コンソールとファイルの両方に出力します。
-# この設定は driver_utils を含む他のモジュールにも影響します。
-LOG_FILE_NAME = "yamap_auto_domo.log" # ログファイル名
-logger = logging.getLogger() # ルートロガーを取得または生成
-if not logger.handlers: # ハンドラがまだ設定されていない場合のみ設定（多重設定防止）
-    logger.setLevel(logging.DEBUG) # ロガー自体のレベルはDEBUGに設定 (ハンドラ側でフィルタリング)
-
-    # StreamHandler (コンソールへのログ出力設定)
-    stream_handler = logging.StreamHandler()
-    stream_handler.setLevel(logging.INFO) # コンソールにはINFOレベル以上のログを出力
-    stream_formatter = logging.Formatter("[%(asctime)s] [%(levelname)s] - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
-    stream_handler.setFormatter(stream_formatter)
-    logger.addHandler(stream_handler)
-
-    # FileHandler (ログファイルへの出力設定)
-    try:
-        file_handler = logging.FileHandler(LOG_FILE_NAME, encoding='utf-8', mode='a') # 'a'モードで追記
-        file_handler.setLevel(logging.DEBUG) # ファイルにはDEBUGレベル以上のログを全て記録
-        file_formatter = logging.Formatter(
-            "[%(asctime)s] [%(levelname)s] [%(funcName)s:%(lineno)d] - %(message)s", # 関数名と行番号も記録
-            datefmt="%Y-%m-%d %H:%M:%S"
-        )
-        file_handler.setFormatter(file_formatter)
-        logger.addHandler(file_handler)
-    except Exception as e:
-        # ここでのlogger.errorはまだハンドラが完全に設定されていない可能性があるのでprintも使う
-        print(f"ログファイルハンドラ ({LOG_FILE_NAME}) の設定に失敗しました: {e}")
-        logger.error(f"ログファイルハンドラの設定に失敗しました: {e}")
-else:
-    logger = logging.getLogger(__name__) # 既に設定済みの場合は、このモジュール用のロガーを取得
+# logging_utils を使ってロガーを初期設定
+# この呼び出しでルートロガーが設定される
+setup_logger()
+# このモジュール固有のロガーを取得 (推奨プラクティス)
+# ルートロガーが設定されていれば、getLogger(__name__) で取得されるロガーもその設定を引き継ぐ
+logger = logging.getLogger(__name__)
 # --- Logger設定完了 ---
 
 
 # --- 設定情報の読み込み (driver_utils経由) ---
 try:
+    # main_config の取得前にロガーが利用可能であることを確認
+    logger.debug("メイン設定情報の読み込み開始 (driver_utils経由)")
     main_config = get_main_config()
     credentials = get_credentials()
     YAMAP_EMAIL = credentials.get("email")
@@ -171,79 +153,120 @@ SEARCH_ACTIVITIES_URL_DEFAULT = f"{BASE_URL}/search/activities"
 # def search_follow_and_domo_users(driver, current_user_id): ... (削除)
 # def follow_back_users_new(driver, current_user_id): ... (削除)
 
-# --- mainブロック (テスト用) ---
-if __name__ == "__main__":
+# --- メイン処理の構造化のための関数群 ---
+
+def initialize_driver():
+    """WebDriverのオプション設定、インスタンス化、暗黙的待機設定を行います。"""
+    logger.info("WebDriverを初期化します...")
+    try:
+        driver_options = get_driver_options()
+        driver = webdriver.Chrome(options=driver_options)
+        implicit_wait = main_config.get("implicit_wait_sec", 7)
+        driver.implicitly_wait(implicit_wait)
+        logger.info("WebDriverの初期化が完了しました。")
+        return driver
+    except Exception as e:
+        logger.critical(f"WebDriverの初期化中にエラーが発生しました: {e}", exc_info=True)
+        return None
+
+def perform_login(driver, email, password, user_id):
+    """ログイン処理を呼び出し、成功したか否かを返します。"""
+    if not driver:
+        logger.error("WebDriverが初期化されていないため、ログイン処理をスキップします。")
+        return False
+
+    logger.info(f"ログイン処理を開始します。email={email}, user_id={user_id}") # パスワードはログ出力しない
+    try:
+        if util_login(driver, email, password, user_id): # MY_USER_ID を引数に追加
+            logger.info(f"ログイン成功。現在のURL: {driver.current_url}")
+            return True
+        else:
+            logger.critical("ログインに失敗しました。")
+            return False
+    except Exception as e:
+        logger.critical(f"ログイン処理中にエラーが発生しました: {e}", exc_info=True)
+        return False
+
+def get_shared_cookies(driver):
+    """並列処理用の共有Cookieを取得します。"""
+    if not driver:
+        return None
+
+    shared_cookies = None
+    if PARALLEL_PROCESSING_SETTINGS.get("enable_parallel_processing", False) and \
+       PARALLEL_PROCESSING_SETTINGS.get("use_cookie_sharing", True):
+        try:
+            shared_cookies = driver.get_cookies()
+            logger.info(f"ログイン後のCookieを {len(shared_cookies)} 個取得しました。並列処理で利用します。")
+        except Exception as e_cookie_get:
+            logger.error(f"ログイン後のCookie取得に失敗しました: {e_cookie_get}", exc_info=True)
+            shared_cookies = None
+    return shared_cookies
+
+def execute_main_tasks(driver, user_id, shared_cookies):
+    """各機能（フォローバック、タイムラインDOMO、検索＆フォロー）の呼び出し制御を行います。"""
+    if not driver:
+        logger.error("WebDriverが初期化されていないため、メインタスクの実行をスキップします。")
+        return
+    if not user_id:
+        logger.error("ユーザーIDが不明なため、メインタスクの実行をスキップします。")
+        return
+
+    # フォローバック機能
+    if FOLLOW_BACK_SETTINGS.get("enable_follow_back", False):
+        start_time = time.time()
+        logger.info("フォローバック機能呼び出し。並列処理は設定とCookieの有無に依存。")
+        follow_back_users_new(driver, user_id, shared_cookies_from_main=shared_cookies)
+        end_time = time.time()
+        logger.info(f"フォローバック機能の処理時間: {end_time - start_time:.2f}秒")
+    else:
+        logger.info("フォローバック機能は設定で無効です。")
+
+    # タイムラインDOMO機能
+    if TIMELINE_DOMO_SETTINGS.get("enable_timeline_domo", False):
+        start_time = time.time()
+        if PARALLEL_PROCESSING_SETTINGS.get("enable_parallel_processing", False) and shared_cookies:
+            logger.info("タイムラインDOMO機能 (並列処理) を呼び出します。")
+            domo_timeline_activities_parallel(driver, shared_cookies, user_id)
+        else:
+            if PARALLEL_PROCESSING_SETTINGS.get("enable_parallel_processing", False) and not shared_cookies:
+                logger.warning("並列処理が有効ですがCookie共有ができなかったため、タイムラインDOMOは逐次実行されます。")
+            logger.info("タイムラインDOMO機能 (逐次処理) を呼び出します。")
+            domo_timeline_activities(driver) # MY_USER_ID が引数にない古い呼び出し方の可能性あり、要確認 -> domo_utils側で対応済みのはず
+        end_time = time.time()
+        logger.info(f"タイムラインDOMO機能の処理時間: {end_time - start_time:.2f}秒")
+    else:
+        logger.info("タイムラインDOMO機能は設定で無効です。")
+
+    # 検索結果からのフォロー＆DOMO機能
+    if SEARCH_AND_FOLLOW_SETTINGS.get("enable_search_and_follow", False):
+        start_time = time.time()
+        logger.info("検索結果からのフォロー＆DOMO機能呼び出し。並列処理は設定とCookieの有無に依存。")
+        search_follow_and_domo_users(driver, user_id, shared_cookies_from_main=shared_cookies)
+        end_time = time.time()
+        logger.info(f"検索結果からのフォロー＆DOMO機能の処理時間: {end_time - start_time:.2f}秒")
+    else:
+        logger.info("検索結果からのフォロー＆DOMO機能は設定で無効です。")
+
+
+def main():
+    """スクリプト全体の処理フローを制御します。"""
     logger.info(f"=========== {os.path.basename(__file__)} スクリプト開始 ===========")
     driver = None
     try:
-        # driver_utilsからWebDriverオプションを取得
-        driver_options = get_driver_options() # これは driver_utils.get_driver_options() を指す
-        driver = webdriver.Chrome(options=driver_options)
+        driver = initialize_driver()
+        if not driver:
+            logger.critical("WebDriverの初期化に失敗したため、処理を中止します。")
+            return
 
-        # implicit_wait_sec は main_config (driver_utils経由で取得済み) から読む
-        implicit_wait = main_config.get("implicit_wait_sec", 7)
-        driver.implicitly_wait(implicit_wait)
-
-        logger.info(f"認証情報: email={YAMAP_EMAIL}, user_id={MY_USER_ID}") # パスワードはログ出力しない
-
-        # driver_utils の login (util_loginとしてインポート) を使用
-        if util_login(driver, YAMAP_EMAIL, YAMAP_PASSWORD, MY_USER_ID): # MY_USER_ID を引数に追加
-            logger.info(f"ログイン成功。現在のURL: {driver.current_url}")
-            shared_cookies = None
-            if PARALLEL_PROCESSING_SETTINGS.get("enable_parallel_processing", False) and \
-               PARALLEL_PROCESSING_SETTINGS.get("use_cookie_sharing", True):
-                try:
-                    shared_cookies = driver.get_cookies()
-                    logger.info(f"ログイン後のCookieを {len(shared_cookies)} 個取得しました。並列処理で利用します。")
-                except Exception as e_cookie_get:
-                    logger.error(f"ログイン後のCookie取得に失敗しました: {e_cookie_get}", exc_info=True)
-                    shared_cookies = None
-
-            # --- 各機能の呼び出し ---
-            if MY_USER_ID: # MY_USER_ID は driver_utils 経由で取得済み
-                # フォローバック機能
-                if FOLLOW_BACK_SETTINGS.get("enable_follow_back", False):
-                    start_time = time.time()
-                    # shared_cookies が取得できていればそれを渡し、並列処理を試みる
-                    # follow_back_users_new 内部で並列設定が無効、またはCookieがない場合は逐次処理にフォールバックされる
-                    logger.info("フォローバック機能呼び出し。並列処理は設定とCookieの有無に依存。")
-                    follow_back_users_new(driver, MY_USER_ID, shared_cookies_from_main=shared_cookies)
-                    end_time = time.time()
-                    logger.info(f"フォローバック機能の処理時間: {end_time - start_time:.2f}秒")
-                else:
-                    logger.info("フォローバック機能は設定で無効です。")
-
-                # タイムラインDOMO機能
-                if TIMELINE_DOMO_SETTINGS.get("enable_timeline_domo", False):
-                    start_time = time.time()
-                    if PARALLEL_PROCESSING_SETTINGS.get("enable_parallel_processing", False) and shared_cookies:
-                        domo_timeline_activities_parallel(driver, shared_cookies, MY_USER_ID) # MY_USER_ID を追加
-                    else:
-                        if PARALLEL_PROCESSING_SETTINGS.get("enable_parallel_processing", False) and not shared_cookies:
-                            logger.warning("並列処理が有効ですがCookie共有ができなかったため、タイムラインDOMOは逐次実行されます。")
-                        domo_timeline_activities(driver) # 従来の逐次実行
-                    end_time = time.time()
-                    logger.info(f"タイムラインDOMO機能の処理時間: {end_time - start_time:.2f}秒")
-                else:
-                    logger.info("タイムラインDOMO機能は設定で無効です。")
-
-                # 検索結果からのフォロー＆DOMO機能
-                if SEARCH_AND_FOLLOW_SETTINGS.get("enable_search_and_follow", False):
-                    start_time = time.time()
-                    logger.info("検索結果からのフォロー＆DOMO機能呼び出し。並列処理は設定とCookieの有無に依存。")
-                    search_follow_and_domo_users(driver, MY_USER_ID, shared_cookies_from_main=shared_cookies)
-                    end_time = time.time()
-                    logger.info(f"検索結果からのフォロー＆DOMO機能の処理時間: {end_time - start_time:.2f}秒")
-                else:
-                    logger.info("検索結果からのフォロー＆DOMO機能は設定で無効です。")
-
-            else:
-                logger.error("MY_USER_IDが不明なため、ユーザーIDが必要な機能は実行できません。")
-
+        if perform_login(driver, YAMAP_EMAIL, YAMAP_PASSWORD, MY_USER_ID):
+            shared_cookies = get_shared_cookies(driver)
+            execute_main_tasks(driver, MY_USER_ID, shared_cookies)
             logger.info("全ての有効な処理が完了しました。")
             time.sleep(3) # 処理完了後の状態を少し確認できるように
         else:
-            logger.critical("ログインに失敗したため、処理を中止します。")
+            # perform_login 内で既にクリティカルログが出力されているはず
+            logger.info("ログインに失敗したため、後続処理は実行されませんでした。")
 
     except Exception as main_e:
         logger.critical("スクリプト実行中に予期せぬ致命的なエラーが発生しました。", exc_info=True)
@@ -254,3 +277,7 @@ if __name__ == "__main__":
             driver.quit()
             logger.info("ブラウザを終了しました。")
         logger.info(f"=========== {os.path.basename(__file__)} スクリプト終了 ===========")
+
+# --- mainブロック ---
+if __name__ == "__main__":
+    main()
