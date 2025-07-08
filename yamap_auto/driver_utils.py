@@ -631,6 +631,21 @@ def wait_for_page_transition(driver, timeout=10, expected_url_part=None, expecte
         logger.warning(f"  遷移前URL: {original_url}")
         logger.warning(f"  タイムアウト時URL: {driver.current_url}")
         logger.warning(f"  期待したURL部分: '{expected_url_part}', 期待した要素: '{expected_element_selector}'")
+        try:
+            html_source_on_timeout = driver.page_source
+            # logs/debug_html ディレクトリを _MODULE_DIR (yamap_auto) の親の logs サブディレクトリとして構築
+            debug_html_dir = os.path.join(os.path.dirname(os.path.dirname(_MODULE_DIR)), "logs", "debug_html")
+            os.makedirs(debug_html_dir, exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            # URLからファイル名に使えない文字を除去または置換 (簡易的)
+            safe_url_part = driver.current_url.replace('/', '_').replace(':', '').replace('?', '_').replace('#', '_')
+            filename = f"timeout_{timestamp}_url_{safe_url_part}.html"
+            filepath = os.path.join(debug_html_dir, filename)
+            with open(filepath, "w", encoding="utf-8") as f:
+                f.write(html_source_on_timeout)
+            logger.info(f"タイムアウト時のHTMLソースを保存しました: {filepath}")
+        except Exception as e_html_save:
+            logger.error(f"タイムアウト時のHTMLソース保存中にエラー: {e_html_save}")
         save_screenshot(driver, "PageTransitionTimeout", f"Timeout_{timeout}s_URLPart_{expected_url_part or 'None'}_Elem_{expected_element_selector or 'None'}")
         return False
     except Exception as e:
