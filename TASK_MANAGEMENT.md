@@ -5,7 +5,9 @@
 ---
 
 ## 🛠 仕掛中タスク
-*   [ ] **修正:** `user_profile_utils.py` のフォロー中/フォロワーリスト取得機能におけるURL生成ロジックを修正 (コミット: `[THIS_COMMIT_HASH]`)
+*   [ ] **修正:** `driver_utils.py` の `wait_for_page_transition` 関数の待機ロジックを改善 (コミット: `[THIS_COMMIT_HASH]`)
+    *   要素出現の待機を優先し、`driver.get()` 直後の呼び出しに対応。
+*   [ ] **修正:** `user_profile_utils.py` のフォロー中/フォロワーリスト取得機能におけるURL生成ロジックを修正 (コミット: `[PREVIOUS_COMMIT_HASH]`)
     *   URL末尾に `?tab=follows#tabs` または `?tab=followers#tabs` を追加。
 *   [ ] **修正:** `user_profile_utils.py` のフォロー中/フォロワーリスト取得機能におけるCSSセレクタをユーザー提供情報に基づき修正 (コミット: `[PREVIOUS_COMMIT_HASH]`)
     *   対象セレクタ: `user_list_item_selector`, `user_profile_link_selector`, `next_page_button_selector`
