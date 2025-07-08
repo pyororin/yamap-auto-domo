@@ -204,37 +204,46 @@ def get_shared_cookies(driver):
     return shared_cookies
 
 def execute_main_tasks(driver, user_id, shared_cookies):
-    """各機能（フォローバック、タイムラインDOMO、検索＆フォロー）の呼び出し制御を行います。"""
+    """各機能（フォローバック、タイムラインDOMO、検索＆フォロー）の呼び出し制御を行い、実行結果数を返します。"""
+    summary_counts = {
+        'followed_back': 0,
+        'timeline_domo': 0,
+        'search_followed': 0,
+        'search_domoed': 0
+    }
     if not driver:
         logger.error("WebDriverが初期化されていないため、メインタスクの実行をスキップします。")
-        return
+        return summary_counts
     if not user_id:
         logger.error("ユーザーIDが不明なため、メインタスクの実行をスキップします。")
-        return
+        return summary_counts
 
     # フォローバック機能
     if FOLLOW_BACK_SETTINGS.get("enable_follow_back", False):
         start_time = time.time()
         logger.info("フォローバック機能呼び出し。並列処理は設定とCookieの有無に依存。")
-        follow_back_users_new(driver, user_id, shared_cookies_from_main=shared_cookies)
+        followed_back_count = follow_back_users_new(driver, user_id, shared_cookies_from_main=shared_cookies)
+        summary_counts['followed_back'] = followed_back_count if isinstance(followed_back_count, int) else 0
         end_time = time.time()
-        logger.info(f"フォローバック機能の処理時間: {end_time - start_time:.2f}秒")
+        logger.info(f"フォローバック機能の処理時間: {end_time - start_time:.2f}秒。成功数: {summary_counts['followed_back']}")
     else:
         logger.info("フォローバック機能は設定で無効です。")
 
     # タイムラインDOMO機能
     if TIMELINE_DOMO_SETTINGS.get("enable_timeline_domo", False):
         start_time = time.time()
+        timeline_domo_count = 0
         if PARALLEL_PROCESSING_SETTINGS.get("enable_parallel_processing", False) and shared_cookies:
             logger.info("タイムラインDOMO機能 (並列処理) を呼び出します。")
-            domo_timeline_activities_parallel(driver, shared_cookies, user_id)
+            timeline_domo_count = domo_timeline_activities_parallel(driver, shared_cookies, user_id)
         else:
             if PARALLEL_PROCESSING_SETTINGS.get("enable_parallel_processing", False) and not shared_cookies:
                 logger.warning("並列処理が有効ですがCookie共有ができなかったため、タイムラインDOMOは逐次実行されます。")
             logger.info("タイムラインDOMO機能 (逐次処理) を呼び出します。")
-            domo_timeline_activities(driver) # MY_USER_ID が引数にない古い呼び出し方の可能性あり、要確認 -> domo_utils側で対応済みのはず
+            timeline_domo_count = domo_timeline_activities(driver)
+        summary_counts['timeline_domo'] = timeline_domo_count if isinstance(timeline_domo_count, int) else 0
         end_time = time.time()
-        logger.info(f"タイムラインDOMO機能の処理時間: {end_time - start_time:.2f}秒")
+        logger.info(f"タイムラインDOMO機能の処理時間: {end_time - start_time:.2f}秒。成功数: {summary_counts['timeline_domo']}")
     else:
         logger.info("タイムラインDOMO機能は設定で無効です。")
 
@@ -242,11 +251,16 @@ def execute_main_tasks(driver, user_id, shared_cookies):
     if SEARCH_AND_FOLLOW_SETTINGS.get("enable_search_and_follow", False):
         start_time = time.time()
         logger.info("検索結果からのフォロー＆DOMO機能呼び出し。並列処理は設定とCookieの有無に依存。")
-        search_follow_and_domo_users(driver, user_id, shared_cookies_from_main=shared_cookies)
+        search_results = search_follow_and_domo_users(driver, user_id, shared_cookies_from_main=shared_cookies)
+        if isinstance(search_results, dict):
+            summary_counts['search_followed'] = search_results.get('followed', 0)
+            summary_counts['search_domoed'] = search_results.get('domoed', 0)
         end_time = time.time()
-        logger.info(f"検索結果からのフォロー＆DOMO機能の処理時間: {end_time - start_time:.2f}秒")
+        logger.info(f"検索結果からのフォロー＆DOMO機能の処理時間: {end_time - start_time:.2f}秒。フォロー数: {summary_counts['search_followed']}, DOMO数: {summary_counts['search_domoed']}")
     else:
         logger.info("検索結果からのフォロー＆DOMO機能は設定で無効です。")
+
+    return summary_counts
 
 
 def main():
@@ -261,8 +275,20 @@ def main():
 
         if perform_login(driver, YAMAP_EMAIL, YAMAP_PASSWORD, MY_USER_ID):
             shared_cookies = get_shared_cookies(driver)
-            execute_main_tasks(driver, MY_USER_ID, shared_cookies)
+            summary = execute_main_tasks(driver, MY_USER_ID, shared_cookies)
             logger.info("全ての有効な処理が完了しました。")
+
+            # サマリー情報の出力
+            logger.info("--- 実行結果サマリー ---")
+            if summary:
+                logger.info(f"  フォローバック成功数: {summary.get('followed_back', 0)} 件")
+                logger.info(f"  タイムラインDOMO数: {summary.get('timeline_domo', 0)} 件")
+                logger.info(f"  検索からの新規フォロー数: {summary.get('search_followed', 0)} 件")
+                logger.info(f"  検索からのDOMO数 (フォロー後): {summary.get('search_domoed', 0)} 件")
+            else:
+                logger.info("  サマリー情報の取得に失敗しました。")
+            logger.info("----------------------")
+
             time.sleep(3) # 処理完了後の状態を少し確認できるように
         else:
             # perform_login 内で既にクリティカルログが出力されているはず

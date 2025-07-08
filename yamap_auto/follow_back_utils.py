@@ -412,6 +412,7 @@ def follow_back_users_new(driver, current_user_id, shared_cookies_from_main=None
                     logger.error(f"並列フォローバックタスクの結果取得中にエラー: {e_future}", exc_info=True)
 
     logger.info(f"<<< フォローバック機能完了。このセッションで合計 {total_followed_this_session} 人をフォローバックしました。")
+    return total_followed_this_session
 
 # nullcontext for Python < 3.7 (concurrent.futures might be used without `with`)
 try:
