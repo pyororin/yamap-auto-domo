@@ -414,7 +414,7 @@ def get_last_activity_date(driver, user_profile_url):
         logger.debug(f"対象のユーザープロフィールページ ({user_profile_url}) に遷移します。")
         driver.get(user_profile_url)
         try:
-            WebDriverWait(driver, profile_timeout).until( # Use configured timeout
+            WebDriverWait(driver, profile_element_timeout).until( # Use configured timeout - CORRECTED VARIABLE
                 EC.any_of(
                     EC.presence_of_element_located((By.CSS_SELECTOR, "a[data-testid='profile-tab-activities']")),
                     EC.presence_of_element_located((By.CSS_SELECTOR, "h1[class*='UserProfileScreen_userName']")),
