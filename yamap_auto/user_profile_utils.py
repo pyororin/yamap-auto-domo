@@ -20,7 +20,7 @@ from .driver_utils import get_main_config, BASE_URL, wait_for_page_transition, s
 
 # New imports
 from bs4 import BeautifulSoup
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 logger = logging.getLogger(__name__)
 
