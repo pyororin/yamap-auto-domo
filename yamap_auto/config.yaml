@@ -58,7 +58,7 @@ follow_back_settings:
   # フォローバック機能を並列処理する場合の最大ワーカー（スレッド）数。
   # enable_parallel_follow_back が true の場合に参照されます。
 
-  delay_per_worker_action_sec: 2.5 # (追加)
+  delay_per_worker_action_sec: 1.5 # (変更) 2.5秒から短縮
   # 並列フォローバック時、各ワーカースレッドがフォローアクションを実行した後の個別の遅延時間 (秒単位)。
   # 逐次処理の場合は action_delays.after_follow_action_sec が使用されます。
 
@@ -153,7 +153,7 @@ search_and_follow_settings:
   # 値を大きくしすぎると、リソース競合やYAMAPサーバーへの過度な負荷により、かえって性能が低下したり、
   # アカウントが一時的に制限されるリスクが高まる可能性があります。
 
-  delay_per_worker_user_processing_sec: 3.5 # (追加)
+  delay_per_worker_user_processing_sec: 2.0 # (変更) 3.5秒から短縮
   # 並列検索＆フォロー時、各ワーカースレッドが1ユーザーの一連の処理（プロフ確認、フォロー、DOMOなど）を完了した後に挿入される個別の遅延時間 (秒単位)。
   # 複数のワーカースレッドが同時にYAMAPへリクエストを送信するため、各アクション後に適切な遅延を入れることで、
   # サーバーへの瞬間的な負荷を軽減し、安定した動作を目指します。
@@ -204,6 +204,12 @@ unfollow_inactive_users_settings:
   delay_after_unfollow_action_sec: 3.0
   # アンフォロー操作を実行した後の待機時間 (秒単位)。UIの反映待ちや負荷軽減のため。
 
+  parallel_profile_page_workers: 24 # (追加) 非アクティブユーザーの最終活動日を取得する際の並列ワーカー数
+
+  enable_parallel_unfollow_action: true # (追加) アンフォローアクション自体の並列実行を有効にするか
+  max_workers_unfollow_action: 24     # (追加) アンフォローアクションの最大ワーカー数
+  delay_per_worker_unfollow_sec: 2.0  # (追加) 各アンフォローワーカースレッドのアクション後の遅延
+
 
 # === 並列処理設定 ===
 # スクリプト内の一部の処理（現在はタイムラインDOMO）を並列実行するための設定です。
@@ -225,7 +231,7 @@ parallel_processing_settings:
   #       これにより、各ワーカーが個別にログイン処理を行う必要がなくなります。
   # false: Cookie共有を行いません (各ワーカーが独立して動作しようとしますが、ログインが必要な操作は失敗する可能性があります)。
 
-  delay_between_thread_tasks_sec: 1.0
+  delay_between_thread_tasks_sec: 0.5 # (変更) 1.0秒から短縮
   # 各並列タスク（例: 個別のDOMO処理）を開始する前に挿入される基本的な遅延時間 (秒単位)。
   # これに加えて、スクリプト内でタスクごとに僅かな追加遅延が加えられることがあります。
   # 同時アクセスを緩和し、サーバー負荷を軽減することを目的としています。
