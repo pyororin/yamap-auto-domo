@@ -463,11 +463,11 @@ def get_my_following_users_profiles(driver, my_user_id, max_users_to_fetch=None,
     processed_pages = 0
 
     # ユーザーリストアイテムとユーザーリンクのセレクタ (YAMAPのUIに依存)
-    user_list_item_selector = "div.UserListItem_userListItem__XXXXX" # 仮のセレクタ、実際のものに置き換える必要あり
-    user_profile_link_selector = "a[href*='/users/']" # アイテム内のユーザープロファイルへのリンク
+    user_list_item_selector = "li.UserFollowList__Item" # ユーザー提供情報に基づき修正
+    user_profile_link_selector = "div.UserItem a[href^='/users/']" # ユーザー提供情報に基づき修正
 
     # 「次へ」ボタンのセレクタ (YAMAPのUIに依存)
-    next_page_button_selector = "button[data-testid='pagination-next-button']" # 仮のセレクタ
+    next_page_button_selector = "button.btn-next" # ユーザー提供情報に基づき修正
 
     while True:
         if max_pages_to_check is not None and processed_pages >= max_pages_to_check:
@@ -569,9 +569,9 @@ def get_my_followers_profiles(driver, my_user_id, max_users_to_fetch=None, max_p
 
     user_profile_urls = []
     processed_pages = 0
-    user_list_item_selector = "div.UserListItem_userListItem__XXXXX" # 仮のセレクタ
-    user_profile_link_selector = "a[href*='/users/']"
-    next_page_button_selector = "button[data-testid='pagination-next-button']" # 仮のセレクタ
+    user_list_item_selector = "li.UserFollowList__Item" # ユーザー提供情報に基づき修正
+    user_profile_link_selector = "div.UserItem a[href^='/users/']" # ユーザー提供情報に基づき修正
+    next_page_button_selector = "button.btn-next" # ユーザー提供情報に基づき修正
 
     while True:
         if max_pages_to_check is not None and processed_pages >= max_pages_to_check:
