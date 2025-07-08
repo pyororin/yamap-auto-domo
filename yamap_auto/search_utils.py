@@ -68,86 +68,105 @@ def _search_follow_domo_task(user_profile_url, user_name_for_log, shared_cookies
     task_driver = None
     task_followed_count = 0
     task_domoed_count = 0
-    status_message = f"ユーザー「{user_name_for_log}」(URL: {user_profile_url.split('/')[-1]}): "
-    log_prefix_task = f"[SF_TASK][{user_profile_url.split('/')[-1]}] "
-    try:
-        logger.info(f"{log_prefix_task}WebDriverを作成し、Cookieを設定・検証します。(User ID: {current_user_id_for_task})")
-        # Call create_driver_with_cookies with the new signature (current_user_id is mandatory, initial_page_for_cookie_setting uses default)
-        task_driver = create_driver_with_cookies(shared_cookies, current_user_id_for_task)
-        if not task_driver:
-            # create_driver_with_cookies handles logging and screenshots on failure
-            logger.error(f"{log_prefix_task}WebDriverの作成またはCookie/ログイン検証に失敗。タスクを中止。")
-            return {"profile_url": user_profile_url, "followed": 0, "domoed": 0, "error": "WebDriver/ログイン検証失敗"}
+    user_id_for_log = user_profile_url.split('/')[-1]
+    log_prefix_task = f"[SF_TASK][{user_id_for_log}] "
+    status_message = f"ユーザー「{user_name_for_log}」(ID: {user_id_for_log}): " # ログメッセージ統一のため調整
+    task_start_time = time.time()
+    logger.info(f"{log_prefix_task}処理開始。ユーザー: {user_name_for_log} ({user_profile_url})")
 
-        # If task_driver is valid, login is verified, and driver is on My Page.
-        # Now navigate to the target user's profile page.
+    try:
+        step_start_time = time.time()
+        logger.info(f"{log_prefix_task}WebDriverを作成し、Cookieを設定・検証します。(ログインユーザーID: {current_user_id_for_task})")
+        task_driver = create_driver_with_cookies(shared_cookies, current_user_id_for_task)
+        logger.debug(f"{log_prefix_task}WebDriver作成・Cookie設定・検証 所要時間: {time.time() - step_start_time:.2f}秒")
+        if not task_driver:
+            logger.error(f"{log_prefix_task}WebDriverの作成またはCookie/ログイン検証に失敗。タスクを中止。")
+            return {"profile_url": user_profile_url, "user_name": user_name_for_log, "followed": 0, "domoed": 0, "error": "WebDriver/ログイン検証失敗", "duration_sec": time.time() - task_start_time, "status": "failure_driver_creation"}
+
+        step_start_time = time.time()
         logger.info(f"{log_prefix_task}ログイン検証済み。対象のプロフィールページ ({user_profile_url}) へアクセスします。")
         task_driver.get(user_profile_url)
         try:
             WebDriverWait(task_driver, 20).until(
                 EC.all_of(
-                    EC.url_contains(user_profile_url.split('/')[-1]), # URLにユーザーIDが含まれるか
-                    EC.visibility_of_element_located((By.CSS_SELECTOR, "h1.css-jctfiw")), # プロフィール名 (例)
+                    EC.url_contains(user_id_for_log),
+                    EC.visibility_of_element_located((By.CSS_SELECTOR, "h1.css-jctfiw")),
                     lambda d: d.execute_script("return document.readyState") == "complete",
-                    EC.presence_of_element_located((By.CSS_SELECTOR, "footer.css-1yg0z07")) # フッター (例)
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "footer.css-1yg0z07"))
                 )
             )
-            logger.info(f"{log_prefix_task}プロフィールページ ({user_profile_url}) の主要要素読み込みを確認。")
+            logger.info(f"{log_prefix_task}プロフィールページ ({user_profile_url}) の主要要素読み込みを確認。所要時間: {time.time() - step_start_time:.2f}秒")
         except TimeoutException:
-            logger.warning(f"{log_prefix_task}プロフィールページ ({user_profile_url}) の読み込みタイムアウト。")
-            # save_screenshot(task_driver, "ProfileLoadTimeout_SearchFollowTask", f"user_{user_profile_url.split('/')[-1]}")
-            return {"profile_url": user_profile_url, "followed": 0, "domoed": 0, "error": "プロフィールページ読み込みタイムアウト"}
+            logger.warning(f"{log_prefix_task}プロフィールページ ({user_profile_url}) の読み込みタイムアウト。所要時間: {time.time() - step_start_time:.2f}秒")
+            return {"profile_url": user_profile_url, "user_name": user_name_for_log, "followed": 0, "domoed": 0, "error": "プロフィールページ読み込みタイムアウト", "duration_sec": time.time() - task_start_time, "status": "failure_profile_load_timeout"}
 
-        if user_profile_url not in task_driver.current_url:
+        if user_id_for_log not in task_driver.current_url: # URL検証をより厳密に
             logger.error(f"{log_prefix_task}URL不一致: 期待したプロフィールページ ({user_profile_url}) にいません。現在のURL: {task_driver.current_url}。スキップ。")
-            return {"profile_url": user_profile_url, "followed": 0, "domoed": 0, "error": "プロフィールページURL不一致"}
+            return {"profile_url": user_profile_url, "user_name": user_name_for_log, "followed": 0, "domoed": 0, "error": "プロフィールページURL不一致", "duration_sec": time.time() - task_start_time, "status": "failure_profile_url_mismatch"}
 
+        step_start_time = time.time()
         follow_button_on_profile = find_follow_button_on_profile_page(task_driver)
+        logger.debug(f"{log_prefix_task}フォローボタン探索 所要時間: {time.time() - step_start_time:.2f}秒")
         if not follow_button_on_profile:
-            logger.info(f"{status_message}既にフォロー済みか、フォローボタンがありません（並列タスク）。")
-            return {"profile_url": user_profile_url, "followed": 0, "domoed": 0, "error": None, "skipped_reason": "既にフォロー済み/ボタンなし"}
+            logger.info(f"{status_message}既にフォロー済みか、フォローボタンがありません。スキップ。")
+            return {"profile_url": user_profile_url, "user_name": user_name_for_log, "followed": 0, "domoed": 0, "error": None, "skipped_reason": "既にフォロー済み/ボタンなし", "duration_sec": time.time() - task_start_time, "status": "skipped_already_followed_or_no_button"}
 
         min_followers = sf_settings.get("min_followers_for_search_follow", 20)
         ratio_threshold = sf_settings.get("follow_ratio_threshold_for_search", 0.9)
         domo_after_follow_task = sf_settings.get("domo_latest_activity_after_follow", True)
         delay_worker_user_proc = sf_settings.get("delay_per_worker_user_processing_sec", 3.5)
 
-
+        step_start_time = time.time()
         follows, followers = get_user_follow_counts(task_driver, user_profile_url)
+        logger.debug(f"{log_prefix_task}フォロー数/フォロワー数取得 所要時間: {time.time() - step_start_time:.2f}秒")
         if follows == -1 or followers == -1:
-            logger.warning(f"{status_message}フォロー数/フォロワー数が取得できませんでした（並列タスク）。")
-            return {"profile_url": user_profile_url, "followed": 0, "domoed": 0, "error": "フォロー数/フォロワー数取得失敗"}
+            logger.warning(f"{status_message}フォロー数/フォロワー数が取得できませんでした。スキップ。")
+            return {"profile_url": user_profile_url, "user_name": user_name_for_log, "followed": 0, "domoed": 0, "error": "フォロー数/フォロワー数取得失敗", "duration_sec": time.time() - task_start_time, "status": "failure_follow_counts_retrieval"}
         if followers < min_followers:
-            logger.info(f"{status_message}フォロワー数 ({followers}) が閾値 ({min_followers}) 未満（並列タスク）。")
-            return {"profile_url": user_profile_url, "followed": 0, "domoed": 0, "error": None, "skipped_reason": f"フォロワー数不足({followers}<{min_followers})"}
+            logger.info(f"{status_message}フォロワー数 ({followers}) が閾値 ({min_followers}) 未満。スキップ。")
+            return {"profile_url": user_profile_url, "user_name": user_name_for_log, "followed": 0, "domoed": 0, "error": None, "skipped_reason": f"フォロワー数不足({followers}<{min_followers})", "duration_sec": time.time() - task_start_time, "status": "skipped_low_followers"}
 
         current_ratio = (follows / followers) if followers > 0 else float('inf')
-        logger.info(f"{status_message}F中={follows}, Fワー={followers}, Ratio={current_ratio:.2f} (閾値: >= {ratio_threshold})（並列タスク）")
+        logger.info(f"{status_message}F中={follows}, Fワー={followers}, Ratio={current_ratio:.2f} (閾値: >= {ratio_threshold})")
         if not (current_ratio >= ratio_threshold):
-            logger.info(f"{status_message}Ratio ({current_ratio:.2f}) が閾値 ({ratio_threshold}) 未満（並列タスク）。")
-            return {"profile_url": user_profile_url, "followed": 0, "domoed": 0, "error": None, "skipped_reason": f"Ratio不足({current_ratio:.2f}<{ratio_threshold})"}
+            logger.info(f"{status_message}Ratio ({current_ratio:.2f}) が閾値 ({ratio_threshold}) 未満。スキップ。")
+            return {"profile_url": user_profile_url, "user_name": user_name_for_log, "followed": 0, "domoed": 0, "error": None, "skipped_reason": f"Ratio不足({current_ratio:.2f}<{ratio_threshold})", "duration_sec": time.time() - task_start_time, "status": "skipped_low_ratio"}
 
-        logger.info(f"{status_message}フォロー条件を満たしました。フォローします（並列タスク）。")
+        logger.info(f"{status_message}フォロー条件を満たしました。フォローします。")
+        step_start_time = time.time()
         if click_follow_button_and_verify(task_driver, follow_button_on_profile, user_name_for_log):
             task_followed_count = 1
+            logger.info(f"{status_message}フォロー成功。所要時間: {time.time() - step_start_time:.2f}秒")
             if domo_after_follow_task:
-                logger.info(f"{status_message}最新活動記録にDOMOを試みます（並列タスク）。")
+                logger.info(f"{status_message}最新活動記録にDOMOを試みます。")
+                domo_step_start_time = time.time()
                 latest_act_url = get_latest_activity_url(task_driver, user_profile_url)
+                logger.debug(f"{log_prefix_task}最新活動記録URL取得 所要時間: {time.time() - domo_step_start_time:.2f}秒")
                 if latest_act_url:
-                    if domo_activity(task_driver, latest_act_url, BASE_URL): # BASE_URL を渡す
+                    domo_action_start_time = time.time()
+                    if domo_activity(task_driver, latest_act_url, BASE_URL):
                         task_domoed_count = 1
+                        logger.info(f"{status_message}最新活動記録へのDOMO成功。URL: {latest_act_url}。所要時間: {time.time() - domo_action_start_time:.2f}秒")
+                    else:
+                        logger.warning(f"{status_message}最新活動記録へのDOMO失敗。URL: {latest_act_url}。所要時間: {time.time() - domo_action_start_time:.2f}秒")
                 else:
-                    logger.info(f"{status_message}最新活動記録が見つからず、DOMOできませんでした（並列タスク）。")
+                    logger.info(f"{status_message}最新活動記録が見つからず、DOMOできませんでした。")
+        else:
+            logger.warning(f"{status_message}フォロー失敗。所要時間: {time.time() - step_start_time:.2f}秒")
 
-        time.sleep(delay_worker_user_proc)
-        return {"profile_url": user_profile_url, "followed": task_followed_count, "domoed": task_domoed_count, "error": None}
+        time.sleep(delay_worker_user_proc) # ユーザー処理後の共通遅延
+        total_task_duration = time.time() - task_start_time
+        logger.info(f"{log_prefix_task}処理完了。総所要時間: {total_task_duration:.2f}秒。結果: Followed={task_followed_count}, Domoed={task_domoed_count}")
+        return {"profile_url": user_profile_url, "user_name": user_name_for_log, "followed": task_followed_count, "domoed": task_domoed_count, "error": None, "duration_sec": total_task_duration, "status": "success"}
 
     except Exception as e_task:
-        logger.error(f"{status_message}並列処理タスク中にエラー: {e_task}", exc_info=True)
-        return {"profile_url": user_profile_url, "followed": 0, "domoed": 0, "error": str(e_task)}
+        total_task_duration = time.time() - task_start_time
+        logger.error(f"{status_message}並列処理タスク中に予期せぬエラー: {e_task}", exc_info=True)
+        return {"profile_url": user_profile_url, "user_name": user_name_for_log, "followed": 0, "domoed": 0, "error": str(e_task), "duration_sec": total_task_duration, "status": "failure_exception"}
     finally:
         if task_driver:
             task_driver.quit()
+            logger.debug(f"{log_prefix_task}WebDriverを終了しました。")
 
 
 # --- 検索からのフォロー＆DOMO機能 (メインロジック) ---
@@ -170,7 +189,8 @@ def search_follow_and_domo_users(driver, current_user_id, shared_cookies_from_ma
         logger.warning("並列検索＆フォローが有効ですが、共有Cookieが提供されませんでした。逐次処理にフォールバックします。")
         is_parallel_enabled = False
 
-    logger.info(f">>> 検索からのフォロー＆DOMO機能を開始します... (並列処理: {'有効' if is_parallel_enabled else '無効'})")
+    log_prefix_main = "[SF_MAIN] "
+    logger.info(f"{log_prefix_main}>>> 検索からのフォロー＆DOMO機能を開始します... (並列処理: {'有効 (MaxWorkers: ' + str(max_workers) + ')' if is_parallel_enabled else '無効'})")
 
     start_url = sf_settings.get("search_activities_url", SEARCH_ACTIVITIES_URL_DEFAULT)
     max_pages = sf_settings.get("max_pages_to_process_search", 1)
@@ -178,6 +198,10 @@ def search_follow_and_domo_users(driver, current_user_id, shared_cookies_from_ma
     # 逐次処理用の遅延 (並列時はワーカースレッド側で `delay_per_worker_user_processing_sec` を使用)
     sequential_delay_user_processing = sf_settings.get("delay_between_user_processing_in_search_sec", 5.0)
     delay_pagination = ad_settings.get("delay_after_pagination_sec", 3.0) # これはACTION_DELAYSから取得
+
+    # パフォーマンス計測用
+    function_start_time = time.time()
+    processed_user_count_session = 0 # 実際にタスク投入または逐次処理されたユーザー数
 
     # 並列/逐次共通の設定
     min_followers_seq = sf_settings.get("min_followers_for_search_follow", 20)
@@ -287,9 +311,10 @@ def search_follow_and_domo_users(driver, current_user_id, shared_cookies_from_ma
 
             # --- ユーザー情報収集 (メインドライバー) ---
             user_infos_for_tasks = []
+            logger.info(f"{log_prefix_main}ページ {page_num}/{max_pages}: 活動記録カードからのユーザー情報収集開始 (最大{max_users_per_page}ユーザー)。")
             for card_idx, card_element in enumerate(initial_activity_cards_on_page):
                 if len(user_infos_for_tasks) >= max_users_per_page : # このページで処理するユーザー数上限
-                    logger.info(f"このページでの処理対象ユーザー数上限 ({max_users_per_page}) に達したため、情報収集を停止。")
+                    logger.info(f"{log_prefix_main}ページ {page_num}: 処理対象ユーザー数上限 ({max_users_per_page}) に達したため、情報収集を停止。")
                     break
 
                 temp_user_profile_url = None
@@ -336,11 +361,13 @@ def search_follow_and_domo_users(driver, current_user_id, shared_cookies_from_ma
                     break
 
                 if is_parallel_enabled and executor:
-                    logger.info(f"--- 並列タスク投入: ユーザー「{user_info['name']}」(URL: {user_info['url'].split('/')[-1]}) ---")
+                    logger.info(f"{log_prefix_main}ページ {page_num}: 並列タスク投入 - ユーザー「{user_info['name']}」(ID: {user_info['url'].split('/')[-1]})")
                     future = executor.submit(_search_follow_domo_task, user_info['url'], user_info['name'], shared_cookies_from_main, sf_settings, ad_settings, current_user_id)
                     futures_this_page.append(future)
+                    processed_user_count_session +=1 # 並列タスク投入も処理ユーザーとしてカウント
                 else: # 逐次処理
-                    logger.info(f"--- 逐次処理開始: ユーザー「{user_info['name']}」(URL: {user_info['url'].split('/')[-1]}) ---")
+                    logger.info(f"{log_prefix_main}ページ {page_num}: 逐次処理開始 - ユーザー「{user_info['name']}」(ID: {user_info['url'].split('/')[-1]})")
+                    processed_user_count_session +=1 # 逐次処理も処理ユーザーとしてカウント
                     # メインドライバーで直接処理
                     driver.get(user_info['url']) # プロフィールページへ
                     try:
@@ -397,28 +424,43 @@ def search_follow_and_domo_users(driver, current_user_id, shared_cookies_from_ma
 
             # --- このページの並列タスク結果処理 (is_parallel_enabled の場合のみ) ---
             if is_parallel_enabled and futures_this_page:
-                logger.info(f"{page_num}ページ目で投入された {len(futures_this_page)} 件の並列タスクの結果を処理します...")
+                logger.info(f"{log_prefix_main}ページ {page_num}: 投入された {len(futures_this_page)} 件の並列タスクの結果を処理します...")
                 for future_item in as_completed(futures_this_page):
                     try:
-                        result = future_item.result()
-                        res_profile_url = result.get("profile_url", "不明なURL")
-                        res_user_name = res_profile_url.split('/')[-1] # 簡易表示
+                        result = future_item.result() # _search_follow_domo_task からの戻り値
+                        res_user_name_log = result.get("user_name", result.get("profile_url", "不明なユーザー").split('/')[-1])
+                        res_status_log = result.get("status", "不明なステータス")
+                        res_duration_log = result.get("duration_sec", -1)
+
                         if result.get("error"):
-                            logger.error(f"並列タスクエラー (ユーザー: {res_user_name}): {result['error']}")
+                            logger.error(f"{log_prefix_main}並列タスクエラー (ユーザー: {res_user_name_log}, ステータス: {res_status_log}, 所要時間: {res_duration_log:.2f}秒): {result['error']}")
                         else:
-                            if result.get("skipped_reason"):
-                                logger.info(f"ユーザー「{res_user_name}」はスキップされました（並列タスク）理由: {result['skipped_reason']}")
+                            log_level = logging.INFO if result.get("followed") or result.get("domoed") or not result.get("skipped_reason") else logging.DEBUG
+                            logger.log(log_level, f"{log_prefix_main}並列タスク完了 (ユーザー: {res_user_name_log}, "
+                                                f"Followed: {result.get('followed',0)}, Domoed: {result.get('domoed',0)}, "
+                                                f"Skipped: '{result.get('skipped_reason','なし')}', ステータス: {res_status_log}, 所要時間: {res_duration_log:.2f}秒)")
                             total_followed_count_session += result.get("followed", 0)
                             total_domoed_count_session += result.get("domoed", 0)
-                            if result.get("followed",0) > 0 : logger.info(f"ユーザー「{res_user_name}」のフォローに成功（並列）。")
-                            if result.get("domoed",0) > 0 : logger.info(f"ユーザー「{res_user_name}」のDOMOに成功（並列）。")
                     except Exception as e_future_res:
-                        logger.error(f"並列検索フォロータスクの結果取得/処理中にエラー: {e_future_res}", exc_info=True)
+                        logger.error(f"{log_prefix_main}並列検索フォロータスクの結果取得/処理中に予期せぬエラー: {e_future_res}", exc_info=True)
 
-            logger.info(f"{page_num}ページ目の処理が完了しました。")
+            logger.info(f"{log_prefix_main}ページ {page_num}/{max_pages} の処理が完了しました。")
             # ページネーション後の遅延はループの先頭で次のページ読み込み後に行われる (delay_pagination)
 
-    logger.info(f"<<< 検索からのフォロー＆DOMO機能完了。セッション合計フォロー: {total_followed_count_session}人, セッション合計DOMO: {total_domoed_count_session}件。")
+    # --- パフォーマンスサマリー ---
+    function_end_time = time.time()
+    total_function_duration = function_end_time - function_start_time
+    users_per_second = processed_user_count_session / total_function_duration if total_function_duration > 0 else 0
+
+    logger.info(f"{log_prefix_main}---------- 検索＆フォロー機能 パフォーマンスサマリー ----------")
+    logger.info(f"{log_prefix_main}総処理時間: {total_function_duration:.2f} 秒")
+    logger.info(f"{log_prefix_main}処理対象として試行した総ユーザー数: {processed_user_count_session} 人")
+    logger.info(f"{log_prefix_main}実際にフォローした総数: {total_followed_count_session} 人")
+    logger.info(f"{log_prefix_main}実際にDOMOした総数: {total_domoed_count_session} 件")
+    logger.info(f"{log_prefix_main}1秒あたりの処理ユーザー数 (スループット): {users_per_second:.2f} 人/秒")
+    logger.info(f"{log_prefix_main}-------------------------------------------------------------")
+
+    logger.info(f"{log_prefix_main}<<< 検索からのフォロー＆DOMO機能完了。セッション合計フォロー: {total_followed_count_session}人, セッション合計DOMO: {total_domoed_count_session}件。")
 
 
 # nullcontext for Python < 3.7
