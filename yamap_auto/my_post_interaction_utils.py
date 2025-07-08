@@ -81,7 +81,6 @@ def get_my_activities_within_period(driver, user_profile_url, days_to_check):
         logger.info(f"活動記録リストコンテナ ({activity_list_container_selector}) が表示されました。")
 
         logger.info(f"リスト内の最初の活動記録アイテム ({activity_item_selector_in_container}) の表示を待ちます...")
-        # article[data-testid='activity-entry'] は ul > li > article の構造なので、ul の中で探す
         WebDriverWait(list_container_element, 10).until(
             EC.presence_of_all_elements_located((By.CSS_SELECTOR, f"li > {activity_item_selector_in_container}"))
         )
@@ -159,9 +158,6 @@ def get_my_activities_within_period(driver, user_profile_url, days_to_check):
             else:
                 log_activity_id = f"アイテムインデックス {item_idx+1}"
                 try:
-                    # activity_url_path がこのスコープで定義されているか不確実なため、
-                    # より安全には item_article_element から再度リンク要素を探す方が良いが、
-                    # 指摘された構文エラーの修正を優先する。
                     if 'activity_url_path' in locals() and activity_url_path and "/activities/" in activity_url_path:
                         log_activity_id = activity_url_path.split('/')[-1].split('?')[0]
                 except Exception:
@@ -191,36 +187,76 @@ def get_domo_users_from_activity(driver, activity_url):
         list[dict]: DOMOしたユーザーの情報のリスト。各辞書は {'name': str, 'profile_url': str} を含む。
     """
     activity_id_for_log = activity_url.split('/')[-1].split('?')[0]
-    domo_page_url = activity_url.split('?')[0] + "/domos"
-    logger.info(f"活動記録 ({activity_id_for_log}) のDOMOユーザー一覧ページへアクセス: {domo_page_url}")
+    logger.info(f"活動記録 ({activity_id_for_log}) ページへアクセス: {activity_url}")
     domo_users = []
 
-    driver.get(domo_page_url)
+    driver.get(activity_url)
     try:
-        WebDriverWait(driver, 10).until(EC.url_contains("/domos"))
+        # 活動記録ページの主要な要素が表示されるまで待機 (例: 活動タイトル)
+        WebDriverWait(driver, 15).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, "h1[data-testid='activity-title']")) # 仮の活動タイトルセレクタ
+        )
+        logger.info(f"活動記録ページ ({activity_id_for_log}) の読み込みを確認。")
     except TimeoutException:
-        logger.error(f"DOMO一覧ページ ({domo_page_url}) への遷移確認タイムアウト。")
-        save_screenshot(driver, "DomoListPageLoadFail", activity_id_for_log)
+        logger.error(f"活動記録ページ ({activity_url}) の読み込み確認タイムアウト。")
+        save_screenshot(driver, "ActivityPageLoadFail", activity_id_for_log)
         return domo_users
 
-    user_list_container_selector = "ul[class*='UserList_list']"
-    user_card_selector = "li[class*='UserListItem_container']"
-    user_name_selector = "h2[class*='UserListItem_name']"
-    user_link_selector = "a[class*='UserListItem_avatarLink']"
+    # DOMOしたユーザー一覧へ遷移するボタンを探す (クラス名とテキスト内容で判断)
+    domo_button_xpath = "//button[contains(@class, 'ActivityToolBar__Button') and contains(normalize-space(), '人')]"
+    try:
+        logger.info(f"DOMOしたユーザー一覧へのボタンを探しています (XPath: {domo_button_xpath})...")
+        domo_button = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.XPATH, domo_button_xpath))
+        )
+        button_text_for_log = domo_button.text.strip()
+        logger.info(f"DOMOしたユーザー一覧へのボタン ('{button_text_for_log}') を発見。クリックします。")
+        domo_button.click()
+
+        # DOMOユーザー一覧ページへの遷移/表示を待機 (URLまたは特定のリスト要素)
+        # 注意: DOMOユーザー一覧ページの実際のセレクタはユーザーからの情報待ち
+        domo_list_page_indicator_selector_temp = "ul[class*='UserList_list']" # これは仮の古いセレクタ
+        # data-testid="domo-user-list" のような安定したセレクタが理想
+        # domo_list_page_indicator_selector_temp = "div[data-testid='domo-user-list']" # より良い可能性のあるセレクタの例
+
+        logger.info(f"DOMOユーザー一覧の表示を待ちます (仮セレクタ: {domo_list_page_indicator_selector_temp})...")
+        WebDriverWait(driver, 15).until(
+            EC.any_of( # URLに /domos がつくか、リスト要素が表示されるか
+                EC.url_contains("/domos"),
+                EC.presence_of_element_located((By.CSS_SELECTOR, domo_list_page_indicator_selector_temp))
+            )
+        )
+        logger.info("DOMOユーザー一覧ページへの遷移/表示を確認。")
+
+    except TimeoutException:
+        logger.warning(f"DOMOしたユーザー一覧へのボタンが見つからないか、クリック後のページ遷移/表示でタイムアウトしました。")
+        save_screenshot(driver, "DomoButtonClickOrTransitionFail", activity_id_for_log)
+        return domo_users # DOMOユーザーがいなかった、またはボタンが見つからなかった場合
+    except Exception as e_button_click:
+        logger.error(f"DOMOボタンのクリックまたは遷移待機中に予期せぬエラー: {e_button_click}", exc_info=True)
+        save_screenshot(driver, "DomoButtonClickError", activity_id_for_log)
+        return domo_users
+
+    # --- ここからDOMOユーザー一覧ページでの処理 ---
+    # 以下のセレクタはユーザーからの新しいHTML情報に基づいて修正が必要
+    user_list_container_selector = "ul[class*='UserList_list']" # 要確認・修正
+    user_card_selector = "li[class*='UserListItem_container']"   # 要確認・修正
+    user_name_selector = "h2[class*='UserListItem_name']"     # 要確認・修正
+    user_link_selector = "a[class*='UserListItem_avatarLink']" # 要確認・修正
 
     page_num = 1
     while True:
         logger.info(f"DOMOユーザー一覧の {page_num} ページ目を処理中...")
         try:
-            WebDriverWait(driver, 15).until(
+            WebDriverWait(driver, 15).until( # タイムアウトを15秒に
                 EC.presence_of_element_located((By.CSS_SELECTOR, user_list_container_selector))
             )
             logger.debug(f"DOMOユーザーリストコンテナ ({user_list_container_selector}) を発見。")
         except TimeoutException:
-            logger.warning(f"DOMOユーザーリストコンテナの読み込みタイムアウト (ページ {page_num})。")
-            break
+            logger.warning(f"DOMOユーザーリストコンテナ ({user_list_container_selector}) の読み込みタイムアウト (ページ {page_num})。")
+            break # ループを抜ける
 
-        time.sleep(1.0)
+        time.sleep(1.0) # リスト内容の描画待ち
 
         user_elements = driver.find_elements(By.CSS_SELECTOR, user_card_selector)
         if not user_elements:
@@ -250,7 +286,8 @@ def get_domo_users_from_activity(driver, activity_url):
             except Exception as e_user_parse:
                 logger.error(f"DOMOユーザー情報の解析中にエラー: {e_user_parse}", exc_info=True)
 
-        next_button_selector = "button[aria-label='次のページに移動する']:not([disabled])"
+        # 「次へ」ボタンの処理 (YAMAPのUIにより調整が必要)
+        next_button_selector = "button[aria-label='次のページに移動する']:not([disabled])" # 仮
         try:
             next_button = driver.find_element(By.CSS_SELECTOR, next_button_selector)
             if next_button.is_displayed() and next_button.is_enabled():
