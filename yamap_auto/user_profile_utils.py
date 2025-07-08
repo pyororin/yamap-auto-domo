@@ -454,15 +454,15 @@ def get_my_following_users_profiles(driver, my_user_id, max_users_to_fetch=None,
     logger.info(f"取得上限: ユーザー数={max_users_to_fetch or '無制限'}, ページ数={max_pages_to_check or '無制限'}")
 
     # ユーザーリストアイテムとユーザーリンクのセレクタ (YAMAPのUIに依存)
-    user_list_item_selector = "li.UserFollowList__Item" # ユーザー提供情報に基づき修正
-    user_profile_link_selector = "div.UserItem a[href^='/users/']" # ユーザー提供情報に基づき修正
+    user_list_item_selector = "main.css-1ed9ptx ul.UserFollowList__List > li.UserFollowList__Item" # より具体的に修正
+    user_profile_link_selector = "div.UserItem a[href^='/users/']" # 変更なし（li要素の中から探すため）
     # 「次へ」ボタンのセレクタ (YAMAPのUIに依存)
-    next_page_button_selector = "button.btn-next" # ユーザー提供情報に基づき修正
+    next_page_button_selector = "button.btn-next" # 変更なし
 
     current_url_before_get = driver.current_url
     driver.get(following_list_url)
-    # ページ遷移とリスト表示の待機 (ul.UserFollowList__List の出現を期待)
-    wait_for_page_transition(driver, timeout=30, expected_element_selector=(By.CSS_SELECTOR, "ul.UserFollowList__List"), previous_url=current_url_before_get if current_url_before_get != following_list_url else None)
+    # ページ遷移とリスト表示の待機 (main要素内の ul.UserFollowList__List の出現を期待)
+    wait_for_page_transition(driver, timeout=30, expected_element_selector=(By.CSS_SELECTOR, "main.css-1ed9ptx ul.UserFollowList__List"), previous_url=current_url_before_get if current_url_before_get != following_list_url else None)
 
 
     user_profile_urls = []
@@ -561,15 +561,15 @@ def get_my_followers_profiles(driver, my_user_id, max_users_to_fetch=None, max_p
     logger.info(f"取得上限: ユーザー数={max_users_to_fetch or '無制限'}, ページ数={max_pages_to_check or '無制限'}")
 
     # ユーザーリストアイテムとユーザーリンクのセレクタ (YAMAPのUIに依存)
-    user_list_item_selector = "li.UserFollowList__Item" # ユーザー提供情報に基づき修正
-    user_profile_link_selector = "div.UserItem a[href^='/users/']" # ユーザー提供情報に基づき修正
-    next_page_button_selector = "button.btn-next" # ユーザー提供情報に基づき修正
+    user_list_item_selector = "main.css-1ed9ptx ul.UserFollowList__List > li.UserFollowList__Item" # より具体的に修正
+    user_profile_link_selector = "div.UserItem a[href^='/users/']" # 変更なし
+    next_page_button_selector = "button.btn-next" # 変更なし
 
     # 以降のロジックは get_my_following_users_profiles とほぼ同じ
     current_url_before_get = driver.current_url
     driver.get(followers_list_url)
-    # ページ遷移とリスト表示の待機 (ul.UserFollowList__List の出現を期待)
-    wait_for_page_transition(driver, timeout=30, expected_element_selector=(By.CSS_SELECTOR, "ul.UserFollowList__List"), previous_url=current_url_before_get if current_url_before_get != followers_list_url else None)
+    # ページ遷移とリスト表示の待機 (main要素内の ul.UserFollowList__List の出現を期待)
+    wait_for_page_transition(driver, timeout=30, expected_element_selector=(By.CSS_SELECTOR, "main.css-1ed9ptx ul.UserFollowList__List"), previous_url=current_url_before_get if current_url_before_get != followers_list_url else None)
 
     user_profile_urls = []
     processed_pages = 0
