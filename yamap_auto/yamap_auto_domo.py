@@ -93,6 +93,35 @@ setup_logger()
 logger = logging.getLogger(__name__)
 # --- Logger設定完了 ---
 
+import shutil # ディレクトリ操作のために追加
+
+# --- ログディレクトリのクリーンアップ ---
+# スクリプトの実行ディレクトリの 'logs' サブディレクトリを対象とする
+# __file__ はこのスクリプトのフルパス
+# os.path.dirname(__file__) はこのスクリプトがあるディレクトリ (yamap_auto)
+# その親ディレクトリがリポジトリルートになる
+_SCRIPT_DIR = os.path.dirname(__file__)
+_REPO_ROOT = os.path.dirname(_SCRIPT_DIR) # リポジトリルートを想定
+LOGS_DIR_TO_CLEAR = os.path.join(_REPO_ROOT, "logs")
+
+if os.path.exists(LOGS_DIR_TO_CLEAR):
+    logger.info(f"既存のログディレクトリ '{LOGS_DIR_TO_CLEAR}' の中身をクリアします...")
+    for item_name in os.listdir(LOGS_DIR_TO_CLEAR):
+        item_path = os.path.join(LOGS_DIR_TO_CLEAR, item_name)
+        try:
+            if os.path.isfile(item_path) or os.path.islink(item_path):
+                os.unlink(item_path)
+                logger.debug(f"  削除: {item_path} (ファイル/リンク)")
+            elif os.path.isdir(item_path):
+                shutil.rmtree(item_path)
+                logger.debug(f"  削除: {item_path} (ディレクトリ)")
+        except Exception as e_clear:
+            logger.warning(f"  ログディレクトリ内のアイテム '{item_path}' の削除に失敗しました: {e_clear}")
+    logger.info(f"ログディレクトリ '{LOGS_DIR_TO_CLEAR}' のクリーンアップ完了。")
+else:
+    logger.info(f"ログディレクトリ '{LOGS_DIR_TO_CLEAR}' は存在しないため、クリーンアップはスキップします。")
+# --- ログディレクトリのクリーンアップ完了 ---
+
 
 # --- 設定情報の読み込み (driver_utils経由) ---
 try:

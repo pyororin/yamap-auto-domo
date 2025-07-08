@@ -28,7 +28,8 @@ def setup_logger():
         try:
             # ログファイルはカレントディレクトリ（通常はリポジトリルート）に出力
             log_file_path = LOG_FILE_NAME
-            file_handler = logging.FileHandler(log_file_path, encoding='utf-8', mode='a')  # 'a'モードで追記
+            # ログファイルを毎回クリアするために mode='w' に変更
+            file_handler = logging.FileHandler(log_file_path, encoding='utf-8', mode='w')  # 'w'モードで新規書き込み（クリア）
             file_handler.setLevel(logging.DEBUG)  # ファイルにはDEBUGレベル以上のログを全て記録
             file_formatter = logging.Formatter(
                 "[%(asctime)s] [%(levelname)s] [%(module)s.%(funcName)s:%(lineno)d] - %(message)s", # モジュール名も記録
