@@ -365,70 +365,98 @@ def unfollow_inactive_not_following_back_users(driver, my_user_id, shared_cookie
 
     logger.info(f"{len(my_following_profiles)} 件のフォロー中ユーザーを取得しました。")
 
-    # (オプション) 相互フォロー確認のために、事前に自分のフォロワーリストを取得（効率化のため）
-    my_followers_list_for_check = None
-    if check_following_back:
-        logger.info(f"相互フォロー確認のため、自分のフォロワーリストを取得します (最大 {max_pages_for_my_followers_list} ページ)。")
-        my_followers_list_for_check = get_my_followers_profiles(driver, my_user_id, max_pages_to_check=max_pages_for_my_followers_list)
-        if my_followers_list_for_check is None: # 取得失敗の場合
-             logger.warning("自分のフォロワーリストの取得に失敗しました。相互フォロー確認が不正確になる可能性があります。")
-             my_followers_list_for_check = [] # 空リストとして扱う
+    # check_if_following_back is now implicitly handled by get_my_following_users_profiles returning this info
+    # We'll use it to decide if we *only* target non-followers, or all followed users (if the setting were false)
+    # However, the user's request specifically mentions "「フォローされています」と表示していない" (not displaying "followed by you")
+    # So, we will always filter by this. The config setting `check_if_following_back` might become
+    # a bit redundant for this specific interpretation, or could be repurposed if the desire was to *also*
+    # unfollow inactive mutuals (which is not the current request).
+    # For now, we assume the goal is *only* non-reciprocal, inactive users.
 
+    max_pages_to_check_following = settings.get("max_pages_for_my_following_list", 10)
 
-    for user_profile_url in my_following_profiles:
+    unfollowed_count = 0
+    processed_users_count = 0
+
+    logger.info(f"自分がフォローしているユーザーのリストとフォローバック状況を取得します (最大 {max_pages_to_check_following} ページ)。")
+    # get_my_following_users_profiles now returns a list of dicts: {'url': str, 'name': str, 'is_followed_back': bool}
+    my_following_user_details = get_my_following_users_profiles(driver, my_user_id, max_pages_to_check=max_pages_to_check_following)
+
+    if not my_following_user_details:
+        logger.info("フォロー中のユーザーが見つからないか、リストの取得に失敗しました。")
+        return 0
+
+    logger.info(f"{len(my_following_user_details)} 件のフォロー中ユーザー情報を取得しました。")
+
+    # Filter this list based on is_followed_back status BEFORE checking activity
+    # This aligns with "「フォローされています」と表示していない、フォロー中のユーザーの画面を開き..."
+    users_to_check_activity = []
+    for user_detail in my_following_user_details:
+        user_id_log_filter = user_detail['url'].split('/')[-1].split('?')[0]
+        if not user_detail['is_followed_back']:
+            logger.info(f"ユーザー {user_detail['name']} ({user_id_log_filter}) はフォローバックしていません。アクティビティ確認対象とします。")
+            users_to_check_activity.append(user_detail)
+        else:
+            logger.info(f"ユーザー {user_detail['name']} ({user_id_log_filter}) はフォローバックしています。アンフォロー対象外。")
+
+    if not users_to_check_activity:
+        logger.info("フォローバックしていないユーザーが見つかりませんでした。アンフォロー処理を終了します。")
+        return 0
+
+    logger.info(f"{len(users_to_check_activity)} 件のフォローバックしていないユーザーのアクティビティを確認します。")
+
+    for user_data in users_to_check_activity:
         if unfollowed_count >= max_to_unfollow:
             logger.info(f"1回の実行でのアンフォロー上限 ({max_to_unfollow}人) に達しました。")
             break
 
-        processed_users_count += 1
+        user_profile_url = user_data['url']
+        user_name_for_log = user_data['name']
         user_id_log = user_profile_url.split('/')[-1].split('?')[0]
-        logger.info(f"--- ユーザー処理開始 ({processed_users_count}/{len(my_following_profiles)}): {user_id_log} ---")
 
-        # 2. (オプション) 対象ユーザーが自分をフォローしているか確認
-        if check_following_back:
-            is_mutual = is_user_following_me(driver, user_profile_url, my_user_id, my_followers_list=my_followers_list_for_check)
-            if is_mutual is None: # 確認失敗
-                logger.warning(f"ユーザー ({user_id_log}) の相互フォロー状況の確認に失敗しました。スキップします。")
-                time.sleep(settings.get("delay_before_unfollow_action_sec", 2.0)) # エラーでも遅延
-                continue
-            if is_mutual:
-                logger.info(f"ユーザー ({user_id_log}) は相互フォローのため、アンフォロー対象外です。")
-                time.sleep(1.0) # 短い遅延
-                continue
-            logger.info(f"ユーザー ({user_id_log}) はフォローバックしていません。")
-        else:
-            logger.info("相互フォローチェックは設定で無効です。")
+        processed_users_count += 1
+        logger.info(f"--- ユーザー処理開始 ({processed_users_count}/{len(users_to_check_activity)}): {user_name_for_log} ({user_id_log}) ---")
+        logger.info(f"このユーザーはフォローバックしていません。最終活動日を確認します。")
 
-        # 3. 対象ユーザーの最終活動日を取得
-        last_activity_date = get_last_activity_date(driver, user_profile_url)
-        if last_activity_date is None:
-            logger.warning(f"ユーザー ({user_id_log}) の最終活動日の取得に失敗しました。スキップします。")
-            time.sleep(settings.get("delay_before_unfollow_action_sec", 2.0)) # エラーでも遅延
+        # 対象ユーザーの最終活動日を取得
+        # (get_last_activity_date might need to navigate, ensure driver is on a neutral page or handle navigation robustly)
+        # Consider adding a driver.get(BASE_URL) or similar before this if issues arise from previous page state.
+        last_activity_date_val = get_last_activity_date(driver, user_profile_url) # Renamed variable to avoid conflict
+
+        if last_activity_date_val is None:
+            logger.warning(f"ユーザー {user_name_for_log} ({user_id_log}) の最終活動日の取得に失敗しました。スキップします。")
+            time.sleep(settings.get("delay_between_user_processing_sec", 2.0)) # Ensure this delay key exists or use a default
             continue
 
-        # 4. 最終活動日が閾値を超えているか確認
-        days_since_last_activity = (datetime.date.today() - last_activity_date).days
-        logger.info(f"ユーザー ({user_id_log}) の最終活動日: {last_activity_date} ({days_since_last_activity}日前)")
+        # 最終活動日が閾値を超えているか確認
+        days_since_last_activity = (datetime.date.today() - last_activity_date_val).days
+        logger.info(f"ユーザー {user_name_for_log} ({user_id_log}) の最終活動日: {last_activity_date_val} ({days_since_last_activity}日前)")
 
         if days_since_last_activity >= inactive_threshold_days:
-            logger.info(f"ユーザー ({user_id_log}) は非アクティブ (閾値: {inactive_threshold_days}日) と判断されました。アンフォローを試みます。")
+            logger.info(f"ユーザー {user_name_for_log} ({user_id_log}) は非アクティブ (閾値: {inactive_threshold_days}日) と判断されました。アンフォローを試みます。")
 
-            # アンフォロー前の遅延
-            time.sleep(settings.get("delay_before_unfollow_action_sec", 2.0))
+            delay_before_unfollow = settings.get("delay_before_unfollow_action_sec", 2.0)
+            logger.debug(f"アンフォロー実行前に {delay_before_unfollow} 秒待機します。")
+            time.sleep(delay_before_unfollow)
 
-            if unfollow_user(driver, user_profile_url):
-                logger.info(f"ユーザー ({user_id_log}) のアンフォローに成功しました。")
+            if unfollow_user(driver, user_profile_url): # unfollow_user needs to handle navigation to the profile page
+                logger.info(f"ユーザー {user_name_for_log} ({user_id_log}) のアンフォローに成功しました。")
                 unfollowed_count += 1
-                # アンフォロー後の遅延は unfollow_user 関数内で処理される (configの delay_after_unfollow_action_sec)
+                # unfollow_user 内部でアクション後の遅延があることを期待
             else:
-                logger.warning(f"ユーザー ({user_id_log}) のアンフォローに失敗しました。")
-                # 失敗した場合も、次のユーザー処理までの遅延を入れる
-                time.sleep(settings.get("delay_after_unfollow_action_sec", 3.0))
+                logger.warning(f"ユーザー {user_name_for_log} ({user_id_log}) のアンフォローに失敗しました。")
+                # 失敗時も遅延を入れる
+                time.sleep(settings.get("delay_after_action_error_sec", 3.0)) # Ensure key or use default
         else:
-            logger.info(f"ユーザー ({user_id_log}) は活動閾値 ({inactive_threshold_days}日) 以内に活動があるため、アンフォロー対象外です。")
-            time.sleep(1.0) # 短い遅延
+            logger.info(f"ユーザー {user_name_for_log} ({user_id_log}) は活動閾値 ({inactive_threshold_days}日) 以内に活動があるため、アンフォロー対象外です。")
+            time.sleep(settings.get("delay_between_user_processing_sec", 1.0)) # Shorter delay for active users
 
-        logger.info(f"--- ユーザー処理終了: {user_id_log} ---")
+        logger.info(f"--- ユーザー処理終了: {user_name_for_log} ({user_id_log}) ---")
+        # General delay between processing different users
+        inter_user_delay = settings.get("delay_between_user_processing_sec", 2.0)
+        if unfollowed_count < max_to_unfollow and processed_users_count < len(users_to_check_activity) : # Don't delay after the last user
+            logger.debug(f"次のユーザー処理まで {inter_user_delay} 秒待機します。")
+            time.sleep(inter_user_delay)
 
 
     logger.info(f"非アクティブユーザーのアンフォロー処理完了。合計 {unfollowed_count} 人をアンフォローしました。")
