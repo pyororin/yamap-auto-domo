@@ -502,17 +502,23 @@ def get_my_following_users_profiles(driver, my_user_id, max_users_to_fetch=None,
     ]
 
     current_url_before_get = driver.current_url
-    if not driver.current_url.startswith(following_list_url.split('#')[0]):
-        driver.get(following_list_url)
+    # Ensure we always explicitly navigate to the first page for a fresh start
+    logger.info(f"Navigating to initial following list URL: {following_list_url}")
+    driver.get(following_list_url) # Explicitly go to page 1
 
     try:
+        # Wait for the main list container to be present
         WebDriverWait(driver, 30).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, user_list_container_selector_selenium))
         )
-        logger.info(f"フォロー中ユーザーリストコンテナ ({user_list_container_selector_selenium}) の表示を確認しました。")
+        # Add a more specific wait for at least one list item to ensure content has started loading
+        WebDriverWait(driver, 15).until(
+            EC.visibility_of_element_located((By.CSS_SELECTOR, f"{user_list_container_selector_selenium} > {user_list_item_selector_bs}"))
+        )
+        logger.info(f"フォロー中ユーザーリストコンテナと最初のアイテムの表示を確認しました。 ({driver.current_url})")
     except TimeoutException:
-        logger.error(f"フォロー中ユーザーリストコンテナ ({user_list_container_selector_selenium}) の読み込みタイムアウト。")
-        save_screenshot(driver, "FollowingListContainerTimeout_BS", f"UID_{my_user_id}")
+        logger.error(f"フォロー中ユーザーリストコンテナまたは最初のアイテムの読み込みタイムアウト。URL: {driver.current_url}")
+        save_screenshot(driver, "FollowingListContainerOrItemTimeout_BS", f"UID_{my_user_id}")
         return []
 
     all_users_data = []
