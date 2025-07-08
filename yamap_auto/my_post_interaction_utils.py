@@ -327,5 +327,3 @@ def interact_with_domo_users_on_my_posts(driver, current_user_id, shared_cookies
     logger.info(f"  合計フォローバック数: {total_followed_back_count}")
     logger.info(f"  合計DOMO成功数（DOMOユーザーへ）: {total_domoed_to_users_count}")
     return total_followed_back_count, total_domoed_to_users_count
-
-```
