@@ -576,7 +576,7 @@ def get_my_following_users_profiles(driver, my_user_id, max_users_to_fetch=None,
             EC.presence_of_element_located((By.CSS_SELECTOR, user_list_container_selector_selenium))
         )
         # Add a more specific wait for at least one list item to ensure content has started loading
-        WebDriverWait(driver, 15).until(
+        WebDriverWait(driver, 30).until(
             EC.visibility_of_element_located((By.CSS_SELECTOR, f"{user_list_container_selector_selenium} > {user_list_item_selector_bs}"))
         )
         logger.info(f"フォロー中ユーザーリストコンテナと最初のアイテムの表示を確認しました。 ({driver.current_url})")
@@ -771,7 +771,7 @@ def get_my_followers_profiles(driver, my_user_id, max_users_to_fetch=None, max_p
 
         logger.info(f"フォロワーリストの {processed_pages + 1} ページ目を処理中...")
         try:
-            WebDriverWait(driver, 20).until(
+            WebDriverWait(driver, 30).until(
                 EC.presence_of_all_elements_located((By.CSS_SELECTOR, f"{user_list_container_selector} > {user_list_item_selector}"))
             )
             user_items = driver.find_elements(By.CSS_SELECTOR, f"{user_list_container_selector} > {user_list_item_selector}")
