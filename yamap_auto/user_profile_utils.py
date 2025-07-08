@@ -16,14 +16,67 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from datetime import datetime, timezone # datetime をインポート
 
 # driver_utilsから必要なものをインポート
-from .driver_utils import get_main_config, BASE_URL, wait_for_page_transition
+from .driver_utils import get_main_config, BASE_URL, wait_for_page_transition, save_screenshot
 
-# --- Loggerの設定 ---
-# このモジュール用のロガーを取得します。
-# 基本的な設定はメインスクリプトで行われることを想定しています。
+# New imports
+from bs4 import BeautifulSoup
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 logger = logging.getLogger(__name__)
 
-# --- ユーザープロフィール操作関連の補助関数 ---
+# Ensure datetime is imported from datetime (though not used in this specific function anymore)
+# from datetime import datetime # Not strictly needed here anymore
+
+# ... (logger definition) ...
+
+# Helper function to parse a single user item using BeautifulSoup
+def _parse_user_item_bs(item_html_content):
+    """
+    Parses a single user list item's HTML (obtained via BeautifulSoup)
+    to extract profile URL, name, and follow-back status.
+    """
+    item_soup = BeautifulSoup(item_html_content, 'html.parser')
+
+    profile_url = "N/A"
+    user_name = "N/A"
+    is_followed_back = False
+    # last_activity_date_on_list = None # REMOVED - No longer extracted here
+
+    # Selectors (relative to the item_soup)
+    user_profile_link_selector_bs = "a.css-e5vv35"
+    user_name_selector_within_link_bs = "h2.css-o7x4kv"
+    followed_back_status_selector_bs = "div.css-b8hsdn"
+    # REMOVED: last_activity_date_selector_bs as it's no longer used here
+
+    try:
+        profile_link_element = item_soup.select_one(user_profile_link_selector_bs)
+        if profile_link_element:
+            href = profile_link_element.get('href')
+            if href and "/users/" in href:
+                profile_url = href if href.startswith(BASE_URL) else BASE_URL + href
+
+            name_element = profile_link_element.select_one(user_name_selector_within_link_bs)
+            if name_element:
+                user_name = name_element.get_text(strip=True)
+
+        followed_back_element = item_soup.select_one(followed_back_status_selector_bs)
+        if followed_back_element and "フォローされています" in followed_back_element.get_text(strip=True):
+            is_followed_back = True
+
+        # REMOVED: Logic to extract last activity date from list item
+
+    except Exception as e_bs_parse:
+        logger.error(f"BS parsing error for item: {e_bs_parse}. HTML snippet: {item_html_content[:200]}", exc_info=True)
+
+    return {
+        'url': profile_url,
+        'name': user_name,
+        'is_followed_back': is_followed_back
+        # REMOVED: 'last_activity_date_on_list': last_activity_date_on_list
+    }
+
+# ... (rest of user_profile_utils.py, including get_my_following_users_profiles) ...
+
 def get_latest_activity_url(driver, user_profile_url):
     """
     指定されたユーザープロフィールURLから最新の活動日記のURLを取得する。
@@ -433,115 +486,178 @@ def get_last_activity_date(driver, user_profile_url):
 
 def get_my_following_users_profiles(driver, my_user_id, max_users_to_fetch=None, max_pages_to_check=None):
     """
-    自分の「フォロー中」リストページから、フォローしているユーザーのプロフィールURLのリストを取得します。
+    自分の「フォロー中」リストページから、フォローしているユーザーのプロフィール情報
+    (URL、名前、自分をフォローバックしているか) のリストを取得します。
     ページネーションに対応し、指定された最大ユーザー数または最大ページ数まで取得します。
-
-    Args:
-        driver (webdriver.Chrome): Selenium WebDriverインスタンス。
-        my_user_id (str): 自分のYAMAPユーザーID。
-        max_users_to_fetch (int, optional): 取得する最大のユーザープロファイル数。Noneの場合は制限なし。
-        max_pages_to_check (int, optional): 確認する最大のページ数。Noneの場合は全ページ。
-
-    Returns:
-        list[str]: フォロー中ユーザーのプロフィールURLのリスト。
+    各ページ内のユーザーアイテム解析はBeautifulSoupとThreadPoolExecutorを使用します。
     """
     if not my_user_id:
         logger.error("自分のユーザーIDが指定されていないため、フォロー中ユーザーリストを取得できません。")
         return []
 
-    following_list_url = f"{BASE_URL}/users/{my_user_id}?tab=follows#tabs" # URL形式を修正
-    logger.info(f"自分のフォロー中ユーザーリスト ({following_list_url}) からプロフィールURLを取得します。")
-    logger.info(f"取得上限: ユーザー数={max_users_to_fetch or '無制限'}, ページ数={max_pages_to_check or '無制限'}")
+    following_list_url = f"{BASE_URL}/users/{my_user_id}?tab=follows#tabs"
+    logger.info(f"自分のフォロー中ユーザーリスト ({following_list_url}) からプロフィール情報を取得します（BS+ThreadPool最適化）。")
+    main_conf = get_main_config() # For thread pool settings
+    parallel_settings = main_conf.get("parallel_processing_settings", {})
+    # Use a specific worker count for this BS parsing, or fallback to general workers
+    bs_workers = parallel_settings.get("bs_parsing_workers", parallel_settings.get("max_workers_generic", 4))
 
-    # ユーザーリストアイテムとユーザーリンクのセレクタ (YAMAPのUIに依存)
-    user_list_item_selector = "main.css-1ed9ptx ul.UserFollowList__List > li.UserFollowList__Item" # より具体的に修正
-    user_profile_link_selector = "div.UserItem a[href^='/users/']" # 変更なし（li要素の中から探すため）
-    # 「次へ」ボタンのセレクタ (YAMAPのUIに依存)
-    next_page_button_selector = "button.btn-next" # 変更なし
+
+    user_list_container_selector_selenium = "main.css-1ed9ptx ul.css-18aka15"
+    user_list_item_selector_bs = "li.css-1qsnhpb" # For BeautifulSoup
+
+    next_page_button_selector_candidates = [
+        "nav.css-t3h2hz button:not([disabled])[aria-label='次のページに移動する']",
+        "button.btn-next"
+    ]
 
     current_url_before_get = driver.current_url
-    driver.get(following_list_url)
-    # ページ遷移とリスト表示の待機 (main要素内の ul.UserFollowList__List の出現を期待)
-    wait_for_page_transition(driver, timeout=30, expected_element_selector=(By.CSS_SELECTOR, "main.css-1ed9ptx ul.UserFollowList__List"), previous_url=current_url_before_get if current_url_before_get != following_list_url else None)
+    # Ensure we always explicitly navigate to the first page for a fresh start
+    logger.info(f"Navigating to initial following list URL: {following_list_url}")
+    driver.get(following_list_url) # Explicitly go to page 1
 
+    try:
+        # Wait for the main list container to be present
+        WebDriverWait(driver, 30).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, user_list_container_selector_selenium))
+        )
+        # Add a more specific wait for at least one list item to ensure content has started loading
+        WebDriverWait(driver, 15).until(
+            EC.visibility_of_element_located((By.CSS_SELECTOR, f"{user_list_container_selector_selenium} > {user_list_item_selector_bs}"))
+        )
+        logger.info(f"フォロー中ユーザーリストコンテナと最初のアイテムの表示を確認しました。 ({driver.current_url})")
+    except TimeoutException:
+        logger.error(f"フォロー中ユーザーリストコンテナまたは最初のアイテムの読み込みタイムアウト。URL: {driver.current_url}")
+        save_screenshot(driver, "FollowingListContainerOrItemTimeout_BS", f"UID_{my_user_id}")
+        return []
 
-    user_profile_urls = []
+    all_users_data = []
     processed_pages = 0
+    # Max workers for parsing items on a single page
+    # Should be modest as it's CPU-bound on potentially shared HTML string
+    max_item_parsers = bs_workers
 
     while True:
         if max_pages_to_check is not None and processed_pages >= max_pages_to_check:
             logger.info(f"最大確認ページ数 ({max_pages_to_check}) に達したため、処理を終了します。")
             break
-        if max_users_to_fetch is not None and len(user_profile_urls) >= max_users_to_fetch:
+        if max_users_to_fetch is not None and len(all_users_data) >= max_users_to_fetch:
             logger.info(f"最大取得ユーザー数 ({max_users_to_fetch}) に達したため、処理を終了します。")
             break
 
+        page_start_time = time.time()
         logger.info(f"フォロー中リストの {processed_pages + 1} ページ目を処理中...")
+
         try:
-            WebDriverWait(driver, 30).until( # タイムアウト値を10から30に変更
-                EC.presence_of_all_elements_located((By.CSS_SELECTOR, user_list_item_selector))
+            # Get the list container element via Selenium
+            list_container_element = WebDriverWait(driver, 20).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, user_list_container_selector_selenium))
             )
-            user_items = driver.find_elements(By.CSS_SELECTOR, user_list_item_selector)
-            if not user_items:
-                logger.info(f"{processed_pages + 1} ページ目にユーザーが見つかりませんでした。")
-                break # ユーザーがいないなら終了
+            # Get its HTML content
+            list_container_html = list_container_element.get_attribute('outerHTML')
+            if not list_container_html:
+                logger.warning(f"{processed_pages + 1} ページ目のリストコンテナHTMLが取得できませんでした。スキップ。")
+                break
 
-            for item in user_items:
-                if max_users_to_fetch is not None and len(user_profile_urls) >= max_users_to_fetch:
-                    break
-                try:
-                    profile_link_element = item.find_element(By.CSS_SELECTOR, user_profile_link_selector)
-                    href = profile_link_element.get_attribute('href')
-                    if href and "/users/" in href:
-                        full_url = href if href.startswith(BASE_URL) else BASE_URL + href
-                        if full_url not in user_profile_urls: # 重複を避ける
-                            user_profile_urls.append(full_url)
-                            logger.debug(f"  追加: {full_url.split('/')[-1]}")
-                except NoSuchElementException:
-                    logger.warning("ユーザーリストアイテム内でプロフィールリンクが見つかりませんでした。スキップします。")
-                except Exception as e_item:
-                    logger.error(f"ユーザーアイテム処理中にエラー: {e_item}", exc_info=True)
+            # Parse with BeautifulSoup
+            page_soup = BeautifulSoup(list_container_html, 'html.parser')
+            # Find all user items (li.css-1qsnhpb) within this container
+            user_item_elements_bs = page_soup.select(f"{user_list_item_selector_bs}") # Relative to page_soup
 
-            processed_pages += 1
-            logger.info(f"{processed_pages} ページ目まで処理完了。現在 {len(user_profile_urls)} 件のURLを取得。")
-
-            # 次のページへ
-            try:
-                next_button = driver.find_element(By.CSS_SELECTOR, next_page_button_selector)
-                if next_button.is_displayed() and next_button.is_enabled():
-                    logger.info("「次へ」ボタンをクリックします。")
-                    prev_url = driver.current_url
-                    driver.execute_script("arguments[0].scrollIntoView(true);", next_button)
-                    time.sleep(0.5) # スクロール後の安定待ち
-                    next_button.click()
-                    # ページ遷移待機 (URL変更とリストアイテムの出現を期待)
-                    wait_for_page_transition(driver, timeout=10, expected_element_selector=(By.CSS_SELECTOR, user_list_item_selector), previous_url=prev_url)
-                    time.sleep(1) # 追加の安定待ち
+            if not user_item_elements_bs:
+                if processed_pages == 0:
+                    logger.info(f"{processed_pages + 1} ページ目にユーザーが見つかりませんでした（BS解析）。リストが空の可能性があります。")
                 else:
-                    logger.info("「次へ」ボタンが見つからないか、無効です。最後のページと判断します。")
-                    break
-            except NoSuchElementException:
-                logger.info("「次へ」ボタンが見つかりませんでした。最後のページと判断します。")
-                break
-            except Exception as e_pagination:
-                logger.error(f"ページネーション処理中にエラー: {e_pagination}", exc_info=True)
+                    logger.info(f"{processed_pages + 1} ページ目にユーザーが見つかりませんでした（BS解析）。これが最後のページかもしれません。")
                 break
 
+            logger.debug(f"ページ {processed_pages + 1}: BeautifulSoupで {len(user_item_elements_bs)} 件のユーザーアイテムを検出。並列解析開始 (max_workers={max_item_parsers})...")
+
+            page_users_data = []
+            item_html_contents = [str(item_bs) for item_bs in user_item_elements_bs]
+
+            with ThreadPoolExecutor(max_workers=max_item_parsers) as executor:
+                future_to_item = {executor.submit(_parse_user_item_bs, item_html): item_html for item_html in item_html_contents}
+                for future in as_completed(future_to_item):
+                    try:
+                        user_data = future.result()
+                        if user_data and user_data['url'] != "N/A":
+                            # Optional: Check for duplicates before adding if fetching across all pages first
+                            # For now, duplicates are handled by the caller or by checking all_users_data if needed
+                            page_users_data.append(user_data)
+                    except Exception as exc:
+                        logger.error(f'アイテム解析中に例外が発生: {exc}', exc_info=True)
+
+            valid_page_users_data = [ud for ud in page_users_data if ud['url'] != "N/A"]
+            for ud in valid_page_users_data:
+                 if max_users_to_fetch is not None and len(all_users_data) >= max_users_to_fetch:
+                     break
+                 if not any(existing_ud['url'] == ud['url'] for existing_ud in all_users_data): # Avoid duplicates across pages
+                    all_users_data.append(ud)
+                    logger.debug(f"  追加 (BS): {ud['name']} ({ud['url'].split('/')[-1]}), フォローバック: {ud['is_followed_back']}")
+
+            page_end_time = time.time()
+            logger.info(f"ページ {processed_pages + 1} の {len(user_item_elements_bs)} アイテム処理完了 ({len(valid_page_users_data)}件有効)。所要時間: {page_end_time - page_start_time:.2f}秒。")
+            processed_pages += 1
+            logger.info(f"現在 {len(all_users_data)} 件のユーザー情報を取得。")
+
+            # Pagination logic (Selenium)
+            next_button = None
+            for sel_idx, next_sel in enumerate(next_page_button_selector_candidates):
+                try:
+                    candidate_button = driver.find_element(By.CSS_SELECTOR, next_sel)
+                    if candidate_button.is_displayed() and candidate_button.is_enabled():
+                        next_button = candidate_button
+                        logger.debug(f"「次へ」ボタンをセレクタ '{next_sel}' で発見。")
+                        break
+                except NoSuchElementException:
+                    logger.debug(f"「次へ」ボタン候補 '{next_sel}' は見つかりませんでした。({sel_idx+1}/{len(next_page_button_selector_candidates)})")
+
+            if next_button:
+                logger.info("「次へ」ボタンをクリックします。")
+                prev_url_for_transition_check = driver.current_url
+                driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", next_button)
+                time.sleep(0.5)
+                next_button.click()
+                try:
+                    WebDriverWait(driver, 15).until(
+                        lambda d: d.current_url != prev_url_for_transition_check or \
+                                  EC.presence_of_element_located((By.CSS_SELECTOR, user_list_container_selector_selenium)) # Wait for new container
+                    )
+                    # Ensure the new container is actually different or updated if URL doesn't change
+                    # For simplicity, we wait for the container to be present again.
+                    WebDriverWait(driver, 10).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, user_list_container_selector_selenium))
+                    )
+                    logger.info(f"次のページ ({driver.current_url}) へ遷移成功。")
+                    time.sleep(1.5)
+                except TimeoutException:
+                    logger.info("「次へ」ボタンクリック後、ページ遷移/内容更新の確認タイムアウト。最後のページかもしれません。")
+                    break
+            else:
+                logger.info("「次へ」ボタンが見つからないか、無効です。最後のページと判断します。")
+                break
         except TimeoutException:
-            logger.info(f"{processed_pages + 1} ページ目のユーザーリスト読み込みタイムアウト。処理を終了します。")
+            logger.warning(f"{processed_pages + 1} ページ目のリストコンテナ要素の取得またはHTML取得でタイムアウト。処理を終了します。")
             break
         except Exception as e_page:
             logger.error(f"ページ処理中に予期せぬエラー: {e_page}", exc_info=True)
+            save_screenshot(driver, "FollowingListPageError_BS", f"UID_{my_user_id}_Page{processed_pages+1}")
             break
 
-    logger.info(f"フォロー中ユーザーのプロフィールURLを {len(user_profile_urls)} 件取得しました。")
-    return user_profile_urls
+    logger.info(f"フォロー中ユーザーの情報を合計 {len(all_users_data)} 件取得しました（BS+ThreadPool最適化）。")
+    return all_users_data
 
+# ... (rest of the file, e.g., get_my_followers_profiles, is_user_following_me, etc.) ...
+# If get_my_followers_profiles needs similar optimization, it would follow the same pattern.
 
 def get_my_followers_profiles(driver, my_user_id, max_users_to_fetch=None, max_pages_to_check=None):
     """
-    自分の「フォロワー」リストページから、自分をフォローしているユーザーのプロフィールURLのリストを取得します。
-    get_my_following_users_profiles とほぼ同じロジックですが、対象URLが異なります。
+    自分の「フォロワー」リストページから、自分をフォローしているユーザーのプロフィール情報
+    (URL、名前、自分がそのユーザーをフォローバックしているか) のリストを取得します。
+    ※注意: 現状この関数は「自分が相手をフォローバックしているか」のステータスは取得しません。
+             主に is_user_following_me のヘルパーとして、フォロワーのURLと名前を取得するために使われます。
+             「自分が相手をフォローバックしているか」は、相手のカードにある「フォローする/フォロー中」ボタンで判断します。
 
     Args:
         driver (webdriver.Chrome): Selenium WebDriverインスタンス。
@@ -550,95 +666,138 @@ def get_my_followers_profiles(driver, my_user_id, max_users_to_fetch=None, max_p
         max_pages_to_check (int, optional): 確認する最大のページ数。Noneの場合は全ページ。
 
     Returns:
-        list[str]: フォロワーのプロフィールURLのリスト。
+        list[dict]: フォロワーの情報のリスト。
+                      各辞書は {'url': str, 'name': str} を含む。(is_followed_by_me はここでは取得しない)
     """
     if not my_user_id:
         logger.error("自分のユーザーIDが指定されていないため、フォロワーリストを取得できません。")
         return []
 
-    followers_list_url = f"{BASE_URL}/users/{my_user_id}?tab=followers#tabs" # URL形式を修正
-    logger.info(f"自分のフォロワーリスト ({followers_list_url}) からプロフィールURLを取得します。")
+    followers_list_url = f"{BASE_URL}/users/{my_user_id}?tab=followers#tabs"
+    logger.info(f"自分のフォロワーリスト ({followers_list_url}) からプロフィール情報を取得します。")
     logger.info(f"取得上限: ユーザー数={max_users_to_fetch or '無制限'}, ページ数={max_pages_to_check or '無制限'}")
 
-    # ユーザーリストアイテムとユーザーリンクのセレクタ (YAMAPのUIに依存)
-    user_list_item_selector = "main.css-1ed9ptx ul.UserFollowList__List > li.UserFollowList__Item" # より具体的に修正
-    user_profile_link_selector = "div.UserItem a[href^='/users/']" # 変更なし
-    next_page_button_selector = "button.btn-next" # 変更なし
+    # --- Selectors (same as get_my_following_users_profiles as structure is similar) ---
+    user_list_container_selector = "main.css-1ed9ptx ul.css-18aka15"
+    user_list_item_selector = "li.css-1qsnhpb"
+    user_profile_link_selector = "a.css-e5vv35"
+    user_name_selector_within_link = "h2.css-o7x4kv"
+    # "フォローされています" (div.css-b8hsdn) はこのページでは「相手が自分をフォローしている」ことを示すので、
+    # 「自分が相手をフォローしているか」とは直接関係ない。相手のカードのボタンを見る必要がある。
+    next_page_button_selector_candidates = [
+        "nav.css-t3h2hz button:not([disabled])[aria-label='次のページに移動する']",
+        "button.btn-next"
+    ]
 
-    # 以降のロジックは get_my_following_users_profiles とほぼ同じ
     current_url_before_get = driver.current_url
-    driver.get(followers_list_url)
-    # ページ遷移とリスト表示の待機 (main要素内の ul.UserFollowList__List の出現を期待)
-    wait_for_page_transition(driver, timeout=30, expected_element_selector=(By.CSS_SELECTOR, "main.css-1ed9ptx ul.UserFollowList__List"), previous_url=current_url_before_get if current_url_before_get != followers_list_url else None)
+    if not driver.current_url.startswith(followers_list_url.split('#')[0]):
+        driver.get(followers_list_url)
 
-    user_profile_urls = []
+    try:
+        WebDriverWait(driver, 30).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, user_list_container_selector))
+        )
+        logger.info(f"フォロワーリストコンテナ ({user_list_container_selector}) の表示を確認しました。")
+    except TimeoutException:
+        logger.error(f"フォロワーリストコンテナ ({user_list_container_selector}) の読み込みタイムアウト。")
+        from .driver_utils import save_screenshot # 遅延インポート
+        save_screenshot(driver, "FollowerListContainerTimeout", f"UID_{my_user_id}")
+        return []
+
+    users_data = [] # ここでは {'url': str, 'name': str} のみ格納
     processed_pages = 0
 
-    while True:
+    while True: # Pagination loop
         if max_pages_to_check is not None and processed_pages >= max_pages_to_check:
-            logger.info(f"最大確認ページ数 ({max_pages_to_check}) に達したため、処理を終了します。")
+            logger.info(f"最大確認ページ数 ({max_pages_to_check}) に達しました。")
             break
-        if max_users_to_fetch is not None and len(user_profile_urls) >= max_users_to_fetch:
-            logger.info(f"最大取得ユーザー数 ({max_users_to_fetch}) に達したため、処理を終了します。")
+        if max_users_to_fetch is not None and len(users_data) >= max_users_to_fetch:
+            logger.info(f"最大取得ユーザー数 ({max_users_to_fetch}) に達しました。")
             break
 
         logger.info(f"フォロワーリストの {processed_pages + 1} ページ目を処理中...")
         try:
-            WebDriverWait(driver, 30).until( # タイムアウト値を10から30に変更
-                EC.presence_of_all_elements_located((By.CSS_SELECTOR, user_list_item_selector))
+            WebDriverWait(driver, 20).until(
+                EC.presence_of_all_elements_located((By.CSS_SELECTOR, f"{user_list_container_selector} > {user_list_item_selector}"))
             )
-            user_items = driver.find_elements(By.CSS_SELECTOR, user_list_item_selector)
-            if not user_items:
-                logger.info(f"{processed_pages + 1} ページ目にユーザーが見つかりませんでした。")
+            user_items = driver.find_elements(By.CSS_SELECTOR, f"{user_list_container_selector} > {user_list_item_selector}")
+
+            if not user_items and processed_pages == 0:
+                logger.info(f"{processed_pages + 1} ページ目にユーザーが見つかりませんでした。リストが空の可能性があります。")
+                break
+            elif not user_items:
+                logger.info(f"{processed_pages + 1} ページ目にユーザーが見つかりませんでした。これが最後のページかもしれません。")
                 break
 
-            for item in user_items:
-                if max_users_to_fetch is not None and len(user_profile_urls) >= max_users_to_fetch:
+            for item_idx, item in enumerate(user_items):
+                if max_users_to_fetch is not None and len(users_data) >= max_users_to_fetch:
                     break
+
+                profile_url = "N/A"
+                user_name = "N/A"
                 try:
                     profile_link_element = item.find_element(By.CSS_SELECTOR, user_profile_link_selector)
                     href = profile_link_element.get_attribute('href')
                     if href and "/users/" in href:
-                        full_url = href if href.startswith(BASE_URL) else BASE_URL + href
-                        if full_url not in user_profile_urls:
-                            user_profile_urls.append(full_url)
-                            logger.debug(f"  追加: {full_url.split('/')[-1]}")
-                except NoSuchElementException:
-                    logger.warning("ユーザーリストアイテム内でプロフィールリンクが見つかりませんでした。スキップします。")
+                        profile_url = href if href.startswith(BASE_URL) else BASE_URL + href
+
+                    name_element = profile_link_element.find_element(By.CSS_SELECTOR, user_name_selector_within_link)
+                    user_name = name_element.text.strip()
+
+                    if profile_url != "N/A" and not any(u['url'] == profile_url for u in users_data):
+                        users_data.append({'url': profile_url, 'name': user_name})
+                        logger.debug(f"  フォロワー追加: {user_name} ({profile_url.split('/')[-1]})")
+                    elif profile_url == "N/A":
+                         logger.warning(f"  フォロワーアイテム {item_idx}: プロフィールURLが取得できませんでした。スキップ。")
+
+                except NoSuchElementException as e_nse_item:
+                    logger.warning(f"フォロワーリストアイテム {item_idx} 内で必須要素が見つかりません: {e_nse_item}。スキップ。")
                 except Exception as e_item:
-                    logger.error(f"ユーザーアイテム処理中にエラー: {e_item}", exc_info=True)
+                    logger.error(f"フォロワーアイテム {item_idx} 処理中にエラー: {e_item}", exc_info=True)
 
             processed_pages += 1
-            logger.info(f"{processed_pages} ページ目まで処理完了。現在 {len(user_profile_urls)} 件のURLを取得。")
+            logger.info(f"{processed_pages} ページ目まで処理完了。現在 {len(users_data)} 件のフォロワー情報を取得。")
 
-            try:
-                next_button = driver.find_element(By.CSS_SELECTOR, next_page_button_selector)
-                if next_button.is_displayed() and next_button.is_enabled():
-                    logger.info("「次へ」ボタンをクリックします。")
-                    prev_url = driver.current_url
-                    driver.execute_script("arguments[0].scrollIntoView(true);", next_button)
-                    time.sleep(0.5)
-                    next_button.click()
-                    wait_for_page_transition(driver, timeout=10, expected_element_selector=(By.CSS_SELECTOR, user_list_item_selector), previous_url=prev_url)
-                    time.sleep(1)
-                else:
-                    logger.info("「次へ」ボタンが見つからないか、無効です。最後のページと判断します。")
+            next_button = None
+            for sel_idx, next_sel in enumerate(next_page_button_selector_candidates):
+                try:
+                    candidate_button = driver.find_element(By.CSS_SELECTOR, next_sel)
+                    if candidate_button.is_displayed() and candidate_button.is_enabled():
+                        next_button = candidate_button
+                        logger.debug(f"「次へ」ボタンをセレクタ '{next_sel}' で発見。")
+                        break
+                except NoSuchElementException:
+                    logger.debug(f"「次へ」ボタン候補 '{next_sel}' は見つかりませんでした。({sel_idx+1}/{len(next_page_button_selector_candidates)})")
+
+            if next_button:
+                logger.info("「次へ」ボタンをクリックします。")
+                prev_url_for_transition_check = driver.current_url
+                driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", next_button)
+                time.sleep(0.5)
+                next_button.click()
+                try:
+                    WebDriverWait(driver, 15).until(
+                        lambda d: d.current_url != prev_url_for_transition_check or \
+                                  EC.staleness_of(user_items[0] if user_items else None) or \
+                                  EC.presence_of_element_located((By.CSS_SELECTOR, f"{user_list_container_selector} > {user_list_item_selector}"))
+                    )
+                    logger.info(f"次のページ ({driver.current_url}) へ遷移成功。")
+                    time.sleep(1.5)
+                except TimeoutException:
+                    logger.info("「次へ」ボタンクリック後、ページ遷移/内容更新の確認タイムアウト。最後のページかもしれません。")
                     break
-            except NoSuchElementException:
-                logger.info("「次へ」ボタンが見つかりませんでした。最後のページと判断します。")
-                break
-            except Exception as e_pagination:
-                logger.error(f"ページネーション処理中にエラー: {e_pagination}", exc_info=True)
+            else:
+                logger.info("「次へ」ボタンが見つからないか、無効です。最後のページと判断します。")
                 break
         except TimeoutException:
-            logger.info(f"{processed_pages + 1} ページ目のユーザーリスト読み込みタイムアウト。処理を終了します。")
+            logger.info(f"{processed_pages + 1} ページ目のフォロワーリスト読み込みタイムアウト。")
             break
         except Exception as e_page:
-            logger.error(f"ページ処理中に予期せぬエラー: {e_page}", exc_info=True)
+            logger.error(f"フォロワーページ処理中に予期せぬエラー: {e_page}", exc_info=True)
             break
 
-    logger.info(f"フォロワーのプロフィールURLを {len(user_profile_urls)} 件取得しました。")
-    return user_profile_urls
+    logger.info(f"フォロワーの情報を {len(users_data)} 件取得しました。")
+    return users_data
 
 
 def is_user_following_me(driver, target_user_profile_url, my_user_id, my_followers_list=None):

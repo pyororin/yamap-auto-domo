@@ -323,113 +323,175 @@ def execute_main_tasks(driver, user_id, shared_cookies):
     return summary_counts
 
 
+# --- Worker Task for fetching last activity date ---
+def _fetch_user_last_activity_task(user_profile_url, shared_cookies_for_task, current_user_id_for_login_check):
+    """
+    Worker task to fetch the last activity date for a single user.
+    Creates its own WebDriver instance.
+    """
+    task_driver = None
+    user_id_log = user_profile_url.split('/')[-1].split('?')[0]
+    log_prefix_task = f"[ActivityDateTask][UID:{user_id_log}] "
+    logger.info(f"{log_prefix_task}Fetching last activity date for {user_profile_url}")
+
+    try:
+        # Create a new driver instance for this task to ensure thread safety for browser operations
+        # It's crucial that create_driver_with_cookies correctly initializes and applies cookies
+        # for a valid session.
+        # The current_user_id_for_login_check helps verify the login based on expected mypage elements.
+        # Removed for_task=True as it's not a valid argument for create_driver_with_cookies
+        task_driver = create_driver_with_cookies(shared_cookies_for_task, current_user_id_for_login_check)
+        if not task_driver:
+            logger.error(f"{log_prefix_task}Failed to create WebDriver or verify login for task. Cannot fetch activity date.")
+            return {'url': user_profile_url, 'last_activity_date': None, 'error': 'WebDriver/Login failure in task'}
+
+        # Now use this task_driver to call get_last_activity_date
+        # get_last_activity_date itself handles navigation to user_profile_url
+        last_activity = get_last_activity_date(task_driver, user_profile_url)
+
+        if last_activity:
+            logger.info(f"{log_prefix_task}Successfully fetched last activity date: {last_activity}")
+            return {'url': user_profile_url, 'last_activity_date': last_activity, 'error': None}
+        else:
+            logger.warning(f"{log_prefix_task}Could not fetch last activity date.")
+            return {'url': user_profile_url, 'last_activity_date': None, 'error': 'Date not found'}
+
+    except Exception as e_task:
+        logger.error(f"{log_prefix_task}Exception in fetching activity date: {e_task}", exc_info=True)
+        return {'url': user_profile_url, 'last_activity_date': None, 'error': str(e_task)}
+    finally:
+        if task_driver:
+            try:
+                task_driver.quit()
+                logger.debug(f"{log_prefix_task}Task WebDriver quit successfully.")
+            except Exception as e_quit:
+                logger.error(f"{log_prefix_task}Error quitting task WebDriver: {e_quit}", exc_info=True)
+
+
 def unfollow_inactive_not_following_back_users(driver, my_user_id, shared_cookies=None):
     """
     フォローしているユーザーの中で、指定された条件に基づいてユーザーをアンフォローします。
     条件：
-    1. (オプション) 自分をフォローバックしていない。
-    2. 最終活動記録が指定日数以上前である。
-
-    Args:
-        driver (webdriver.Chrome): Selenium WebDriverインスタンス。
-        my_user_id (str): 自分のYAMAPユーザーID。
-        shared_cookies (list, optional): 共有Cookie。現状この関数では直接利用しないが将来的な拡張のため。
-
-    Returns:
-        int: アンフォローしたユーザーの数。
+    1. 自分をフォローバックしていない。
+    2. 最終活動記録が指定日数以上前である (個別プロフィールページから並列取得)。
     """
-    logger.info("非アクティブかつ（オプションで）フォローバックしていないユーザーのアンフォロー処理を開始します。")
-    settings = UNFOLLOW_INACTIVE_SETTINGS # configから読み込んだ設定
+    logger.info("非アクティブかつフォローバックしていないユーザーのアンフォロー処理を開始します (個別ページ確認・並列処理)。")
+    settings = UNFOLLOW_INACTIVE_SETTINGS
     if not settings.get("enable_unfollow_inactive", False):
         logger.info("設定で無効化されているため、アンフォロー処理をスキップします。")
         return 0
 
     inactive_threshold_days = settings.get("inactive_threshold_days", 90)
     max_to_unfollow = settings.get("max_users_to_unfollow_per_run", 5)
-    check_following_back = settings.get("check_if_following_back", True)
-    # フォロー中リスト取得時のページ数上限（設定にあれば使う、なければ適当なデフォルト）
-    max_pages_to_check_following = settings.get("max_pages_for_my_following_list", 10) # 例: 10ページ
-    # フォロワーリスト取得時のページ数上限（is_user_following_me内部で使われる）
-    max_pages_for_my_followers_list = settings.get("max_pages_for_my_followers_list_check", 5) # is_user_following_meが内部で使う用
+    max_pages_to_check_following = settings.get("max_pages_for_my_following_list", 10)
+
+    # Parallel processing settings for fetching activity dates
+    parallel_settings = main_config.get("parallel_processing_settings", {})
+    activity_date_workers = parallel_settings.get("activity_date_fetch_workers",
+                                                 parallel_settings.get("max_workers_generic", 3)) # Default to 3 if specific not set
 
     unfollowed_count = 0
-    processed_users_count = 0
 
-    # 1. 自分がフォローしているユーザーのリストを取得
-    logger.info(f"自分がフォローしているユーザーのリストを取得します (最大 {max_pages_to_check_following} ページ)。")
-    # TODO: get_my_following_users_profiles に max_users_to_fetch も渡せるようにするべきか検討
-    my_following_profiles = get_my_following_users_profiles(driver, my_user_id, max_pages_to_check=max_pages_to_check_following)
-    if not my_following_profiles:
+    logger.info(f"自分がフォローしているユーザーのリストとフォローバック状況を取得します (最大 {max_pages_to_check_following} ページ)。")
+    # get_my_following_users_profiles returns: [{'url': str, 'name': str, 'is_followed_back': bool}]
+    # 'last_activity_date_on_list' was removed from _parse_user_item_bs as per new strategy
+    my_following_user_details = get_my_following_users_profiles(driver, my_user_id, max_pages_to_check=max_pages_to_check_following)
+
+    if not my_following_user_details:
         logger.info("フォロー中のユーザーが見つからないか、リストの取得に失敗しました。")
         return 0
+    logger.info(f"{len(my_following_user_details)} 件のフォロー中ユーザー情報を取得しました。")
 
-    logger.info(f"{len(my_following_profiles)} 件のフォロー中ユーザーを取得しました。")
+    non_followers_back = []
+    for user_detail in my_following_user_details:
+        if not user_detail['is_followed_back']:
+            non_followers_back.append(user_detail) # Store the whole user_detail dict
+        else:
+            user_id_log_filter = user_detail['url'].split('/')[-1].split('?')[0]
+            logger.info(f"ユーザー {user_detail['name']} ({user_id_log_filter}) はフォローバックしています。アンフォロー対象外 (初期フィルタ)。")
 
-    # (オプション) 相互フォロー確認のために、事前に自分のフォロワーリストを取得（効率化のため）
-    my_followers_list_for_check = None
-    if check_following_back:
-        logger.info(f"相互フォロー確認のため、自分のフォロワーリストを取得します (最大 {max_pages_for_my_followers_list} ページ)。")
-        my_followers_list_for_check = get_my_followers_profiles(driver, my_user_id, max_pages_to_check=max_pages_for_my_followers_list)
-        if my_followers_list_for_check is None: # 取得失敗の場合
-             logger.warning("自分のフォロワーリストの取得に失敗しました。相互フォロー確認が不正確になる可能性があります。")
-             my_followers_list_for_check = [] # 空リストとして扱う
+    if not non_followers_back:
+        logger.info("フォローバックしていないユーザーが見つかりませんでした。処理を終了します。")
+        return 0
 
+    logger.info(f"{len(non_followers_back)} 件のフォローバックしていないユーザーについて、最終活動日を並列で確認します (最大ワーカー数: {activity_date_workers})。")
 
-    for user_profile_url in my_following_profiles:
+    users_with_activity_dates = {} # Store {url: date_obj or None}
+    futures = []
+    # Ensure shared_cookies are available for tasks, even if main driver is used for this initial part
+    if not shared_cookies:
+        logger.warning("共有Cookieが利用できません。並列タスクでのログイン状態が不安定になる可能性があります。")
+        # Optionally, try to get them now if driver is the main one and logged in
+        # shared_cookies = get_shared_cookies(driver) # This might be risky if driver state changed
+
+    with ThreadPoolExecutor(max_workers=activity_date_workers) as executor:
+        for user_data_for_task in non_followers_back:
+            # Pass my_user_id for the login check inside create_driver_with_cookies
+            future = executor.submit(_fetch_user_last_activity_task, user_data_for_task['url'], shared_cookies, my_user_id)
+            futures.append(future)
+
+        for future in as_completed(futures):
+            try:
+                result = future.result()
+                if result and result.get('url'):
+                    users_with_activity_dates[result['url']] = result.get('last_activity_date')
+                    if result.get('error'):
+                         logger.warning(f"ユーザー ({result['url'].split('/')[-1]}) の最終活動日取得タスクでエラー: {result['error']}")
+                else:
+                    logger.error(f"並列タスクから無効な結果が返されました: {result}")
+            except Exception as e_future:
+                logger.error(f"最終活動日取得の並列タスク実行中に例外: {e_future}", exc_info=True)
+
+    logger.info(f"{len(users_with_activity_dates)}/{len(non_followers_back)} 件のフォローバックしていないユーザーの最終活動日情報を収集完了。")
+
+    processed_for_unfollow_count = 0
+    # Iterate through the original non_followers_back list to maintain user_data structure (name, etc.)
+    for user_data_to_check in non_followers_back:
         if unfollowed_count >= max_to_unfollow:
             logger.info(f"1回の実行でのアンフォロー上限 ({max_to_unfollow}人) に達しました。")
             break
 
-        processed_users_count += 1
+        user_profile_url = user_data_to_check['url']
+        user_name_for_log = user_data_to_check['name']
         user_id_log = user_profile_url.split('/')[-1].split('?')[0]
-        logger.info(f"--- ユーザー処理開始 ({processed_users_count}/{len(my_following_profiles)}): {user_id_log} ---")
 
-        # 2. (オプション) 対象ユーザーが自分をフォローしているか確認
-        if check_following_back:
-            is_mutual = is_user_following_me(driver, user_profile_url, my_user_id, my_followers_list=my_followers_list_for_check)
-            if is_mutual is None: # 確認失敗
-                logger.warning(f"ユーザー ({user_id_log}) の相互フォロー状況の確認に失敗しました。スキップします。")
-                time.sleep(settings.get("delay_before_unfollow_action_sec", 2.0)) # エラーでも遅延
-                continue
-            if is_mutual:
-                logger.info(f"ユーザー ({user_id_log}) は相互フォローのため、アンフォロー対象外です。")
-                time.sleep(1.0) # 短い遅延
-                continue
-            logger.info(f"ユーザー ({user_id_log}) はフォローバックしていません。")
-        else:
-            logger.info("相互フォローチェックは設定で無効です。")
+        last_activity_date = users_with_activity_dates.get(user_profile_url) # Get fetched date
 
-        # 3. 対象ユーザーの最終活動日を取得
-        last_activity_date = get_last_activity_date(driver, user_profile_url)
+        processed_for_unfollow_count +=1
+        logger.info(f"--- アンフォロー判定 ({processed_for_unfollow_count}/{len(non_followers_back)}): {user_name_for_log} ({user_id_log}) ---")
+
         if last_activity_date is None:
-            logger.warning(f"ユーザー ({user_id_log}) の最終活動日の取得に失敗しました。スキップします。")
-            time.sleep(settings.get("delay_before_unfollow_action_sec", 2.0)) # エラーでも遅延
+            logger.warning(f"    ユーザー {user_name_for_log} ({user_id_log}) の最終活動日を取得できませんでした (並列処理後)。スキップ。")
+            # Add delay if defined in settings for skipped users
+            time.sleep(settings.get("delay_between_unfollow_decisions_sec", 1.0))
             continue
 
-        # 4. 最終活動日が閾値を超えているか確認
         days_since_last_activity = (datetime.date.today() - last_activity_date).days
-        logger.info(f"ユーザー ({user_id_log}) の最終活動日: {last_activity_date} ({days_since_last_activity}日前)")
+        logger.info(f"    最終活動日: {last_activity_date} ({days_since_last_activity}日前)。 (閾値: {inactive_threshold_days}日)")
 
         if days_since_last_activity >= inactive_threshold_days:
-            logger.info(f"ユーザー ({user_id_log}) は非アクティブ (閾値: {inactive_threshold_days}日) と判断されました。アンフォローを試みます。")
+            logger.info(f"    ユーザー {user_name_for_log} ({user_id_log}) は非アクティブと判断。アンフォローを試みます。")
+            delay_before_unfollow = settings.get("delay_before_unfollow_action_sec", 2.0)
+            logger.debug(f"    アンフォロー実行前に {delay_before_unfollow} 秒待機します。")
+            time.sleep(delay_before_unfollow)
 
-            # アンフォロー前の遅延
-            time.sleep(settings.get("delay_before_unfollow_action_sec", 2.0))
-
+            # unfollow_user is called with the main driver instance.
+            # If unfollow_user itself needs to navigate, this is fine.
+            # If unfollow_user was also to be parallelized, it would need its own driver.
             if unfollow_user(driver, user_profile_url):
-                logger.info(f"ユーザー ({user_id_log}) のアンフォローに成功しました。")
+                logger.info(f"    ユーザー {user_name_for_log} ({user_id_log}) のアンフォローに成功しました。")
                 unfollowed_count += 1
-                # アンフォロー後の遅延は unfollow_user 関数内で処理される (configの delay_after_unfollow_action_sec)
             else:
-                logger.warning(f"ユーザー ({user_id_log}) のアンフォローに失敗しました。")
-                # 失敗した場合も、次のユーザー処理までの遅延を入れる
-                time.sleep(settings.get("delay_after_unfollow_action_sec", 3.0))
+                logger.warning(f"    ユーザー {user_name_for_log} ({user_id_log}) のアンフォローに失敗しました。")
+                time.sleep(settings.get("delay_after_action_error_sec", 3.0))
         else:
-            logger.info(f"ユーザー ({user_id_log}) は活動閾値 ({inactive_threshold_days}日) 以内に活動があるため、アンフォロー対象外です。")
-            time.sleep(1.0) # 短い遅延
+            logger.info(f"    ユーザー {user_name_for_log} ({user_id_log}) は活動閾値内に活動あり。アンフォロー対象外。")
 
-        logger.info(f"--- ユーザー処理終了: {user_id_log} ---")
-
+        # Delay before processing the next user for unfollow decision
+        if unfollowed_count < max_to_unfollow and processed_for_unfollow_count < len(non_followers_back):
+            # Ensure this delay key exists or use a default
+            time.sleep(settings.get("delay_between_unfollow_decisions_sec", 2.0))
+        logger.info(f"--- アンフォロー判定終了: {user_name_for_log} ({user_id_log}) ---")
 
     logger.info(f"非アクティブユーザーのアンフォロー処理完了。合計 {unfollowed_count} 人をアンフォローしました。")
     return unfollowed_count
