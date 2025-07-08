@@ -168,9 +168,8 @@ def get_my_activities_within_period(driver, user_profile_url, days_to_check):
             logger.warning(f"活動記録アイテム {item_idx+1} 内で必須要素 (日付等) が見つかりません: {e_nse_item}。スキップします。")
         except Exception as e_item_process:
             logger.error(f"活動記録アイテム {item_idx+1} の処理中に予期せぬエラー: {e_item_process}", exc_info=True)
-
-    except Exception as e_outer_list:
-        logger.error(f"活動記録リストの処理のどこかで予期せぬエラー: {e_outer_list}", exc_info=True)
+        except Exception as e_outer_list:
+            logger.error(f"活動記録リストの処理のどこかで予期せぬエラー: {e_outer_list}", exc_info=True)
 
     logger.info(f"取得した対象期間内の活動記録URL数: {len(activities_within_period)} 件")
     return activities_within_period
