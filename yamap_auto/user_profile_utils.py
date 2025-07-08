@@ -13,9 +13,10 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
+from datetime import datetime, timezone # datetime をインポート
 
 # driver_utilsから必要なものをインポート
-from .driver_utils import get_main_config, BASE_URL
+from .driver_utils import get_main_config, BASE_URL, wait_for_page_load
 
 # --- Loggerの設定 ---
 # このモジュール用のロガーを取得します。
@@ -326,3 +327,369 @@ def find_follow_button_on_profile_page(driver):
     except Exception as e: # この関数全体の予期せぬエラー
         logger.error("プロフィールページのフォローボタン検索で予期せぬエラー。", exc_info=True)
     return None
+
+
+def get_last_activity_date(driver, user_profile_url):
+    """
+    指定されたユーザープロフィールURLから最新の活動の日付を取得する。
+    プロフィールページにアクセスし、活動日記リストの最初のアイテムの日付を解析します。
+
+    Args:
+        driver (webdriver.Chrome): Selenium WebDriverインスタンス。
+        user_profile_url (str): 対象ユーザーのプロフィールページの完全なURL。
+
+    Returns:
+        datetime.date or None: 最新の活動記録の日付。見つからない場合や解析できない場合はNone。
+    """
+    main_conf = get_main_config()
+    user_id_log = user_profile_url.split('/')[-1].split('?')[0]
+    logger.info(f"プロフィール ({user_id_log}) の最新活動日時を取得します。")
+
+    current_page_url = driver.current_url
+    if user_profile_url not in current_page_url:
+        logger.debug(f"対象のユーザープロフィールページ ({user_profile_url}) に遷移します。")
+        driver.get(user_profile_url)
+        try:
+            WebDriverWait(driver, 10).until(
+                EC.any_of(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "a[data-testid='profile-tab-activities']")),
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "h1[class*='UserProfileScreen_userName']"))
+                )
+            )
+        except TimeoutException:
+            logger.warning(f"ユーザー ({user_id_log}) のプロフィールページ主要要素の読み込みタイムアウト。最新活動日時取得失敗の可能性。")
+            return None
+    else:
+        logger.debug(f"既にユーザープロフィールページ ({user_profile_url}) 付近にいます。")
+
+    try:
+        # 活動記録の日時情報が含まれる可能性のある要素のセレクタ
+        # YAMAPのUI構造に依存するため、複数の候補を試す
+        date_selectors = [
+            "article[data-testid='activity-entry'] time[datetime]", # 標準的な構造
+            "a[data-testid='activity-card-link'] time[datetime]",
+            ".ActivityCard_card__XXXXX time[datetime]", # 古い可能性のあるクラス名
+            "time.css-1vh94j7", # 実際のUIで確認されたセレクタの例 (変わりやすい)
+            "div[class*='ActivityEntry_meta'] time", # メタ情報内のtime要素
+        ]
+        action_delays = main_conf.get("action_delays", {})
+        wait_time_for_activity_date = action_delays.get("wait_for_activity_link_sec", 7) # activity_linkの待機時間を流用
+
+        for selector in date_selectors:
+            try:
+                WebDriverWait(driver, wait_time_for_activity_date).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                )
+                time_element = driver.find_element(By.CSS_SELECTOR, selector)
+                datetime_str = time_element.get_attribute("datetime")
+                if datetime_str:
+                    # ISO 8601形式 (YYYY-MM-DDTHH:MM:SSZ や YYYY-MM-DDTHH:MM:SS+09:00) を想定
+                    try:
+                        # タイムゾーン情報を考慮してdatetimeオブジェクトに変換
+                        # ZはUTCを示す
+                        if datetime_str.endswith('Z'):
+                            dt_object = datetime.strptime(datetime_str[:-1], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+                        else:
+                            # Python 3.7+ では fromisoformat が使える
+                            dt_object = datetime.fromisoformat(datetime_str)
+
+                        activity_date = dt_object.date()
+                        logger.info(f"ユーザー ({user_id_log}) の最新活動日時: {activity_date} (selector: {selector}, raw: {datetime_str})")
+                        return activity_date
+                    except ValueError as ve:
+                        logger.debug(f"日時文字列 '{datetime_str}' (selector: {selector}) のパースに失敗: {ve}。他の形式を試行します。")
+                        # 単純な日付形式 (YYYY-MM-DD) や他の一般的な形式も試す (フォールバック)
+                        try:
+                            activity_date = datetime.strptime(datetime_str.split('T')[0], "%Y-%m-%d").date()
+                            logger.info(f"ユーザー ({user_id_log}) の最新活動日時 (フォールバックパース): {activity_date} (selector: {selector}, raw: {datetime_str})")
+                            return activity_date
+                        except ValueError:
+                            continue # 次のセレクタへ
+                else: # datetime属性がない場合、テキストから抽出を試みる (限定的)
+                    date_text = time_element.text.strip()
+                    # "YYYY年MM月DD日" や "MM月DD日" (当年と仮定) などの形式に対応 (必要に応じて拡張)
+                    try:
+                        if "年" in date_text and "月" in date_text and "日" in date_text:
+                            dt_object = datetime.strptime(date_text, "%Y年%m月%d日")
+                            activity_date = dt_object.date()
+                            logger.info(f"ユーザー ({user_id_log}) の最新活動日時 (テキストパース): {activity_date} (selector: {selector}, text: {date_text})")
+                            return activity_date
+                        # 他のテキスト形式のパースロジックを追加可能
+                    except ValueError:
+                        logger.debug(f"日時テキスト '{date_text}' (selector: {selector}) のパースに失敗。")
+                        continue
+
+            except (NoSuchElementException, TimeoutException):
+                logger.debug(f"セレクタ '{selector}' で活動日時要素が見つかりませんでした。")
+                continue
+
+        logger.info(f"ユーザー ({user_id_log}) の最新の活動日時が見つかりませんでした（全セレクタ試行後）。")
+        return None
+
+    except Exception as e:
+        logger.error(f"ユーザー ({user_id_log}) の最新活動日時取得中にエラー。", exc_info=True)
+        return None
+
+
+def get_my_following_users_profiles(driver, my_user_id, max_users_to_fetch=None, max_pages_to_check=None):
+    """
+    自分の「フォロー中」リストページから、フォローしているユーザーのプロフィールURLのリストを取得します。
+    ページネーションに対応し、指定された最大ユーザー数または最大ページ数まで取得します。
+
+    Args:
+        driver (webdriver.Chrome): Selenium WebDriverインスタンス。
+        my_user_id (str): 自分のYAMAPユーザーID。
+        max_users_to_fetch (int, optional): 取得する最大のユーザープロファイル数。Noneの場合は制限なし。
+        max_pages_to_check (int, optional): 確認する最大のページ数。Noneの場合は全ページ。
+
+    Returns:
+        list[str]: フォロー中ユーザーのプロフィールURLのリスト。
+    """
+    if not my_user_id:
+        logger.error("自分のユーザーIDが指定されていないため、フォロー中ユーザーリストを取得できません。")
+        return []
+
+    following_list_url = f"{BASE_URL}/users/{my_user_id}/follows"
+    logger.info(f"自分のフォロー中ユーザーリスト ({following_list_url}) からプロフィールURLを取得します。")
+    logger.info(f"取得上限: ユーザー数={max_users_to_fetch or '無制限'}, ページ数={max_pages_to_check or '無制限'}")
+
+    driver.get(following_list_url)
+    wait_for_page_load(driver, timeout=15, check_title=False) # ページ遷移とリスト表示の待機
+
+    user_profile_urls = []
+    processed_pages = 0
+
+    # ユーザーリストアイテムとユーザーリンクのセレクタ (YAMAPのUIに依存)
+    user_list_item_selector = "div.UserListItem_userListItem__XXXXX" # 仮のセレクタ、実際のものに置き換える必要あり
+    user_profile_link_selector = "a[href*='/users/']" # アイテム内のユーザープロファイルへのリンク
+
+    # 「次へ」ボタンのセレクタ (YAMAPのUIに依存)
+    next_page_button_selector = "button[data-testid='pagination-next-button']" # 仮のセレクタ
+
+    while True:
+        if max_pages_to_check is not None and processed_pages >= max_pages_to_check:
+            logger.info(f"最大確認ページ数 ({max_pages_to_check}) に達したため、処理を終了します。")
+            break
+        if max_users_to_fetch is not None and len(user_profile_urls) >= max_users_to_fetch:
+            logger.info(f"最大取得ユーザー数 ({max_users_to_fetch}) に達したため、処理を終了します。")
+            break
+
+        logger.info(f"フォロー中リストの {processed_pages + 1} ページ目を処理中...")
+        try:
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_all_elements_located((By.CSS_SELECTOR, user_list_item_selector))
+            )
+            user_items = driver.find_elements(By.CSS_SELECTOR, user_list_item_selector)
+            if not user_items:
+                logger.info(f"{processed_pages + 1} ページ目にユーザーが見つかりませんでした。")
+                break # ユーザーがいないなら終了
+
+            for item in user_items:
+                if max_users_to_fetch is not None and len(user_profile_urls) >= max_users_to_fetch:
+                    break
+                try:
+                    profile_link_element = item.find_element(By.CSS_SELECTOR, user_profile_link_selector)
+                    href = profile_link_element.get_attribute('href')
+                    if href and "/users/" in href:
+                        full_url = href if href.startswith(BASE_URL) else BASE_URL + href
+                        if full_url not in user_profile_urls: # 重複を避ける
+                            user_profile_urls.append(full_url)
+                            logger.debug(f"  追加: {full_url.split('/')[-1]}")
+                except NoSuchElementException:
+                    logger.warning("ユーザーリストアイテム内でプロフィールリンクが見つかりませんでした。スキップします。")
+                except Exception as e_item:
+                    logger.error(f"ユーザーアイテム処理中にエラー: {e_item}", exc_info=True)
+
+            processed_pages += 1
+            logger.info(f"{processed_pages} ページ目まで処理完了。現在 {len(user_profile_urls)} 件のURLを取得。")
+
+            # 次のページへ
+            try:
+                next_button = driver.find_element(By.CSS_SELECTOR, next_page_button_selector)
+                if next_button.is_displayed() and next_button.is_enabled():
+                    logger.info("「次へ」ボタンをクリックします。")
+                    driver.execute_script("arguments[0].scrollIntoView(true);", next_button)
+                    time.sleep(0.5) # スクロール後の安定待ち
+                    next_button.click()
+                    wait_for_page_load(driver, timeout=10, check_title=False, previous_url=driver.current_url) # ページ遷移待機
+                    time.sleep(1) # 追加の安定待ち
+                else:
+                    logger.info("「次へ」ボタンが見つからないか、無効です。最後のページと判断します。")
+                    break
+            except NoSuchElementException:
+                logger.info("「次へ」ボタンが見つかりませんでした。最後のページと判断します。")
+                break
+            except Exception as e_pagination:
+                logger.error(f"ページネーション処理中にエラー: {e_pagination}", exc_info=True)
+                break
+
+        except TimeoutException:
+            logger.info(f"{processed_pages + 1} ページ目のユーザーリスト読み込みタイムアウト。処理を終了します。")
+            break
+        except Exception as e_page:
+            logger.error(f"ページ処理中に予期せぬエラー: {e_page}", exc_info=True)
+            break
+
+    logger.info(f"フォロー中ユーザーのプロフィールURLを {len(user_profile_urls)} 件取得しました。")
+    return user_profile_urls
+
+
+def get_my_followers_profiles(driver, my_user_id, max_users_to_fetch=None, max_pages_to_check=None):
+    """
+    自分の「フォロワー」リストページから、自分をフォローしているユーザーのプロフィールURLのリストを取得します。
+    get_my_following_users_profiles とほぼ同じロジックですが、対象URLが異なります。
+
+    Args:
+        driver (webdriver.Chrome): Selenium WebDriverインスタンス。
+        my_user_id (str): 自分のYAMAPユーザーID。
+        max_users_to_fetch (int, optional): 取得する最大のユーザープロファイル数。Noneの場合は制限なし。
+        max_pages_to_check (int, optional): 確認する最大のページ数。Noneの場合は全ページ。
+
+    Returns:
+        list[str]: フォロワーのプロフィールURLのリスト。
+    """
+    if not my_user_id:
+        logger.error("自分のユーザーIDが指定されていないため、フォロワーリストを取得できません。")
+        return []
+
+    followers_list_url = f"{BASE_URL}/users/{my_user_id}/followers" # URLが異なる
+    logger.info(f"自分のフォロワーリスト ({followers_list_url}) からプロフィールURLを取得します。")
+    logger.info(f"取得上限: ユーザー数={max_users_to_fetch or '無制限'}, ページ数={max_pages_to_check or '無制限'}")
+
+    # 以降のロジックは get_my_following_users_profiles とほぼ同じ
+    driver.get(followers_list_url)
+    wait_for_page_load(driver, timeout=15, check_title=False)
+
+    user_profile_urls = []
+    processed_pages = 0
+    user_list_item_selector = "div.UserListItem_userListItem__XXXXX" # 仮のセレクタ
+    user_profile_link_selector = "a[href*='/users/']"
+    next_page_button_selector = "button[data-testid='pagination-next-button']" # 仮のセレクタ
+
+    while True:
+        if max_pages_to_check is not None and processed_pages >= max_pages_to_check:
+            logger.info(f"最大確認ページ数 ({max_pages_to_check}) に達したため、処理を終了します。")
+            break
+        if max_users_to_fetch is not None and len(user_profile_urls) >= max_users_to_fetch:
+            logger.info(f"最大取得ユーザー数 ({max_users_to_fetch}) に達したため、処理を終了します。")
+            break
+
+        logger.info(f"フォロワーリストの {processed_pages + 1} ページ目を処理中...")
+        try:
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_all_elements_located((By.CSS_SELECTOR, user_list_item_selector))
+            )
+            user_items = driver.find_elements(By.CSS_SELECTOR, user_list_item_selector)
+            if not user_items:
+                logger.info(f"{processed_pages + 1} ページ目にユーザーが見つかりませんでした。")
+                break
+
+            for item in user_items:
+                if max_users_to_fetch is not None and len(user_profile_urls) >= max_users_to_fetch:
+                    break
+                try:
+                    profile_link_element = item.find_element(By.CSS_SELECTOR, user_profile_link_selector)
+                    href = profile_link_element.get_attribute('href')
+                    if href and "/users/" in href:
+                        full_url = href if href.startswith(BASE_URL) else BASE_URL + href
+                        if full_url not in user_profile_urls:
+                            user_profile_urls.append(full_url)
+                            logger.debug(f"  追加: {full_url.split('/')[-1]}")
+                except NoSuchElementException:
+                    logger.warning("ユーザーリストアイテム内でプロフィールリンクが見つかりませんでした。スキップします。")
+                except Exception as e_item:
+                    logger.error(f"ユーザーアイテム処理中にエラー: {e_item}", exc_info=True)
+
+            processed_pages += 1
+            logger.info(f"{processed_pages} ページ目まで処理完了。現在 {len(user_profile_urls)} 件のURLを取得。")
+
+            try:
+                next_button = driver.find_element(By.CSS_SELECTOR, next_page_button_selector)
+                if next_button.is_displayed() and next_button.is_enabled():
+                    logger.info("「次へ」ボタンをクリックします。")
+                    driver.execute_script("arguments[0].scrollIntoView(true);", next_button)
+                    time.sleep(0.5)
+                    next_button.click()
+                    wait_for_page_load(driver, timeout=10, check_title=False, previous_url=driver.current_url)
+                    time.sleep(1)
+                else:
+                    logger.info("「次へ」ボタンが見つからないか、無効です。最後のページと判断します。")
+                    break
+            except NoSuchElementException:
+                logger.info("「次へ」ボタンが見つかりませんでした。最後のページと判断します。")
+                break
+            except Exception as e_pagination:
+                logger.error(f"ページネーション処理中にエラー: {e_pagination}", exc_info=True)
+                break
+        except TimeoutException:
+            logger.info(f"{processed_pages + 1} ページ目のユーザーリスト読み込みタイムアウト。処理を終了します。")
+            break
+        except Exception as e_page:
+            logger.error(f"ページ処理中に予期せぬエラー: {e_page}", exc_info=True)
+            break
+
+    logger.info(f"フォロワーのプロフィールURLを {len(user_profile_urls)} 件取得しました。")
+    return user_profile_urls
+
+
+def is_user_following_me(driver, target_user_profile_url, my_user_id, my_followers_list=None):
+    """
+    指定されたユーザー (target_user_profile_url) が、自分 (my_user_id) をフォローしているかを確認します。
+    事前に取得した自分のフォロワーリスト (my_followers_list) を提供することで、
+    API/ページアクセスを減らし、効率的に確認できます。
+
+    Args:
+        driver (webdriver.Chrome): Selenium WebDriverインスタンス (フォロワーリスト未提供時に使用)。
+        target_user_profile_url (str): 確認対象ユーザーのプロフィールURL。
+        my_user_id (str): 自分のYAMAPユーザーID。
+        my_followers_list (list[str], optional): 事前に取得した自分のフォロワーのプロフィールURLリスト。
+                                                Noneの場合、この関数内でフォロワーリストを取得します。
+
+    Returns:
+        bool or None: フォローされていればTrue、されていなければFalse。確認中にエラーが発生した場合はNone。
+    """
+    target_user_id_log = target_user_profile_url.split('/')[-1].split('?')[0]
+    logger.info(f"ユーザー ({target_user_id_log}) が自分 ({my_user_id}) をフォローしているか確認します。")
+
+    if not my_user_id:
+        logger.error("自分のユーザーIDが不明なため、フォロー状況を確認できません。")
+        return None
+
+    # target_user_profile_url から target_user_id を抽出 (正規化)
+    # 例: "https://yamap.com/users/12345" -> "12345"
+    # 例: "https://yamap.com/users/12345?tab=activities" -> "12345"
+    normalized_target_user_id = target_user_profile_url.split('/')[-1].split('?')[0]
+    normalized_target_profile_url = f"{BASE_URL}/users/{normalized_target_user_id}"
+
+
+    if my_followers_list is None:
+        logger.info("自分のフォロワーリストが提供されていないため、取得を試みます。")
+        # ここでフォロワーリスト取得の上限をどうするか。全件取得は時間がかかる可能性がある。
+        # 設定ファイルから読み込むか、ここでは限定的な件数（例：最初の数ページ）のみ取得する。
+        # 今回は、ひとまず限定的に取得する方針で実装。
+        # TODO: 設定でフォロワーリスト取得の範囲を指定できるようにする。
+        main_conf = get_main_config()
+        unfollow_settings = main_conf.get("unfollow_inactive_users_settings", {})
+        max_pages_for_follower_check = unfollow_settings.get("max_pages_for_is_following_me_check", 3) # 例: 3ページまで
+
+        my_followers_list = get_my_followers_profiles(driver, my_user_id, max_pages_to_check=max_pages_for_follower_check)
+        if not my_followers_list: # 取得失敗またはフォロワー0
+            logger.warning(f"自分のフォロワーリストの取得に失敗したか、フォロワーがいません。ユーザー ({target_user_id_log}) はフォローしていないと仮定します。")
+            return False # フォロワーリストが空なら、誰も自分をフォローしていない
+
+    # 自分のフォロワーリストの中に、対象ユーザーの正規化されたプロフィールURLが存在するか確認
+    for follower_url in my_followers_list:
+        normalized_follower_id = follower_url.split('/')[-1].split('?')[0]
+        if normalized_follower_id == normalized_target_user_id:
+            logger.info(f"ユーザー ({target_user_id_log}) は自分をフォローしています。")
+            return True
+
+    logger.info(f"ユーザー ({target_user_id_log}) は自分をフォローしていません（提供または取得したフォロワーリスト内に見つかりませんでした）。")
+    return False
+
+    # 代替案: 対象ユーザーの「フォロー中」リストを確認する (非常にコスト高で非推奨)
+    # 1. target_user_profile_url の「フォロー中」リストページにアクセス
+    # 2. そのリスト内に自分の my_user_id が含まれるか確認
+    # この方法は、相手のフォロー中リストが大規模な場合に非常に時間がかかり、現実的ではない。
+    # また、プライバシー設定によってはリストが公開されていない可能性もある。
+    # よって、自分のフォロワーリストとの照合が現実的。

@@ -5,7 +5,7 @@
 ---
 
 ## 🛠 仕掛中タスク
-*   [ ] **新機能:** 自分自身の1週間以内の記事投稿について、DOMOをくれた未フォローユーザーをフォローバックし、そのユーザーの最新投稿1つへDOMOする機能 (コミット: `[THIS_COMMIT_HASH]`)
+*   [ ] **新機能:** 自分自身の1週間以内の記事投稿について、DOMOをくれた未フォローユーザーをフォローバックし、そのユーザーの最新投稿1つへDOMOする機能 (コミット: `[PREVIOUS_COMMIT_HASH]`)
     *   `my_post_interaction_utils.py` に主要ロジックを実装。
     *   `yamap_auto_domo.py` から呼び出し、`config.yaml` に設定項目追加。
     *   **要ユーザー確認・調整:**
@@ -14,23 +14,23 @@
         *   全体的な動作確認と、エラーハンドリングの強化。
 *   [ ] 並列処理時のログイン問題を調査・修正
     *   ワーカースレッド作成時のCookieによるログイン確認処理を強化 (`driver_utils.create_driver_with_cookies` でマイページアクセス検証追加、各タスク処理の冒頭でもヘッダーアバター確認)。ログイン失敗時にはスクリーンショットを保存するように改善。 ([PREVIOUS_COMMIT_HASH])
-    *   `driver_utils.create_driver_with_cookies` のログイン検証ロジックを強化（アバターalt属性確認、URL正規化比較、失敗時HTML保存）。`follow_back_utils._follow_back_task` はこの強化された関数を利用するようにし、同タスク内のログ出力を改善。([THIS_COMMIT_HASH])
+    *   `driver_utils.create_driver_with_cookies` のログイン検証ロジックを強化（アバターalt属性確認、URL正規化比較、失敗時HTML保存）。`follow_back_utils._follow_back_task` はこの強化された関数を利用するようにし、同タスク内のログ出力を改善。([PREVIOUS_COMMIT_HASH])
     *   **要ユーザー確認:** 上記修正を適用した上で並列処理を実行し、ログイン問題が改善されるか、依然として発生する場合はログ（特に `create_driver_with_cookies` 内の検証ステップログ、`_follow_back_task` 内のデバッグログ）とスクリーンショット、HTMLソースを分析して原因を特定する必要あり。`ConnectionResetError` が頻発する場合は、`config.yaml` の並列処理設定（ワーカー数、遅延時間）の大幅な緩和を試すこと。
-*   [ ] 検索＆フォロー機能の並列処理におけるパフォーマンス改善と安定性向上 ([THIS_COMMIT_HASH])
+*   [ ] 検索＆フォロー機能の並列処理におけるパフォーマンス改善と安定性向上 ([PREVIOUS_COMMIT_HASH])
     *   [x] `search_utils.py` のログ出力強化（ワーカースレッドの処理詳細、メインループの状況等）
     *   [x] `search_utils.py` に並列処理のパフォーマンス計測機能追加（総処理時間、処理ユーザー数、スループット等）
     *   [x] `config.yaml` の検索＆フォロー並列処理関連パラメータに詳細なコメントを追記
 *   [ ] エラーハンドリング、ログ出力の強化 - 継続的に改善要
 *   [ ] 動作確認・デバッグ - 継続的に必要 (特に並列処理の安定性とパフォーマンス)
-    *   検索結果からのフォロー＆DOMO機能において、「次へ」ボタンのページネーションが機能しない問題を修正。`search_utils.py` のセレクタ更新、ログ強化、関連処理調整を実施。([THIS_COMMIT_HASH])
+    *   検索結果からのフォロー＆DOMO機能において、「次へ」ボタンのページネーションが機能しない問題を修正。`search_utils.py` のセレクタ更新、ログ強化、関連処理調整を実施。([PREVIOUS_COMMIT_HASH])
 
 ---
 
 ## 🚧 問題・課題
 *   並列処理でワーカースレッドが正しくログインできていない可能性。
-    *   上記「仕掛中タスク」にてログイン検証ロジックの強化とログ改善を実施。ユーザーによる動作確認とフィードバック待ち。([THIS_COMMIT_HASH])
+    *   上記「仕掛中タスク」にてログイン検証ロジックの強化とログ改善を実施。ユーザーによる動作確認とフィードバック待ち。([PREVIOUS_COMMIT_HASH])
 *   検索結果からのフォロー＆DOMO機能で、ページネーションの「次へ」ボタンが機能していなかった。
-    *   `search_utils.py` の関連セレクタを更新し、ログを強化する修正を実施。ユーザーによる動作確認待ち。([THIS_COMMIT_HASH])
+    *   `search_utils.py` の関連セレクタを更新し、ログを強化する修正を実施。ユーザーによる動作確認待ち。([PREVIOUS_COMMIT_HASH])
 (ここに問題・課題を記述)
 
 ---
@@ -39,7 +39,7 @@
 
 *   [x] フォローバックについて、「次へ」のページ遷移も行い全ページの確認を実施します (`max_pages_for_follow_back` 設定追加)
 *   [x] タイムラインDOMO機能について、個別の記事に飛ばずに一覧上でDOMOする
-*   [ ] 並列処理のワーカー数や遅延時間について、最適な値をユーザー環境ごとに調整する必要があるため、README等に指針を記載検討。（`config.yaml` 内のコメントで一部対応済み [THIS_COMMIT_HASH]）
+*   [ ] 並列処理のワーカー数や遅延時間について、最適な値をユーザー環境ごとに調整する必要があるため、README等に指針を記載検討。（`config.yaml` 内のコメントで一部対応済み [PREVIOUS_COMMIT_HASH]）
 (ここにメモや改善案を記述)
 
 ---
@@ -117,13 +117,18 @@
 ---
 
 ## ✅ 完了タスク
-
-*   [x] スクリプト実行結果のサマリー情報（フォロー数、DOMO数など）を最後にまとめてログ出力する ([THIS_COMMIT_HASH])
-*   [x] タイムラインDOMO機能について、個別の記事に飛ばずに一覧上でDOMOするよう改修 ([PREVIOUS_DIRECT_DOMO_COMMIT_HASH]) (意図しないページ遷移発生時の復帰処理追加 [THIS_FIX_COMMIT_HASH])
-*   [x] `domo_utils.py` の `domo_activity` 関数のエラーハンドリングとログ出力を強化 `[THIS_COMMIT_HASH]`
-*   [x] `yamap_auto_domo.py` 内のフォローバック処理 (`follow_back_users_new`) を `follow_back_utils.py` 等に分割 (現状 `follow_utils.py` に存在、これから `follow_back_utils.py` へ移動、実際には既に `follow_back_utils.py` に存在することを確認) `[THIS_COMMIT_HASH]`
-*   [x] `yamap_auto_domo.py` 内の検索結果処理 (`search_follow_and_domo_users`) を `search_utils.py` 等に分割 (現状 `follow_utils.py` に存在、これから `search_utils.py` へ移動、実際には既に `search_utils.py` に存在することを確認) `[THIS_COMMIT_HASH]`
-*   [x] `yamap_auto_domo.py` 内のタイムライン処理 (`domo_timeline_activities`, `domo_timeline_activities_parallel`) を `timeline_utils.py` 等に分割 (実質 `domo_utils.py` へ分割済) `[THIS_COMMIT_HASH]`
+*   [x] **新機能:** フォローしているユーザーで、フォローされていないユーザー且つ、活動記録が90日以上途絶えている人はフォロー中から外す機能 (コミット: `[COMMITTING_NOW]`)
+    *   `config.yaml` に設定項目追加 (`unfollow_inactive_users_settings`)。
+    *   `user_profile_utils.py` に最終活動日取得機能、フォロー中ユーザーリスト取得機能などを追加。
+    *   `follow_utils.py` にアンフォロー機能を追加。
+    *   `yamap_auto_domo.py` にメインロジックを実装し、呼び出しを追加。
+    *   **留意事項:** `user_profile_utils.py` および `follow_utils.py` 内の一部のCSSセレクタは、実際のYAMAPのUIに合わせて調整が必要です。
+*   [x] スクリプト実行結果のサマリー情報（フォロー数、DOMO数など）を最後にまとめてログ出力する ([PREVIOUS_COMMIT_HASH])
+*   [x] タイムラインDOMO機能について、個別の記事に飛ばずに一覧上でDOMOするよう改修 ([PREVIOUS_DIRECT_DOMO_COMMIT_HASH]) (意図しないページ遷移発生時の復帰処理追加 [PREVIOUS_FIX_COMMIT_HASH])
+*   [x] `domo_utils.py` の `domo_activity` 関数のエラーハンドリングとログ出力を強化 `[PREVIOUS_COMMIT_HASH]`
+*   [x] `yamap_auto_domo.py` 内のフォローバック処理 (`follow_back_users_new`) を `follow_back_utils.py` 等に分割 (現状 `follow_utils.py` に存在、これから `follow_back_utils.py` へ移動、実際には既に `follow_back_utils.py` に存在することを確認) `[PREVIOUS_COMMIT_HASH]`
+*   [x] `yamap_auto_domo.py` 内の検索結果処理 (`search_follow_and_domo_users`) を `search_utils.py` 等に分割 (現状 `follow_utils.py` に存在、これから `search_utils.py` へ移動、実際には既に `search_utils.py` に存在することを確認) `[PREVIOUS_COMMIT_HASH]`
+*   [x] `yamap_auto_domo.py` 内のタイムライン処理 (`domo_timeline_activities`, `domo_timeline_activities_parallel`) を `timeline_utils.py` 等に分割 (実質 `domo_utils.py` へ分割済) `[PREVIOUS_COMMIT_HASH]`
 *   [x] `yamap_auto_domo.py` の基本構造作成 (ロガー設定、WebDriver設定、ログイン機能流用)
 *   [x] `config.yaml` に新機能用の設定項目を追加定義
 *   [x] **フォローバック機能の実装:**
