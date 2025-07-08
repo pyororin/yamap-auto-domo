@@ -24,8 +24,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 logger = logging.getLogger(__name__)
 
-# Ensure datetime is imported from datetime
-from datetime import datetime
+# Ensure datetime is imported from datetime (though not used in this specific function anymore)
+# from datetime import datetime # Not strictly needed here anymore
 
 # ... (logger definition) ...
 
@@ -33,28 +33,20 @@ from datetime import datetime
 def _parse_user_item_bs(item_html_content):
     """
     Parses a single user list item's HTML (obtained via BeautifulSoup)
-    to extract profile URL, name, follow-back status, and last activity date from the list item.
+    to extract profile URL, name, and follow-back status.
     """
     item_soup = BeautifulSoup(item_html_content, 'html.parser')
 
     profile_url = "N/A"
     user_name = "N/A"
     is_followed_back = False
-    last_activity_date_on_list = None # New field
+    # last_activity_date_on_list = None # REMOVED - No longer extracted here
 
     # Selectors (relative to the item_soup)
     user_profile_link_selector_bs = "a.css-e5vv35"
     user_name_selector_within_link_bs = "h2.css-o7x4kv"
     followed_back_status_selector_bs = "div.css-b8hsdn"
-    # New selector for last activity date based on user's HTML snippet
-    # Assuming the <p class="ActivityItem__Meta"> is within the <li> item parsed
-    # If the class names are dynamic (like data-v-...), we might need a more general selector
-    # For now, targeting the specific class provided.
-    # A more robust selector might be needed if `ActivityItem__Date` is too generic or data-v attributes change.
-    # Let's assume the item_html_content is the content of `li.css-1qsnhpb`
-    # and the date span is a descendant.
-    last_activity_date_selector_bs = "span.ActivityItem__Date"
-    # If ActivityItem__Meta is a more stable parent: "p.ActivityItem__Meta span.ActivityItem__Date"
+    # REMOVED: last_activity_date_selector_bs as it's no longer used here
 
     try:
         profile_link_element = item_soup.select_one(user_profile_link_selector_bs)
@@ -71,29 +63,7 @@ def _parse_user_item_bs(item_html_content):
         if followed_back_element and "フォローされています" in followed_back_element.get_text(strip=True):
             is_followed_back = True
 
-        # Extract last activity date
-        date_span_element = item_soup.select_one(last_activity_date_selector_bs)
-        if date_span_element:
-            date_str_raw = date_span_element.get_text(strip=True) # e.g., "2025.07.06(日)"
-            # Extract the date part "YYYY.MM.DD"
-            date_str_match = date_str_raw.split('(')[0] # Gets "2025.07.06"
-            if date_str_match:
-                try:
-                    dt_object = datetime.strptime(date_str_match, "%Y.%m.%d")
-                    last_activity_date_on_list = dt_object.date()
-                except ValueError:
-                    logger.warning(f"Failed to parse date string '{date_str_match}' from item. Raw: '{date_str_raw}'")
-                    # Fallback for "MM.DD" format if year is missing (assuming current year)
-                    try:
-                        if len(date_str_match.split('.')) == 2: # Looks like "MM.DD"
-                             # This requires knowing the current year, which might be tricky if this is purely static HTML parsing
-                             # For now, we'll stick to YYYY.MM.DD or fail.
-                             # If YAMAP sometimes shows "MM.DD (曜日)" for recent posts within current year,
-                             # this part would need enhancement or rely on another date source from the page if available.
-                             pass # Not implementing MM.DD parsing here without more context on how YAMAP displays it.
-                    except ValueError:
-                         logger.warning(f"Further fallback parsing for '{date_str_match}' also failed.")
-
+        # REMOVED: Logic to extract last activity date from list item
 
     except Exception as e_bs_parse:
         logger.error(f"BS parsing error for item: {e_bs_parse}. HTML snippet: {item_html_content[:200]}", exc_info=True)
@@ -101,8 +71,8 @@ def _parse_user_item_bs(item_html_content):
     return {
         'url': profile_url,
         'name': user_name,
-        'is_followed_back': is_followed_back,
-        'last_activity_date_on_list': last_activity_date_on_list # New field added
+        'is_followed_back': is_followed_back
+        # REMOVED: 'last_activity_date_on_list': last_activity_date_on_list
     }
 
 # ... (rest of user_profile_utils.py, including get_my_following_users_profiles) ...
