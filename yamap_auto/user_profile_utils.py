@@ -422,7 +422,7 @@ def get_last_activity_date(driver, user_profile_url):
                 )
             )
         except TimeoutException:
-            logger.warning(f"ユーザー ({user_id_log}) のプロフィールページ主要要素の読み込みタイムアウト ({profile_timeout}秒)。最新活動日時取得失敗の可能性。")
+            logger.warning(f"ユーザー ({user_id_log}) のプロフィールページ主要要素の読み込みタイムアウト ({profile_element_timeout}秒)。最新活動日時取得失敗の可能性。")
             save_screenshot(driver, "ProfileLoadTimeout_GetDate", f"UID_{user_id_log}")
             return None
     else:
@@ -440,13 +440,13 @@ def get_last_activity_date(driver, user_profile_url):
         ]
         # action_delays = main_conf.get("action_delays", {}) # main_conf already loaded as config
         # wait_time_for_activity_date = action_delays.get("wait_for_activity_link_sec", 7)
-        # Use profile_timeout for waiting for date elements as well, or a new config value
-        wait_time_for_date_element = unfollow_settings.get("date_element_timeout_sec", profile_timeout)
+        # Use profile_element_timeout for waiting for date elements as well, or a new config value
+        wait_time_for_date_element = unfollow_settings.get("date_element_timeout_sec", profile_element_timeout)
 
 
         for selector in date_selectors:
             try:
-                WebDriverWait(driver, wait_time_for_date_element).until( # Use configured/profile_timeout
+                WebDriverWait(driver, wait_time_for_date_element).until( # Use configured/profile_element_timeout
                     EC.presence_of_element_located((By.CSS_SELECTOR, selector))
                 )
                 time_element = driver.find_element(By.CSS_SELECTOR, selector)
