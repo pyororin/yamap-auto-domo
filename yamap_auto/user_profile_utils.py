@@ -461,8 +461,8 @@ def get_my_following_users_profiles(driver, my_user_id, max_users_to_fetch=None,
 
     current_url_before_get = driver.current_url
     driver.get(following_list_url)
-    # ページ遷移とリスト表示の待機 (URL変更とリストアイテムの出現を期待)
-    wait_for_page_transition(driver, timeout=15, expected_element_selector=(By.CSS_SELECTOR, user_list_item_selector), previous_url=current_url_before_get if current_url_before_get != following_list_url else None)
+    # ページ遷移とリスト表示の待機 (ul.UserFollowList__List の出現を期待)
+    wait_for_page_transition(driver, timeout=30, expected_element_selector=(By.CSS_SELECTOR, "ul.UserFollowList__List"), previous_url=current_url_before_get if current_url_before_get != following_list_url else None)
 
 
     user_profile_urls = []
@@ -568,8 +568,8 @@ def get_my_followers_profiles(driver, my_user_id, max_users_to_fetch=None, max_p
     # 以降のロジックは get_my_following_users_profiles とほぼ同じ
     current_url_before_get = driver.current_url
     driver.get(followers_list_url)
-    # ページ遷移とリスト表示の待機 (URL変更とリストアイテムの出現を期待)
-    wait_for_page_transition(driver, timeout=15, expected_element_selector=(By.CSS_SELECTOR, user_list_item_selector), previous_url=current_url_before_get if current_url_before_get != followers_list_url else None)
+    # ページ遷移とリスト表示の待機 (ul.UserFollowList__List の出現を期待)
+    wait_for_page_transition(driver, timeout=30, expected_element_selector=(By.CSS_SELECTOR, "ul.UserFollowList__List"), previous_url=current_url_before_get if current_url_before_get != followers_list_url else None)
 
     user_profile_urls = []
     processed_pages = 0
