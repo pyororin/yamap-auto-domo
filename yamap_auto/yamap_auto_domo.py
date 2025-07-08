@@ -47,11 +47,17 @@ from .driver_utils import (
     # BASE_URL as UTIL_BASE_URL, # driver_utils側のBASE_URLは内部利用とし、こちらは維持
     # LOGIN_URL as UTIL_LOGIN_URL # 同上
 )
+import datetime # datetime をインポート
+
 # user_profile_utils から必要なものをインポート
 from .user_profile_utils import (
     get_latest_activity_url,
     get_user_follow_counts,
-    find_follow_button_on_profile_page
+    find_follow_button_on_profile_page,
+    get_last_activity_date, # 追加
+    get_my_following_users_profiles, # 追加
+    is_user_following_me, # 追加
+    get_my_followers_profiles # is_user_following_me のために追加 (my_followers_list を事前に取得する場合)
 )
 # domo_utils から必要なものをインポート
 from .domo_utils import (
@@ -64,6 +70,7 @@ from .domo_utils import (
 from .follow_utils import (
     find_follow_button_in_list_item,
     click_follow_button_and_verify,
+    unfollow_user, # 追加
     # search_follow_and_domo_users, # search_utils へ移動
     # follow_back_users_new, # follow_back_utils へ移動
 )
@@ -108,13 +115,33 @@ try:
     TIMELINE_DOMO_SETTINGS = main_config.get("timeline_domo_settings", {})
     SEARCH_AND_FOLLOW_SETTINGS = main_config.get("search_and_follow_settings", {})
     PARALLEL_PROCESSING_SETTINGS = main_config.get("parallel_processing_settings", {})
-    MY_POST_INTERACTION_SETTINGS = main_config.get("new_feature_my_post_interaction", {}) # 新機能の設定
+    MY_POST_INTERACTION_SETTINGS = main_config.get("new_feature_my_post_interaction", {})
+    UNFOLLOW_INACTIVE_SETTINGS = main_config.get("unfollow_inactive_users_settings", {}) # 新機能の設定読み込み
 
-    if not all([FOLLOW_BACK_SETTINGS, TIMELINE_DOMO_SETTINGS, SEARCH_AND_FOLLOW_SETTINGS, PARALLEL_PROCESSING_SETTINGS, MY_POST_INTERACTION_SETTINGS]):
+    # 主要な設定セクションの存在確認 (UNFOLLOW_INACTIVE_SETTINGS も対象に追加)
+    essential_settings = [
+        FOLLOW_BACK_SETTINGS,
+        TIMELINE_DOMO_SETTINGS,
+        SEARCH_AND_FOLLOW_SETTINGS,
+        PARALLEL_PROCESSING_SETTINGS,
+        MY_POST_INTERACTION_SETTINGS,
+        UNFOLLOW_INACTIVE_SETTINGS
+    ]
+    essential_setting_names = [
+        "follow_back_settings",
+        "timeline_domo_settings",
+        "search_and_follow_settings",
+        "parallel_processing_settings",
+        "new_feature_my_post_interaction",
+        "unfollow_inactive_users_settings"
+    ]
+
+    missing_settings = [name for setting, name in zip(essential_settings, essential_setting_names) if not setting]
+
+    if missing_settings:
         logger.warning(
-            "config.yamlに主要な機能（follow_back, timeline_domo, search_and_follow, parallel_processing, new_feature_my_post_interaction）の" # MY_POST_INTERACTION_SETTINGS を警告対象に追加
-            "一部または全ての設定セクションが見つからないか空です。デフォルト値で動作しようとしますが、"
-            "意図した動作をしない可能性があります。config.yamlを確認してください。"
+            f"config.yamlに主要な機能の設定セクションの一部が見つからないか空です: {', '.join(missing_settings)}。"
+            "デフォルト値で動作しようとしますが、意図した動作をしない可能性があります。config.yamlを確認してください。"
         )
 
 except Exception as e: # 設定読み込み中の予期せぬエラー
@@ -213,8 +240,9 @@ def execute_main_tasks(driver, user_id, shared_cookies):
         'timeline_domo': 0,
         'search_followed': 0,
         'search_domoed': 0,
-        'my_post_followed_back': 0, # 新機能のサマリー用
-        'my_post_domoed_to_user': 0  # 新機能のサマリー用
+        'my_post_followed_back': 0,
+        'my_post_domoed_to_user': 0,
+        'unfollowed_inactive': 0 # 新機能のサマリー用
     }
     if not driver:
         logger.error("WebDriverが初期化されていないため、メインタスクの実行をスキップします。")
@@ -281,7 +309,130 @@ def execute_main_tasks(driver, user_id, shared_cookies):
     else:
         logger.info("自分の投稿へのDOMOユーザーインタラクション機能は設定で無効です。")
 
+    # 非アクティブユーザーのアンフォロー機能
+    if UNFOLLOW_INACTIVE_SETTINGS.get("enable_unfollow_inactive", False):
+        start_time = time.time()
+        logger.info("非アクティブユーザーのアンフォロー機能を呼び出します。")
+        unfollowed_count = unfollow_inactive_not_following_back_users(driver, user_id, shared_cookies)
+        summary_counts['unfollowed_inactive'] = unfollowed_count if isinstance(unfollowed_count, int) else 0
+        end_time = time.time()
+        logger.info(f"非アクティブユーザーのアンフォロー機能の処理時間: {end_time - start_time:.2f}秒。アンフォロー数: {summary_counts['unfollowed_inactive']}")
+    else:
+        logger.info("非アクティブユーザーのアンフォロー機能は設定で無効です。")
+
     return summary_counts
+
+
+def unfollow_inactive_not_following_back_users(driver, my_user_id, shared_cookies=None):
+    """
+    フォローしているユーザーの中で、指定された条件に基づいてユーザーをアンフォローします。
+    条件：
+    1. (オプション) 自分をフォローバックしていない。
+    2. 最終活動記録が指定日数以上前である。
+
+    Args:
+        driver (webdriver.Chrome): Selenium WebDriverインスタンス。
+        my_user_id (str): 自分のYAMAPユーザーID。
+        shared_cookies (list, optional): 共有Cookie。現状この関数では直接利用しないが将来的な拡張のため。
+
+    Returns:
+        int: アンフォローしたユーザーの数。
+    """
+    logger.info("非アクティブかつ（オプションで）フォローバックしていないユーザーのアンフォロー処理を開始します。")
+    settings = UNFOLLOW_INACTIVE_SETTINGS # configから読み込んだ設定
+    if not settings.get("enable_unfollow_inactive", False):
+        logger.info("設定で無効化されているため、アンフォロー処理をスキップします。")
+        return 0
+
+    inactive_threshold_days = settings.get("inactive_threshold_days", 90)
+    max_to_unfollow = settings.get("max_users_to_unfollow_per_run", 5)
+    check_following_back = settings.get("check_if_following_back", True)
+    # フォロー中リスト取得時のページ数上限（設定にあれば使う、なければ適当なデフォルト）
+    max_pages_to_check_following = settings.get("max_pages_for_my_following_list", 10) # 例: 10ページ
+    # フォロワーリスト取得時のページ数上限（is_user_following_me内部で使われる）
+    max_pages_for_my_followers_list = settings.get("max_pages_for_my_followers_list_check", 5) # is_user_following_meが内部で使う用
+
+    unfollowed_count = 0
+    processed_users_count = 0
+
+    # 1. 自分がフォローしているユーザーのリストを取得
+    logger.info(f"自分がフォローしているユーザーのリストを取得します (最大 {max_pages_to_check_following} ページ)。")
+    # TODO: get_my_following_users_profiles に max_users_to_fetch も渡せるようにするべきか検討
+    my_following_profiles = get_my_following_users_profiles(driver, my_user_id, max_pages_to_check=max_pages_to_check_following)
+    if not my_following_profiles:
+        logger.info("フォロー中のユーザーが見つからないか、リストの取得に失敗しました。")
+        return 0
+
+    logger.info(f"{len(my_following_profiles)} 件のフォロー中ユーザーを取得しました。")
+
+    # (オプション) 相互フォロー確認のために、事前に自分のフォロワーリストを取得（効率化のため）
+    my_followers_list_for_check = None
+    if check_following_back:
+        logger.info(f"相互フォロー確認のため、自分のフォロワーリストを取得します (最大 {max_pages_for_my_followers_list} ページ)。")
+        my_followers_list_for_check = get_my_followers_profiles(driver, my_user_id, max_pages_to_check=max_pages_for_my_followers_list)
+        if my_followers_list_for_check is None: # 取得失敗の場合
+             logger.warning("自分のフォロワーリストの取得に失敗しました。相互フォロー確認が不正確になる可能性があります。")
+             my_followers_list_for_check = [] # 空リストとして扱う
+
+
+    for user_profile_url in my_following_profiles:
+        if unfollowed_count >= max_to_unfollow:
+            logger.info(f"1回の実行でのアンフォロー上限 ({max_to_unfollow}人) に達しました。")
+            break
+
+        processed_users_count += 1
+        user_id_log = user_profile_url.split('/')[-1].split('?')[0]
+        logger.info(f"--- ユーザー処理開始 ({processed_users_count}/{len(my_following_profiles)}): {user_id_log} ---")
+
+        # 2. (オプション) 対象ユーザーが自分をフォローしているか確認
+        if check_following_back:
+            is_mutual = is_user_following_me(driver, user_profile_url, my_user_id, my_followers_list=my_followers_list_for_check)
+            if is_mutual is None: # 確認失敗
+                logger.warning(f"ユーザー ({user_id_log}) の相互フォロー状況の確認に失敗しました。スキップします。")
+                time.sleep(settings.get("delay_before_unfollow_action_sec", 2.0)) # エラーでも遅延
+                continue
+            if is_mutual:
+                logger.info(f"ユーザー ({user_id_log}) は相互フォローのため、アンフォロー対象外です。")
+                time.sleep(1.0) # 短い遅延
+                continue
+            logger.info(f"ユーザー ({user_id_log}) はフォローバックしていません。")
+        else:
+            logger.info("相互フォローチェックは設定で無効です。")
+
+        # 3. 対象ユーザーの最終活動日を取得
+        last_activity_date = get_last_activity_date(driver, user_profile_url)
+        if last_activity_date is None:
+            logger.warning(f"ユーザー ({user_id_log}) の最終活動日の取得に失敗しました。スキップします。")
+            time.sleep(settings.get("delay_before_unfollow_action_sec", 2.0)) # エラーでも遅延
+            continue
+
+        # 4. 最終活動日が閾値を超えているか確認
+        days_since_last_activity = (datetime.date.today() - last_activity_date).days
+        logger.info(f"ユーザー ({user_id_log}) の最終活動日: {last_activity_date} ({days_since_last_activity}日前)")
+
+        if days_since_last_activity >= inactive_threshold_days:
+            logger.info(f"ユーザー ({user_id_log}) は非アクティブ (閾値: {inactive_threshold_days}日) と判断されました。アンフォローを試みます。")
+
+            # アンフォロー前の遅延
+            time.sleep(settings.get("delay_before_unfollow_action_sec", 2.0))
+
+            if unfollow_user(driver, user_profile_url):
+                logger.info(f"ユーザー ({user_id_log}) のアンフォローに成功しました。")
+                unfollowed_count += 1
+                # アンフォロー後の遅延は unfollow_user 関数内で処理される (configの delay_after_unfollow_action_sec)
+            else:
+                logger.warning(f"ユーザー ({user_id_log}) のアンフォローに失敗しました。")
+                # 失敗した場合も、次のユーザー処理までの遅延を入れる
+                time.sleep(settings.get("delay_after_unfollow_action_sec", 3.0))
+        else:
+            logger.info(f"ユーザー ({user_id_log}) は活動閾値 ({inactive_threshold_days}日) 以内に活動があるため、アンフォロー対象外です。")
+            time.sleep(1.0) # 短い遅延
+
+        logger.info(f"--- ユーザー処理終了: {user_id_log} ---")
+
+
+    logger.info(f"非アクティブユーザーのアンフォロー処理完了。合計 {unfollowed_count} 人をアンフォローしました。")
+    return unfollowed_count
 
 
 def main():
@@ -308,6 +459,7 @@ def main():
                 logger.info(f"  検索からのDOMO数 (フォロー後): {summary.get('search_domoed', 0)} 件")
                 logger.info(f"  自分の投稿へのインタラクション - フォローバック数: {summary.get('my_post_followed_back', 0)} 件")
                 logger.info(f"  自分の投稿へのインタラクション - DOMOユーザーへのDOMO数: {summary.get('my_post_domoed_to_user', 0)} 件")
+                logger.info(f"  非アクティブユーザーのアンフォロー数: {summary.get('unfollowed_inactive', 0)} 件") # 新機能のサマリー出力
             else:
                 logger.info("  サマリー情報の取得に失敗しました。")
             logger.info("----------------------")

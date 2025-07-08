@@ -285,3 +285,209 @@ def click_follow_button_and_verify(driver, follow_button_element, user_name_for_
 # --- search_follow_and_domo_users 関数全体を search_utils.py に移動 ---
 
 # --- follow_back_users_new 関数全体を follow_back_utils.py に移動 ---
+
+def find_following_button_on_profile_page(driver):
+    """
+    ユーザープロフィールページ上で「フォロー中」ボタンを探す。
+    クリック可能な「フォロー中」ボタンがない場合はNoneを返します。
+    この関数は、呼び出し元で対象ユーザーのプロフィールページに既に遷移していることを前提とします。
+    user_profile_utils.find_follow_button_on_profile_page を参考に、こちらは「フォロー中」を探す。
+
+    Args:
+        driver (webdriver.Chrome): Selenium WebDriverインスタンス。
+
+    Returns:
+        WebElement or None: 「フォロー中」ボタンのWebElement。見つからない場合はNone。
+    """
+    logger.info(f"プロフィールページ上の「フォロー中」ボタン探索開始。URL: {driver.current_url}")
+    try:
+        # 1. 「フォロー中」ボタンの確認 (aria-pressed='true' が主な指標)
+        # YAMAPのUI構造に依存するため、複数のセレクタやコンテナ候補を試行。
+        button_selectors = [
+            "button[aria-pressed='true'][data-testid='FollowingButton']", # Test IDがある場合
+            "button[aria-pressed='true']", # Test IDがない場合
+            ".//button[normalize-space(.)='フォロー中']" # XPathでのテキスト検索
+        ]
+        button_container_candidates_css = "div.css-1fsc5gw, div.css-194f6e2" # ボタンを囲む可能性のあるコンテナ
+
+        # コンテナ内での探索
+        button_containers = driver.find_elements(By.CSS_SELECTOR, button_container_candidates_css)
+        for container in button_containers:
+            for selector in button_selectors:
+                try:
+                    if selector.startswith(".//"): # XPath
+                        buttons = container.find_elements(By.XPATH, selector)
+                    else: # CSS Selector
+                        buttons = container.find_elements(By.CSS_SELECTOR, selector)
+
+                    for btn in buttons:
+                        if btn and btn.is_displayed() and btn.is_enabled():
+                            # ボタンテキストまたは内部spanのテキストに「フォロー中」が含まれるか確認
+                            btn_text = ""
+                            try: btn_text = btn.text.strip()
+                            except: pass
+                            span_text = ""
+                            try:
+                                span_el = btn.find_element(By.CSS_SELECTOR, "span")
+                                if span_el: span_text = span_el.text.strip()
+                            except: pass
+
+                            if "フォロー中" in btn_text or "フォロー中" in span_text:
+                                logger.info(f"プロフィールページで「フォロー中」ボタン (コンテナ内, selector: {selector}) を発見。")
+                                return btn
+                except NoSuchElementException:
+                    continue
+
+        # グローバルな探索 (フォールバック)
+        for selector in button_selectors:
+            try:
+                if selector.startswith(".//"): # XPath
+                    buttons = driver.find_elements(By.XPATH, selector)
+                else: # CSS Selector
+                    buttons = driver.find_elements(By.CSS_SELECTOR, selector)
+
+                for btn in buttons:
+                    if btn and btn.is_displayed() and btn.is_enabled():
+                        btn_text = ""
+                        try: btn_text = btn.text.strip()
+                        except: pass
+                        span_text = ""
+                        try:
+                            span_el = btn.find_element(By.CSS_SELECTOR, "span")
+                            if span_el: span_text = span_el.text.strip()
+                        except: pass
+
+                        if "フォロー中" in btn_text or "フォロー中" in span_text:
+                            logger.info(f"プロフィールページで「フォロー中」ボタン (グローバル, selector: {selector}) を発見。")
+                            return btn
+            except NoSuchElementException:
+                continue
+
+        logger.info("プロフィールページでクリック可能な「フォロー中」ボタンが見つかりませんでした。")
+        return None
+    except Exception as e:
+        logger.error(f"プロフィールページの「フォロー中」ボタン検索で予期せぬエラー: {e}", exc_info=True)
+        return None
+
+
+def unfollow_user(driver, user_profile_url):
+    """
+    指定されたユーザーのプロフィールページでアンフォロー操作を行います。
+    「フォロー中」ボタンを探してクリックし、ボタンの表示が「フォローする」に変わったことを確認します。
+
+    Args:
+        driver (webdriver.Chrome): Selenium WebDriverインスタンス。
+        user_profile_url (str): アンフォロー対象ユーザーのプロフィールページの完全なURL。
+
+    Returns:
+        bool: アンフォローに成功し、状態変化も確認できた場合はTrue。それ以外はFalse。
+    """
+    user_id_log = user_profile_url.split('/')[-1].split('?')[0]
+    logger.info(f"ユーザー ({user_id_log}, URL: {user_profile_url}) のアンフォロー処理を開始します。")
+
+    # 1. 対象のユーザープロフィールページへ遷移
+    current_page_url = driver.current_url
+    if user_profile_url not in current_page_url:
+        logger.debug(f"対象のユーザープロフィールページ ({user_profile_url}) に遷移します。")
+        driver.get(user_profile_url)
+        try:
+            WebDriverWait(driver, 10).until(EC.url_contains(user_id_log))
+        except TimeoutException:
+            logger.warning(f"ユーザー ({user_id_log}) のプロフィールページへの遷移確認タイムアウト。アンフォロー失敗の可能性。")
+            return False
+    else:
+        logger.debug(f"既にユーザープロフィールページ ({user_profile_url}) 付近にいます。")
+
+    # 2. 「フォロー中」ボタンを探す
+    #    user_profile_utils.find_follow_button_on_profile_page は「フォローする」ボタンを探すため、
+    #    ここではアンフォロー対象の「フォロー中」ボタンを探すロジックが必要。
+    #    find_following_button_on_profile_page を使う。
+    following_button = find_following_button_on_profile_page(driver)
+
+    if not following_button:
+        logger.warning(f"ユーザー ({user_id_log}) のプロフィールページで「フォロー中」ボタンが見つかりませんでした。既にアンフォロー済みか、UIの変更の可能性があります。")
+        # 「フォローする」ボタンが存在するか確認し、あればアンフォロー済みとみなす
+        try:
+            follow_button_check = driver.find_element(By.CSS_SELECTOR, "button[aria-pressed='false']")
+            if follow_button_check and ("フォローする" in follow_button_check.text or "フォローする" in (follow_button_check.get_attribute("aria-label") or "")):
+                 logger.info(f"ユーザー ({user_id_log}) は既にアンフォローされているようです（「フォローする」ボタン確認）。")
+                 return True # アンフォロー済みなので成功とみなす
+        except NoSuchElementException:
+            pass # 「フォローする」ボタンも見つからない場合はそのまま
+        return False
+
+    try:
+        user_log_prefix = f"ユーザー「{user_id_log}」: "
+        initial_button_text = "N/A"
+        try:
+            initial_button_text = following_button.text.strip()
+        except Exception: pass
+        logger.info(f"{user_log_prefix}「フォロー中」ボタン (テキスト: '{initial_button_text}') をクリックしてアンフォローします...")
+
+        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", following_button)
+        time.sleep(0.2) # スクロール後の描画待ち
+        following_button.click()
+
+        # アンフォロー後の遅延と確認タイムアウトをconfigから取得
+        unfollow_settings = main_config.get("unfollow_inactive_users_settings", {})
+        delay_after_action = unfollow_settings.get("delay_after_unfollow_action_sec", 3.0)
+        wait_timeout = main_config.get("action_delays", {}).get("follow_verify_timeout_sec", 10) # フォロー確認のタイムアウトを流用
+
+        # 状態変化確認：「フォローする」ボタンに変わる、または aria-pressed='false' になる
+        def check_button_state_changed_to_follow(drv):
+            try:
+                # ボタン要素を再探索する必要があるかもしれない (StaleElement対策)
+                # プロフィールページのフォローボタンは比較的安定していると仮定し、まずは同じ要素で試す
+                current_aria_pressed = following_button.get_attribute("aria-pressed")
+                current_text = ""
+                if following_button.is_displayed(): # 表示されていればテキスト取得
+                    current_text = following_button.text.strip()
+
+                # logger.debug(f"{user_log_prefix}アンフォロー後の状態確認中: AriaPressed='{current_aria_pressed}', Text='{current_text}', Displayed={following_button.is_displayed()}")
+
+                return (
+                    (current_aria_pressed == 'false') or
+                    ("フォローする" in current_text) or
+                    (not following_button.is_displayed()) # ボタンが消える場合も変化とみなす（稀）
+                )
+            except Exception as e_check: # StaleElementReferenceException など
+                logger.debug(f"{user_log_prefix}アンフォロー後の状態確認中にボタン要素アクセスエラー: {e_check}。要素が無効になった可能性あり。")
+                # 要素が無効になった場合、新しい「フォローする」ボタンを探しに行く必要があるかもしれないが、
+                # まずは変化したとみなしてTrueを返す (成功と判断される)
+                # より堅牢にするには、ここで find_follow_button_on_profile_page を呼び出す
+                return True
+
+        WebDriverWait(driver, wait_timeout).until(check_button_state_changed_to_follow)
+
+        # 最終状態の取得とログ出力 (主にログのため)
+        final_aria_pressed = "N/A"
+        final_text = "N/A"
+        is_displayed_final = "N/A"
+        try:
+            final_aria_pressed = following_button.get_attribute("aria-pressed")
+            if following_button.is_displayed():
+                is_displayed_final = True
+                final_text = following_button.text.strip()
+            else:
+                is_displayed_final = False
+                final_text = "(非表示)"
+        except Exception: # アクセスエラー時
+             pass
+
+
+        if (final_aria_pressed == 'false' or \
+            ("フォローする" in final_text) or \
+            (is_displayed_final is False) ):
+            logger.info(f"{user_log_prefix}アンフォロー成功を確認。最終ボタン状態: AriaPressed='{final_aria_pressed}', Text='{final_text}', Displayed='{is_displayed_final}'")
+            time.sleep(delay_after_action)
+            return True
+        else:
+            logger.warning(f"{user_log_prefix}アンフォロー後の状態変化確認でWebDriverWaitは成功しましたが、最終状態の検証で不一致。AriaPressed='{final_aria_pressed}', Text='{final_text}'")
+            return False # 念のためFalse
+
+    except TimeoutException:
+        logger.warning(f"{user_log_prefix}アンフォロー後の状態変化待機中にタイムアウト ({wait_timeout}秒)。")
+        return False
+    except Exception as e:
+        logger.error(f"{user_log_prefix}アンフォロー処理中に予期せぬエラー: {e}", exc_info=True)
+        return False
