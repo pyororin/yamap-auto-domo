@@ -430,94 +430,69 @@ def get_last_activity_date(driver, user_profile_url):
 
     try:
         # 活動記録の日時情報が含まれる可能性のある要素のセレクタ
-        date_selectors = [
-            "article[data-testid='activity-entry'] time[datetime]",
-            "a[data-testid='activity-card-link'] time[datetime]",
-            "time.css-1vh94j7",
-            "div[class*='ActivityEntry_meta'] time",
-            "ul[class*='ActivityListScreen_list__'] li:first-child time[datetime]", # List view first item
-            "ul.css-qksbms li:first-child time[datetime]", # Another list view variant
-            "p.ActivityItem__Meta span.ActivityItem__Date" # New selector based on provided HTML
-        ]
-        # action_delays = main_conf.get("action_delays", {}) # main_conf already loaded as config
-        # wait_time_for_activity_date = action_delays.get("wait_for_activity_link_sec", 7)
-        # Use profile_element_timeout for waiting for date elements as well, or a new config value
+        # The user requested to use only "span.ActivityItem__Date" and only the first one.
+        # `find_element` already gets the first one.
+        selector = "span.ActivityItem__Date"
+
         wait_time_for_date_element = unfollow_settings.get("date_element_timeout_sec", profile_element_timeout)
 
+        try:
+            WebDriverWait(driver, wait_time_for_date_element).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+            )
+            # Ensure we are getting the *first* matching element, which find_element does.
+            time_element = driver.find_element(By.CSS_SELECTOR, selector)
 
-        for selector in date_selectors:
-            try:
-                WebDriverWait(driver, wait_time_for_date_element).until( # Use configured/profile_element_timeout
-                    EC.presence_of_element_located((By.CSS_SELECTOR, selector))
-                )
-                time_element = driver.find_element(By.CSS_SELECTOR, selector)
-                datetime_str = time_element.get_attribute("datetime")
-                date_text_content = time_element.text.strip()
+            # This element might not have a 'datetime' attribute,
+            # so we'll primarily rely on its text content.
+            date_text_content = time_element.text.strip()
+            logger.debug(f"Found element with selector '{selector}'. Text content: '{date_text_content}'")
 
-                if datetime_str:
-                    # ISO 8601形式 (YYYY-MM-DDTHH:MM:SSZ や YYYY-MM-DDTHH:M M:SS+09:00) を想定
-                    try:
-                        # タイムゾーン情報を考慮してdatetimeオブジェクトに変換
-                        # ZはUTCを示す
-                        if datetime_str.endswith('Z'):
-                            dt_object = datetime.strptime(datetime_str[:-1], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
-                        else:
-                            # Python 3.7+ では fromisoformat が使える
-                            dt_object = datetime.fromisoformat(datetime_str)
-
+            if date_text_content:
+                try:
+                    # Expected format: "YYYY.MM.DD(曜日)"
+                    if "." in date_text_content and "(" in date_text_content and ")" in date_text_content:
+                        date_part = date_text_content.split("(")[0].strip()
+                        dt_object = datetime.strptime(date_part, "%Y.%m.%d")
                         activity_date = dt_object.date()
-                        logger.info(f"ユーザー ({user_id_log}) の最新活動日時: {activity_date} (selector: {selector}, from datetime attr: {datetime_str})")
+                        logger.info(f"ユーザー ({user_id_log}) の最新活動日時 (テキストパース YYYY.MM.DD): {activity_date} (selector: {selector}, text: {date_text_content})")
                         return activity_date
-                    except ValueError as ve:
-                        logger.debug(f"datetime属性値 '{datetime_str}' (selector: {selector}) のパースに失敗: {ve}。テキストコンテントを試行します。")
-                        # Fall through to text content parsing
-
-                # datetime属性がない、またはパースに失敗した場合、テキストコンテントから抽出を試みる
-                if date_text_content:
-                    try:
-                        # "YYYY.MM.DD(曜日)" 形式の対応
-                        if "." in date_text_content and "(" in date_text_content and ")" in date_text_content:
-                            date_part = date_text_content.split("(")[0].strip()
-                            dt_object = datetime.strptime(date_part, "%Y.%m.%d")
-                            activity_date = dt_object.date()
-                            logger.info(f"ユーザー ({user_id_log}) の最新活動日時 (テキストパース YYYY.MM.DD): {activity_date} (selector: {selector}, text: {date_text_content})")
-                            return activity_date
-                        # "YYYY年MM月DD日" 形式の対応
-                        elif "年" in date_text_content and "月" in date_text_content and "日" in date_text_content:
-                            dt_object = datetime.strptime(date_text_content, "%Y年%m月%d日")
-                            activity_date = dt_object.date()
-                            logger.info(f"ユーザー ({user_id_log}) の最新活動日時 (テキストパース YYYY年MM月DD日): {activity_date} (selector: {selector}, text: {date_text_content})")
-                            return activity_date
-                        # 単純な "YYYY-MM-DD" 形式 (datetime属性がなくてもテキストがこの形式の場合)
-                        elif "-" in date_text_content and len(date_text_content.split('-')) == 3:
-                             try:
-                                dt_object = datetime.strptime(date_text_content.split('T')[0], "%Y-%m-%d") # 時刻情報があれば除去
+                    # Fallback for "YYYY年MM月DD日" if needed, though the provided example is YYYY.MM.DD
+                    elif "年" in date_text_content and "月" in date_text_content and "日" in date_text_content:
+                        dt_object = datetime.strptime(date_text_content, "%Y年%m月%d日")
+                        activity_date = dt_object.date()
+                        logger.info(f"ユーザー ({user_id_log}) の最新活動日時 (テキストパース YYYY年MM月DD日): {activity_date} (selector: {selector}, text: {date_text_content})")
+                        return activity_date
+                    else:
+                        logger.warning(f"日時テキスト '{date_text_content}' (selector: {selector}) が期待される形式 (YYYY.MM.DD(曜日) or YYYY年MM月DD日) と一致しません。")
+                        # Try to parse from datetime attribute if it exists, as a last resort for this element
+                        datetime_str = time_element.get_attribute("datetime")
+                        if datetime_str:
+                            logger.debug(f"Attempting to parse datetime attribute '{datetime_str}' as a fallback.")
+                            try:
+                                if datetime_str.endswith('Z'):
+                                    dt_object = datetime.strptime(datetime_str[:-1], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+                                else:
+                                    dt_object = datetime.fromisoformat(datetime_str)
                                 activity_date = dt_object.date()
-                                logger.info(f"ユーザー ({user_id_log}) の最新活動日時 (テキストパース YYYY-MM-DD): {activity_date} (selector: {selector}, text: {date_text_content})")
+                                logger.info(f"ユーザー ({user_id_log}) の最新活動日時 (datetime attr fallback): {activity_date} (selector: {selector}, from datetime attr: {datetime_str})")
                                 return activity_date
-                             except ValueError:
-                                 logger.debug(f"テキスト '{date_text_content}' (selector: {selector}) の YYYY-MM-DD パースに失敗。")
-                                 continue # 次のセレクタへ
-                        # 他のテキスト形式のパースロジックをここに追加可能
-                        else:
-                            logger.debug(f"日時テキスト '{date_text_content}' (selector: {selector}) が既知の形式と一致しません。")
-                            continue # 次のセレクタへ
-                    except ValueError as e_text_parse:
-                        logger.debug(f"日時テキスト '{date_text_content}' (selector: {selector}) のパース中にエラー: {e_text_parse}")
-                        continue # 次のセレクタへ
-                else:
-                    logger.debug(f"セレクタ '{selector}' で要素は取得できましたが、datetime属性もテキストコンテントも空です。")
-                    continue # 次のセレクタへ
+                            except ValueError as ve_fallback:
+                                logger.warning(f"datetime属性値 '{datetime_str}' (selector: {selector}) のフォールバックパースにも失敗: {ve_fallback}。")
 
-            except (NoSuchElementException, TimeoutException):
-                logger.debug(f"セレクタ '{selector}' で活動日時要素が見つかりませんでした。")
-                continue
+                except ValueError as e_text_parse:
+                    logger.warning(f"日時テキスト '{date_text_content}' (selector: {selector}) のパース中にエラー: {e_text_parse}")
+            else:
+                logger.warning(f"セレクタ '{selector}' で要素は取得できましたが、テキストコンテントが空です。")
 
-        logger.info(f"ユーザー ({user_id_log}) の最新の活動日時が見つかりませんでした（全セレクタ試行後）。")
+        except (NoSuchElementException, TimeoutException):
+            logger.warning(f"セレクタ '{selector}' で活動日時要素が見つかりませんでした。")
+
+        logger.info(f"ユーザー ({user_id_log}) の最新の活動日時が見つかりませんでした (selector: {selector})。")
         return None
 
     except Exception as e:
-        logger.error(f"ユーザー ({user_id_log}) の最新活動日時取得中にエラー。", exc_info=True)
+        logger.error(f"ユーザー ({user_id_log}) の最新活動日時取得中に予期せぬエラー。", exc_info=True)
         return None
 
 
