@@ -386,9 +386,10 @@ def unfollow_inactive_not_following_back_users(driver, my_user_id, shared_cookie
     max_pages_to_check_following = settings.get("max_pages_for_my_following_list", 10)
 
     # Parallel processing settings for fetching activity dates
-    parallel_settings = main_config.get("parallel_processing_settings", {})
-    activity_date_workers = parallel_settings.get("activity_date_fetch_workers",
-                                                 parallel_settings.get("max_workers_generic", 3)) # Default to 3 if specific not set
+    # Read from UNFOLLOW_INACTIVE_SETTINGS first, then fallback to PARALLEL_PROCESSING_SETTINGS or a hardcoded default
+    activity_date_workers = settings.get("parallel_profile_page_workers",
+                                         main_config.get("parallel_processing_settings", {}).get("activity_date_fetch_workers",
+                                                                                                main_config.get("parallel_processing_settings", {}).get("max_workers_generic", 3)))
 
     unfollowed_count = 0
 

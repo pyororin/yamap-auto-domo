@@ -398,39 +398,53 @@ def get_last_activity_date(driver, user_profile_url):
     user_id_log = user_profile_url.split('/')[-1].split('?')[0]
     logger.info(f"プロフィール ({user_id_log}) の最新活動日時を取得します。")
 
+    # 設定からタイムアウト値を取得
+    config = get_main_config()
+    unfollow_settings = config.get("unfollow_inactive_users_settings", {})
+    profile_timeout = unfollow_settings.get("profile_load_timeout_sec", 20) # Default to 20 seconds
+
     current_page_url = driver.current_url
-    if user_profile_url not in current_page_url:
+    # Normalize URLs before comparison to avoid issues with trailing slashes or minor variations
+    normalized_current_url = current_page_url.split('?')[0].rstrip('/')
+    normalized_target_url = user_profile_url.split('?')[0].rstrip('/')
+
+    if normalized_current_url != normalized_target_url:
         logger.debug(f"対象のユーザープロフィールページ ({user_profile_url}) に遷移します。")
         driver.get(user_profile_url)
         try:
-            WebDriverWait(driver, 10).until(
+            WebDriverWait(driver, profile_timeout).until( # Use configured timeout
                 EC.any_of(
                     EC.presence_of_element_located((By.CSS_SELECTOR, "a[data-testid='profile-tab-activities']")),
-                    EC.presence_of_element_located((By.CSS_SELECTOR, "h1[class*='UserProfileScreen_userName']"))
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "h1[class*='UserProfileScreen_userName']")),
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "h1.css-jctfiw")) # Profile name as a fallback
                 )
             )
         except TimeoutException:
-            logger.warning(f"ユーザー ({user_id_log}) のプロフィールページ主要要素の読み込みタイムアウト。最新活動日時取得失敗の可能性。")
+            logger.warning(f"ユーザー ({user_id_log}) のプロフィールページ主要要素の読み込みタイムアウト ({profile_timeout}秒)。最新活動日時取得失敗の可能性。")
+            save_screenshot(driver, "ProfileLoadTimeout_GetDate", f"UID_{user_id_log}")
             return None
     else:
         logger.debug(f"既にユーザープロフィールページ ({user_profile_url}) 付近にいます。")
 
     try:
         # 活動記録の日時情報が含まれる可能性のある要素のセレクタ
-        # YAMAPのUI構造に依存するため、複数の候補を試す
         date_selectors = [
-            "article[data-testid='activity-entry'] time[datetime]", # 標準的な構造
+            "article[data-testid='activity-entry'] time[datetime]",
             "a[data-testid='activity-card-link'] time[datetime]",
-            ".ActivityCard_card__XXXXX time[datetime]", # 古い可能性のあるクラス名
-            "time.css-1vh94j7", # 実際のUIで確認されたセレクタの例 (変わりやすい)
-            "div[class*='ActivityEntry_meta'] time", # メタ情報内のtime要素
+            "time.css-1vh94j7",
+            "div[class*='ActivityEntry_meta'] time",
+            "ul[class*='ActivityListScreen_list__'] li:first-child time[datetime]", # List view first item
+            "ul.css-qksbms li:first-child time[datetime]" # Another list view variant
         ]
-        action_delays = main_conf.get("action_delays", {})
-        wait_time_for_activity_date = action_delays.get("wait_for_activity_link_sec", 7) # activity_linkの待機時間を流用
+        # action_delays = main_conf.get("action_delays", {}) # main_conf already loaded as config
+        # wait_time_for_activity_date = action_delays.get("wait_for_activity_link_sec", 7)
+        # Use profile_timeout for waiting for date elements as well, or a new config value
+        wait_time_for_date_element = unfollow_settings.get("date_element_timeout_sec", profile_timeout)
+
 
         for selector in date_selectors:
             try:
-                WebDriverWait(driver, wait_time_for_activity_date).until(
+                WebDriverWait(driver, wait_time_for_date_element).until( # Use configured/profile_timeout
                     EC.presence_of_element_located((By.CSS_SELECTOR, selector))
                 )
                 time_element = driver.find_element(By.CSS_SELECTOR, selector)
