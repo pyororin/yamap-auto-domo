@@ -365,6 +365,7 @@ def domo_timeline_activities(driver):
         logger.error(f"タイムラインDOMO処理中に予期せぬエラーが発生しました。", exc_info=True)
 
     logger.info(f"<<< タイムラインDOMO機能完了。合計 {domoed_count} 件の活動記録にDOMOしました。")
+    return domoed_count
 
 
 def domo_activity_on_timeline(driver, feed_item_element, domo_button_selectors, timeline_domo_settings, timeline_url):
@@ -583,12 +584,12 @@ def domo_timeline_activities_parallel(driver, shared_cookies, current_user_id): 
     # 機能が有効かチェック (config.yaml)
     if not TIMELINE_DOMO_SETTINGS.get("enable_timeline_domo", False):
         logger.info("タイムラインDOMO機能は設定で無効になっています。")
-        return
+        return 0 # DOMO件数0を返す
     # 並列処理自体が有効かチェック (config.yaml)
     if not PARALLEL_PROCESSING_SETTINGS.get("enable_parallel_processing", False):
         logger.info("並列処理が無効なため、タイムラインDOMOは逐次実行されます (一覧DOMO版)。")
         # 逐次版 (domo_timeline_activities) は既に一覧DOMOに対応済みのため、それを呼び出す
-        return domo_timeline_activities(driver)
+        return domo_timeline_activities(driver) # domo_timeline_activities がカウントを返すように改修済み
 
     # --- 並列処理版のロジック (一覧上での直接DOMOに対応) ---
     # メインのWebDriverでタイムラインからDOMO対象の活動記録アイテムのインデックスを収集し、
@@ -710,8 +711,11 @@ def domo_timeline_activities_parallel(driver, shared_cookies, current_user_id): 
 
     except TimeoutException:
         logger.warning("[PARALLEL] タイムライン活動記録のDOMO対象収集でタイムアウトしました。")
+        return 0 # エラー時は0件
     except Exception as e:
         logger.error(f"[PARALLEL] タイムラインDOMO処理 (一覧上で直接DOMO) 中に予期せぬエラーが発生しました。", exc_info=True)
+        return 0 # エラー時は0件
+    return total_domoed_count_parallel
 
 # 新しい並列タスク関数
 def domo_timeline_item_task(

@@ -181,7 +181,7 @@ def search_follow_and_domo_users(driver, current_user_id, shared_cookies_from_ma
 
     if not sf_settings.get("enable_search_and_follow", False):
         logger.info("検索からのフォロー＆DOMO機能は設定で無効になっています。")
-        return
+        return {'followed': 0, 'domoed': 0}
 
     is_parallel_enabled = sf_settings.get("enable_parallel_search_follow", False)
     max_workers = sf_settings.get("max_workers_search_follow", 2) if is_parallel_enabled else 1
@@ -461,6 +461,7 @@ def search_follow_and_domo_users(driver, current_user_id, shared_cookies_from_ma
     logger.info(f"{log_prefix_main}-------------------------------------------------------------")
 
     logger.info(f"{log_prefix_main}<<< 検索からのフォロー＆DOMO機能完了。セッション合計フォロー: {total_followed_count_session}人, セッション合計DOMO: {total_domoed_count_session}件。")
+    return {'followed': total_followed_count_session, 'domoed': total_domoed_count_session}
 
 
 # nullcontext for Python < 3.7
