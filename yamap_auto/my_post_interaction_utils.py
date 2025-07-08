@@ -15,7 +15,8 @@ from .driver_utils import get_main_config, BASE_URL, save_screenshot, create_dri
 from .user_profile_utils import get_latest_activity_url
 from .domo_utils import domo_activity
 # from .follow_back_utils import _follow_back_task # フォローバック処理の一部を再利用検討 # 今回の修正では直接使わない
-from .follow_utils import find_follow_button_on_profile_page, click_follow_button_and_verify # 修正：find_follow_button_on_profile_page をインポート
+from .user_profile_utils import find_follow_button_on_profile_page # 正しいモジュールからインポート
+from .follow_utils import click_follow_button_and_verify # click_follow_button_and_verify は follow_utils のまま
 
 logger = logging.getLogger(__name__)
 
