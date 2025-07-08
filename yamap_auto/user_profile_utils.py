@@ -396,15 +396,17 @@ def get_last_activity_date(driver, user_profile_url):
     """
     main_conf = get_main_config()
     user_id_log = user_profile_url.split('/')[-1].split('?')[0]
+    user_id_log = user_profile_url.split('/')[-1].split('?')[0]
     logger.info(f"プロフィール ({user_id_log}) の最新活動日時を取得します。")
 
-    # 設定からタイムアウト値を取得
     config = get_main_config()
     unfollow_settings = config.get("unfollow_inactive_users_settings", {})
-    profile_timeout = unfollow_settings.get("profile_load_timeout_sec", 20) # Default to 20 seconds
+    # Use a general timeout for profile page elements, can be overridden by specific date element timeout
+    profile_element_timeout = unfollow_settings.get("profile_load_timeout_sec", 20)
+    # Specific timeout for the date element itself, falls back to profile_element_timeout
+    date_element_timeout = unfollow_settings.get("date_element_timeout_sec", profile_element_timeout)
 
     current_page_url = driver.current_url
-    # Normalize URLs before comparison to avoid issues with trailing slashes or minor variations
     normalized_current_url = current_page_url.split('?')[0].rstrip('/')
     normalized_target_url = user_profile_url.split('?')[0].rstrip('/')
 
