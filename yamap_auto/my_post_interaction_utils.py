@@ -190,15 +190,34 @@ def get_domo_users_from_activity(driver, activity_url):
     domo_users = []
 
     driver.get(activity_url)
+    # Attempt to wait for a general activity page container
+    activity_page_container_selector = "div[data-testid='activity-detail-view']" # More general selector
+    activity_title_selector = "h1[data-testid='activity-title']"
+
     try:
-        # 活動記録ページの主要な要素が表示されるまで待機 (例: 活動タイトル)
-        WebDriverWait(driver, 15).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, "h1[data-testid='activity-title']")) # 仮の活動タイトルセレクタ
+        logger.info(f"活動記録ページ ({activity_id_for_log}) の主要コンテナ ({activity_page_container_selector}) の表示を待ちます...")
+        WebDriverWait(driver, 25).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, activity_page_container_selector))
         )
-        logger.info(f"活動記録ページ ({activity_id_for_log}) の読み込みを確認。")
+        logger.info(f"活動記録ページ ({activity_id_for_log}) の主要コンテナの表示を確認。")
+
+        # Try to find the specific title, but don't fail if it's not there
+        try:
+            title_element = driver.find_element(By.CSS_SELECTOR, activity_title_selector)
+            if title_element.is_displayed():
+                logger.info(f"活動記録ページ ({activity_id_for_log}) のタイトル要素 ({activity_title_selector}) を発見。")
+            else:
+                logger.warning(f"活動記録ページ ({activity_id_for_log}) のタイトル要素 ({activity_title_selector}) は見つかりましたが、表示されていません。")
+        except NoSuchElementException:
+            logger.warning(f"活動記録ページ ({activity_id_for_log}) のタイトル要素 ({activity_title_selector}) が見つかりませんでした。処理は続行します。")
+
     except TimeoutException:
-        logger.error(f"活動記録ページ ({activity_url}) の読み込み確認タイムアウト。")
-        save_screenshot(driver, "ActivityPageLoadFail", activity_id_for_log)
+        logger.error(f"活動記録ページ ({activity_url}) の主要コンテナ ({activity_page_container_selector}) の読み込み確認タイムアウト。")
+        save_screenshot(driver, "ActivityPageContainerLoadFail", activity_id_for_log)
+        return domo_users
+    except Exception as e_page_load:
+        logger.error(f"活動記録ページ ({activity_url}) の読み込み中に予期せぬエラー: {e_page_load}", exc_info=True)
+        save_screenshot(driver, "ActivityPageLoadGenericError", activity_id_for_log)
         return domo_users
 
     # DOMOしたユーザー一覧へ遷移するボタンを探す (クラス名とテキスト内容で判断)
