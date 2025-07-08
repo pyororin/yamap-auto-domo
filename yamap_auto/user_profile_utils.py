@@ -478,7 +478,7 @@ def get_my_following_users_profiles(driver, my_user_id, max_users_to_fetch=None,
 
         logger.info(f"フォロー中リストの {processed_pages + 1} ページ目を処理中...")
         try:
-            WebDriverWait(driver, 10).until(
+            WebDriverWait(driver, 30).until( # タイムアウト値を10から30に変更
                 EC.presence_of_all_elements_located((By.CSS_SELECTOR, user_list_item_selector))
             )
             user_items = driver.find_elements(By.CSS_SELECTOR, user_list_item_selector)
@@ -584,7 +584,7 @@ def get_my_followers_profiles(driver, my_user_id, max_users_to_fetch=None, max_p
 
         logger.info(f"フォロワーリストの {processed_pages + 1} ページ目を処理中...")
         try:
-            WebDriverWait(driver, 10).until(
+            WebDriverWait(driver, 30).until( # タイムアウト値を10から30に変更
                 EC.presence_of_all_elements_located((By.CSS_SELECTOR, user_list_item_selector))
             )
             user_items = driver.find_elements(By.CSS_SELECTOR, user_list_item_selector)
