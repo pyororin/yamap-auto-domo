@@ -74,34 +74,53 @@ def get_my_activities_within_period(driver, user_profile_url, days_to_check):
             if "UsersId__Tab__Link--active" not in (activity_tab_link.get_attribute("class") or ""):
                 logger.info("活動日記タブに切り替えます...")
                 activity_tab_link.click()
-                # タブ切り替え後、リストコンテナが表示されるまで待機
-                WebDriverWait(driver, 15).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, "ul.UserActivityList__List"))
-                )
-                logger.info("活動日記タブへの切り替えを確認しました。")
+                # タブ切り替え後、リストコンテナが可視化され、最初のアイテムが表示されるまで待機
+                list_container_selector = "ul.UserActivityList__List"
+                first_list_item_selector = "li.UserActivityList__Item"
+                try:
+                    WebDriverWait(driver, 20).until( # タイムアウトを20秒に延長
+                        EC.visibility_of_element_located((By.CSS_SELECTOR, list_container_selector))
+                    )
+                    logger.info(f"リストコンテナ ({list_container_selector}) が表示されました。")
+                    # さらに、リスト内に最初のアイテムが表示されるまで待つことで、リスト内容の読み込みをより確実に待つ
+                    WebDriverWait(driver, 10).until( # リストアイテムの表示は追加で10秒待つ
+                        EC.presence_of_all_elements_located((By.CSS_SELECTOR, f"{list_container_selector} {first_list_item_selector}"))
+                    )
+                    logger.info(f"最初の活動記録アイテム ({first_list_item_selector}) の表示を確認しました。活動日記タブへの切り替え成功。")
+                except TimeoutException:
+                    logger.warning(f"活動日記タブクリック後、リストコンテナ ({list_container_selector}) または最初のアイテム ({first_list_item_selector}) の表示タイムアウト。スクリーンショットを保存します。")
+                    save_screenshot(driver, "ActivityListVisibilityTimeout", user_profile_url.split('/')[-1])
+                    # タイムアウトした場合、後続の処理で空のリストが返るため、ここでは早期リターンしない。
+                    # return activities_within_period # 必要に応じてリターン
             else:
                 logger.info("既に活動日記タブが表示されているようです。")
-        except TimeoutException:
-            logger.warning(f"活動日記タブ ({activity_tab_selector}) の特定またはクリック後のリスト表示でタイムアウトしました。")
-            save_screenshot(driver, "ActivityTabSwitchFail", user_profile_url.split('/')[-1])
+        except TimeoutException: # これは activity_tab_link の特定に関するタイムアウト
+            logger.warning(f"活動日記タブ ({activity_tab_selector}) の特定自体でタイムアウトしました。")
+            save_screenshot(driver, "ActivityTabFindFail", user_profile_url.split('/')[-1])
             return activities_within_period
         except Exception as e_tab_switch:
-            logger.error(f"活動日記タブへの切り替え中に予期せぬエラー: {e_tab_switch}", exc_info=True)
+            logger.error(f"活動日記タブへの切り替えまたは確認中に予期せぬエラー: {e_tab_switch}", exc_info=True)
             save_screenshot(driver, "ActivityTabSwitchError", user_profile_url.split('/')[-1])
             return activities_within_period
     else:
         logger.info("既に活動日記タブのURLです。")
 
     # 活動記録一覧が表示されるまで待機 (ユーザー提供HTMLに基づく)
+    # 上のタブ切り替え成功時にリストの表示確認は既に行っているため、
+    # ここでの待機は、URL直打ちで来た場合や、タブが最初からアクティブだった場合をカバーする。
     activity_list_container_selector = "ul.UserActivityList__List"
+    first_list_item_selector_for_direct_access = "li.UserActivityList__Item"
     try:
         WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, activity_list_container_selector))
+            EC.visibility_of_element_located((By.CSS_SELECTOR, activity_list_container_selector))
         )
-        logger.info(f"プロフィールページで活動記録リストコンテナ ({activity_list_container_selector}) を確認しました。")
+        WebDriverWait(driver, 5).until(
+             EC.presence_of_all_elements_located((By.CSS_SELECTOR, f"{activity_list_container_selector} {first_list_item_selector_for_direct_access}"))
+        )
+        logger.info(f"プロフィールページで活動記録リストコンテナ ({activity_list_container_selector}) と最初のアイテムの表示を確認しました。")
     except TimeoutException:
-        logger.warning(f"プロフィールページで活動記録リストコンテナ ({activity_list_container_selector}) の読み込みタイムアウト (10秒)。")
-        save_screenshot(driver, "ActivityListContainerTimeout", user_profile_url.split('/')[-1])
+        logger.warning(f"プロフィールページで活動記録リストコンテナ ({activity_list_container_selector}) または最初のアイテムの読み込みタイムアウト (10+5秒)。")
+        save_screenshot(driver, "ActivityListContainerTimeoutOnDirect", user_profile_url.split('/')[-1])
         return activities_within_period
 
     # 活動記録アイテムのセレクタ (日付とリンクを含む) - ユーザー提供HTMLに基づき更新
