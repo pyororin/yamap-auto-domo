@@ -71,6 +71,8 @@ from .follow_utils import (
 from .search_utils import search_follow_and_domo_users
 # follow_back_utils から必要なものをインポート
 from .follow_back_utils import follow_back_users_new
+# my_post_interaction_utils から必要なものをインポート
+from .my_post_interaction_utils import interact_with_domo_users_on_my_posts
 
 
 import logging # logging_utils.setup_logger() の後で、getLogger を使うために必要
@@ -106,10 +108,11 @@ try:
     TIMELINE_DOMO_SETTINGS = main_config.get("timeline_domo_settings", {})
     SEARCH_AND_FOLLOW_SETTINGS = main_config.get("search_and_follow_settings", {})
     PARALLEL_PROCESSING_SETTINGS = main_config.get("parallel_processing_settings", {})
+    MY_POST_INTERACTION_SETTINGS = main_config.get("new_feature_my_post_interaction", {}) # 新機能の設定
 
-    if not all([FOLLOW_BACK_SETTINGS, TIMELINE_DOMO_SETTINGS, SEARCH_AND_FOLLOW_SETTINGS, PARALLEL_PROCESSING_SETTINGS]):
+    if not all([FOLLOW_BACK_SETTINGS, TIMELINE_DOMO_SETTINGS, SEARCH_AND_FOLLOW_SETTINGS, PARALLEL_PROCESSING_SETTINGS, MY_POST_INTERACTION_SETTINGS]):
         logger.warning(
-            "config.yamlに新しい機能（follow_back_settings, timeline_domo_settings, search_and_follow_settings, parallel_processing_settings）の"
+            "config.yamlに主要な機能（follow_back, timeline_domo, search_and_follow, parallel_processing, new_feature_my_post_interaction）の" # MY_POST_INTERACTION_SETTINGS を警告対象に追加
             "一部または全ての設定セクションが見つからないか空です。デフォルト値で動作しようとしますが、"
             "意図した動作をしない可能性があります。config.yamlを確認してください。"
         )
@@ -209,7 +212,9 @@ def execute_main_tasks(driver, user_id, shared_cookies):
         'followed_back': 0,
         'timeline_domo': 0,
         'search_followed': 0,
-        'search_domoed': 0
+        'search_domoed': 0,
+        'my_post_followed_back': 0, # 新機能のサマリー用
+        'my_post_domoed_to_user': 0  # 新機能のサマリー用
     }
     if not driver:
         logger.error("WebDriverが初期化されていないため、メインタスクの実行をスキップします。")
@@ -260,6 +265,22 @@ def execute_main_tasks(driver, user_id, shared_cookies):
     else:
         logger.info("検索結果からのフォロー＆DOMO機能は設定で無効です。")
 
+    # 自分自身の投稿へのDOMOユーザーインタラクション機能
+    # この機能は MY_POST_INTERACTION_SETTINGS を直接参照するため、ここで main_config から読み込む必要はない
+    # my_post_interaction_utils 内部で _get_my_post_interaction_settings() を使って取得する
+    if MY_POST_INTERACTION_SETTINGS.get("enable_my_post_interaction", False): # main_configから直接有効性を確認
+        start_time = time.time()
+        logger.info("自分の投稿へのDOMOユーザーインタラクション機能を呼び出します。")
+        # interact_with_domo_users_on_my_posts は (followed_count, domoed_count) を返す
+        mpi_followed_count, mpi_domoed_count = interact_with_domo_users_on_my_posts(driver, user_id, shared_cookies)
+        summary_counts['my_post_followed_back'] = mpi_followed_count
+        summary_counts['my_post_domoed_to_user'] = mpi_domoed_count
+        end_time = time.time()
+        logger.info(f"自分の投稿へのDOMOユーザーインタラクション機能の処理時間: {end_time - start_time:.2f}秒。")
+        logger.info(f"  インタラクションによるフォローバック数: {mpi_followed_count}, DOMOユーザーへのDOMO数: {mpi_domoed_count}")
+    else:
+        logger.info("自分の投稿へのDOMOユーザーインタラクション機能は設定で無効です。")
+
     return summary_counts
 
 
@@ -285,6 +306,8 @@ def main():
                 logger.info(f"  タイムラインDOMO数: {summary.get('timeline_domo', 0)} 件")
                 logger.info(f"  検索からの新規フォロー数: {summary.get('search_followed', 0)} 件")
                 logger.info(f"  検索からのDOMO数 (フォロー後): {summary.get('search_domoed', 0)} 件")
+                logger.info(f"  自分の投稿へのインタラクション - フォローバック数: {summary.get('my_post_followed_back', 0)} 件")
+                logger.info(f"  自分の投稿へのインタラクション - DOMOユーザーへのDOMO数: {summary.get('my_post_domoed_to_user', 0)} 件")
             else:
                 logger.info("  サマリー情報の取得に失敗しました。")
             logger.info("----------------------")
