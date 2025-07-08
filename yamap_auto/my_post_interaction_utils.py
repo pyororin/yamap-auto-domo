@@ -159,9 +159,13 @@ def get_my_activities_within_period(driver, user_profile_url, days_to_check):
             else:
                 log_activity_id = f"アイテムインデックス {item_idx+1}"
                 try:
+                    # activity_url_path がこのスコープで定義されているか不確実なため、
+                    # より安全には item_article_element から再度リンク要素を探す方が良いが、
+                    # 指摘された構文エラーの修正を優先する。
                     if 'activity_url_path' in locals() and activity_url_path and "/activities/" in activity_url_path:
                         log_activity_id = activity_url_path.split('/')[-1].split('?')[0]
-                except: pass
+                except Exception:
+                    pass
                 logger.info(f"活動記録 {log_activity_id} (日付: {activity_date.strftime('%Y-%m-%d')}) は対象期間外です。これ以降の投稿も期間外とみなし処理を終了。")
                 break
         except NoSuchElementException as e_nse_item:
