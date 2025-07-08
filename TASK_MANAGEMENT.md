@@ -5,7 +5,9 @@
 ---
 
 ## 🛠 仕掛中タスク
-*   [ ] **修正:** `user_profile_utils.py` のフォロー中/フォロワーリスト取得機能におけるCSSセレクタをユーザー提供情報に基づき修正 (コミット: `[THIS_COMMIT_HASH]`)
+*   [ ] **修正:** `user_profile_utils.py` のフォロー中/フォロワーリスト取得機能におけるURL生成ロジックを修正 (コミット: `[THIS_COMMIT_HASH]`)
+    *   URL末尾に `?tab=follows#tabs` または `?tab=followers#tabs` を追加。
+*   [ ] **修正:** `user_profile_utils.py` のフォロー中/フォロワーリスト取得機能におけるCSSセレクタをユーザー提供情報に基づき修正 (コミット: `[PREVIOUS_COMMIT_HASH]`)
     *   対象セレクタ: `user_list_item_selector`, `user_profile_link_selector`, `next_page_button_selector`
 *   [ ] **新機能:** 自分自身の1週間以内の記事投稿について、DOMOをくれた未フォローユーザーをフォローバックし、そのユーザーの最新投稿1つへDOMOする機能 (コミット: `[PREVIOUS_COMMIT_HASH]`)
     *   `my_post_interaction_utils.py` に主要ロジックを実装。
