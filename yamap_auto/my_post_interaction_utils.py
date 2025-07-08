@@ -57,23 +57,28 @@ def get_my_activities_within_period(driver, user_profile_url, days_to_check):
         WebDriverWait(driver, 10).until(EC.url_contains(user_profile_url.split('/')[-1]))
 
     # 活動記録一覧が表示されるまで待機
-    activity_list_selector = "div[class*='UserProfileScreen_activities']" # プロフィールページの活動記録リストコンテナ
+    # activity_list_selector = "div[class*='UserProfileScreen_activities']" # 旧セレクタ
+    activity_list_selector = "section[aria-label='活動日記'] div[data-testid='user-activities-tab-panel']" # 新セレクタ (ユーザー提供情報に基づく)
     try:
-        WebDriverWait(driver, 15).until(
+        WebDriverWait(driver, 20).until( # 待機時間は20秒を維持
             EC.presence_of_element_located((By.CSS_SELECTOR, activity_list_selector))
         )
+        logger.info(f"プロフィールページで活動記録リスト ({activity_list_selector}) を確認しました。")
     except TimeoutException:
-        logger.warning(f"プロフィールページで活動記録リスト ({activity_list_selector}) の読み込みタイムアウト。")
+        logger.warning(f"プロフィールページで活動記録リスト ({activity_list_selector}) の読み込みタイムアウト (20秒)。")
+        save_screenshot(driver, "ActivityListLoadTimeout", user_profile_url.split('/')[-1])
         return activities_within_period
 
-    # 活動記録アイテムのセレクタ (日付とリンクを含む)
-    # YAMAPのUIにより調整が必要
-    activity_item_selector = "article[data-testid='activity-entry']" # 個々の活動記録
-    activity_link_selector = "a[data-testid='activity-card-link']" # 活動記録へのリンク
-    activity_date_selector = "time[class*='ActivityCard_date']" # 活動記録の日付
+    # 活動記録アイテムのセレクタ (日付とリンクを含む) - ユーザー提供情報に基づき更新
+    activity_item_selector = "article[data-testid='activity-card']"  # 個々の活動記録 (更新)
+    activity_link_selector = "a[data-testid='activity-card-link']"  # 活動記録へのリンク (変更なし)
+    activity_date_selector = "div[data-testid='activity-card-date'] time" # 活動記録の日付 (更新)
 
     try:
-        activity_elements = driver.find_elements(By.CSS_SELECTOR, activity_item_selector)
+        # リストコンテナ要素をまず取得
+        list_container = driver.find_element(By.CSS_SELECTOR, activity_list_selector)
+        # そのコンテナ内で活動記録アイテムを検索
+        activity_elements = list_container.find_elements(By.CSS_SELECTOR, activity_item_selector)
         logger.info(f"{len(activity_elements)} 件の活動記録をプロフィールから検出しました。")
 
         if not activity_elements:
