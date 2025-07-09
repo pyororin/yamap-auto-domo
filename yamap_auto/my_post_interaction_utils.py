@@ -236,23 +236,21 @@ def get_domo_users_from_activity(driver, activity_url):
         logger.info(f"DOMOしたユーザー一覧へのボタン ('{button_text_for_log}') を発見。クリックします。")
         domo_button.click()
 
-        # DOMOユーザー一覧ページへの遷移/表示を待機 (URLまたは特定のリスト要素)
-        # 注意: DOMOユーザー一覧ページの実際のセレクタはユーザーからの情報待ち
-        domo_list_page_indicator_selector_temp = "ul[class*='UserList_list']" # これは仮の古いセレクタ
-        # data-testid="domo-user-list" のような安定したセレクタが理想
-        # domo_list_page_indicator_selector_temp = "div[data-testid='domo-user-list']" # より良い可能性のあるセレクタの例
+        # DOMOユーザー一覧ページへの遷移/表示を待機
+        # 最初のユーザーリンクが表示されることを期待する
+        domo_list_page_indicator_selector = "a.DomoUserListItem__UserLink"
 
-        logger.info(f"DOMOユーザー一覧の表示を待ちます (仮セレクタ: {domo_list_page_indicator_selector_temp})...")
+        logger.info(f"DOMOユーザー一覧の表示を待ちます (セレクタ: {domo_list_page_indicator_selector})...")
         WebDriverWait(driver, 15).until(
-            EC.any_of( # URLに /domos がつくか、リスト要素が表示されるか
-                EC.url_contains("/domos"),
-                EC.presence_of_element_located((By.CSS_SELECTOR, domo_list_page_indicator_selector_temp))
+            EC.any_of(
+                EC.url_contains("/domos"), # URLでの確認も残す
+                EC.presence_of_element_located((By.CSS_SELECTOR, domo_list_page_indicator_selector))
             )
         )
         logger.info("DOMOユーザー一覧ページへの遷移/表示を確認。")
 
     except TimeoutException:
-        logger.warning(f"DOMOしたユーザー一覧へのボタンが見つからないか、クリック後のページ遷移/表示でタイムアウトしました。")
+        logger.warning(f"DOMOしたユーザー一覧へのボタンクリック後、DOMOユーザー一覧の表示（ユーザーリンクまたはURL）でタイムアウトしました。")
         save_screenshot(driver, "DomoButtonClickOrTransitionFail", activity_id_for_log)
         return domo_users # DOMOユーザーがいなかった、またはボタンが見つからなかった場合
     except Exception as e_button_click:
