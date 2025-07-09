@@ -13,7 +13,7 @@
     *   [x] `my_post_interaction_utils.py` に設定読み込み関数 `_get_domo_back_settings` を追加。
     *   [x] `my_post_interaction_utils.py` にメイン処理関数 `domo_back_to_past_domo_users` の雛形を追加。
     *   [x] `yamap_auto_domo.py` の `execute_main_tasks` 及びサマリー出力に上記新機能の呼び出しと結果表示を統合。
-    *   [x] `my_post_interaction_utils.py` の `domo_back_to_past_domo_users` 関数の詳細ロジックを実装（一部条件判定は未実装として警告ログ出力）。
+    *   [x] `my_post_interaction_utils.py` の `domo_back_to_past_domo_users` 関数の詳細ロジックを実装（フォロー状況に関わらずDOMO返しするよう仕様変更）。
 *   [ ] **修正:** `user_profile_utils.py` のリストアイテム取得時のWebDriverWaitタイムアウトを30秒に延長 (コミット: `[NEEDS_ACTUAL_COMMIT_HASH]`)
     *   動的読み込みされるリストアイテムの表示待ち時間延長のため。
 *   [ ] **修正:** `user_profile_utils.py` のフォロー/フォロワーリスト関連CSSセレクタを詳細化 (コミット: `[PREVIOUS_COMMIT_HASH]`)
@@ -63,7 +63,6 @@
 *   [x] フォローバックについて、「次へ」のページ遷移も行い全ページの確認を実施します (`max_pages_for_follow_back` 設定追加)
 *   [x] タイムラインDOMO機能について、個別の記事に飛ばずに一覧上でDOMOする
 *   [ ] 並列処理のワーカー数や遅延時間について、最適な値をユーザー環境ごとに調整する必要があるため、README等に指針を記載検討。（`config.yaml` 内のコメントで一部対応済み [PREVIOUS_COMMIT_HASH]）
-*   [ ] **改善検討:** 新機能「過去記事DOMOユーザーへのDOMO返し」の条件判定 `domo_if_not_following_me` （相手が自分をフォローしているか確認）を実装するために、`user_profile_utils.is_user_following_me` 関数の改修または代替ロジックの検討。現状は警告ログを出力しスキップしている。
 (ここにメモや改善案を記述)
 
 ---

@@ -500,55 +500,16 @@ def domo_back_to_past_domo_users(driver, current_user_id, shared_cookies):
                 logger.debug(f"ユーザー ({user_name}) は既にこのセッションでDOMO返し処理済みのためスキップ。")
                 continue
 
-            # 3. 条件確認
-            should_domo_back = True
-
-            # 相手が自分をフォローしていない場合のみDOMO
-            if domo_if_not_following_me:
-                logger.debug(f"ユーザー ({user_name}) が自分をフォローしているか確認します...")
-                # is_user_following_me の実装と呼び出しが必要
-                # 現状は未実装のため警告ログを出力し、この条件は無視して処理を続行（should_domo_back は True のまま）
-                logger.warning(f"条件「相手が自分をフォローしていない場合のみDOMO」の判定ロジックは未実装です。({user_name})")
-                # # 以下、実装する場合のイメージ
-                # driver.get(my_profile_url + "/followers") # 自分のフォロワー一覧へ
-                # # ... 相手がリストにいるか確認する処理 ...
-                # # if is_following_me:
-                # #     logger.info(f"ユーザー ({user_name}) は既に自分をフォローしているため、DOMO返しスキップ。")
-                # #     should_domo_back = False
-                # # else:
-                # #     logger.info(f"ユーザー ({user_name}) は自分をフォローしていません。DOMO返し対象の可能性あり。")
-
-            if not should_domo_back: # 上記の domo_if_not_following_me が False にした場合
-                processed_users_for_domo_back_this_session.add(user_profile_url)
-                continue
-
-            # 自分が相手をフォローしていない場合のみDOMO
-            if domo_if_i_am_not_following:
-                logger.debug(f"自分がユーザー ({user_name}) をフォローしているか確認します...")
-                driver.get(user_profile_url) # 相手のプロフィールページへ
-                try:
-                    WebDriverWait(driver, 15).until(EC.url_contains(user_id_short)) # ページ遷移確認
-                    follow_button = find_follow_button_on_profile_page(driver)
-                    if not follow_button: # フォローボタンがない = 既にフォロー済み
-                        logger.info(f"ユーザー ({user_name}) は既に自分がフォローしているため、DOMO返しスキップ。")
-                        should_domo_back = False
-                    else:
-                        logger.info(f"ユーザー ({user_name}) は自分がまだフォローしていません。DOMO返し対象の可能性あり。")
-                except TimeoutException:
-                    logger.warning(f"ユーザー ({user_name}) のプロフィールページ ({user_profile_url}) 読み込みタイムアウト。フォロー状態確認スキップ。")
-                    save_screenshot(driver, f"DomoBackFollowCheckTimeout_{user_id_short}")
-                    should_domo_back = False # 安全のためスキップ
-                except Exception as e_f_check:
-                    logger.error(f"ユーザー ({user_name}) のフォロー状態確認中にエラー: {e_f_check}", exc_info=True)
-                    save_screenshot(driver, f"DomoBackFollowCheckError_{user_id_short}")
-                    should_domo_back = False # 安全のためスキップ
-
-            if not should_domo_back:
-                processed_users_for_domo_back_this_session.add(user_profile_url)
-                continue
+            # 3. 条件確認 (フォロー状況に関する条件分岐を削除)
+            # should_domo_back = True # 元々Trueで初期化されていたので、条件分岐削除により常にTrue扱いとなる
 
             # 4. ユーザーの最新活動記録にDOMO
             logger.info(f"ユーザー ({user_name}, {user_id_short}) の最新活動記録へDOMO返しを試みます。")
+            # driver.get(user_profile_url) は以前のフォロー確認ロジックで実行されていた可能性があるため、
+            # 最新活動記録取得前に確実に相手のプロフィールページにいるようにする。
+            # ただし、get_latest_activity_url が内部で driver.get するなら不要。
+            # get_latest_activity_url の stay_on_page=True を活かすため、ここでは driver.get は行わない。
+            # get_latest_activity_url が user_profile_url を受け取るので、そこで遷移する。
             # get_latest_activity_url は相手のプロフィールページにアクセスするため、現在のページが相手のプロフならそのまま使える
             # find_follow_button_on_profile_page の後なので、既に相手のプロフィールページにいるはず
             latest_user_activity_url = get_latest_activity_url(driver, user_profile_url, stay_on_page=True)
