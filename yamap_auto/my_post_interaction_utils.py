@@ -35,6 +35,10 @@ def _get_follow_back_settings_for_interaction():
     config = _get_config_cached()
     return config.get("follow_back_settings", {})
 
+def _get_domo_back_settings():
+    config = _get_config_cached()
+    return config.get("new_feature_domo_back_to_past_domo_users", {})
+
 
 def get_my_activities_within_period(driver, user_profile_url, days_to_check):
     """
@@ -191,12 +195,12 @@ def get_domo_users_from_activity(driver, activity_url):
 
     driver.get(activity_url)
     # Attempt to wait for a general activity page container
-    activity_page_container_selector = "div[data-testid='activity-detail-view']" # More general selector
-    activity_title_selector = "h1[data-testid='activity-title']"
+    activity_page_container_selector = "main.ActivitiesId__Main" # セレクタを変更
+    activity_title_selector = "h1.ActivityDetailTabLayout__Title" # タイトルセレクタもHTMLに合わせて更新
 
     try:
         logger.info(f"活動記録ページ ({activity_id_for_log}) の主要コンテナ ({activity_page_container_selector}) の表示を待ちます...")
-        WebDriverWait(driver, 25).until(
+        WebDriverWait(driver, 35).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, activity_page_container_selector))
         )
         logger.info(f"活動記録ページ ({activity_id_for_log}) の主要コンテナの表示を確認。")
@@ -425,3 +429,147 @@ def interact_with_domo_users_on_my_posts(driver, current_user_id, shared_cookies
     logger.info(f"  合計フォローバック数: {total_followed_back_count}")
     logger.info(f"  合計DOMO成功数（DOMOユーザーへ）: {total_domoed_to_users_count}")
     return total_followed_back_count, total_domoed_to_users_count
+
+
+def domo_back_to_past_domo_users(driver, current_user_id, shared_cookies):
+    """
+    自分の過去の活動記録にDOMOしてくれたユーザーに対して、そのユーザーの最新の活動記録にDOMOを返す機能。
+    """
+    db_settings = _get_domo_back_settings()
+    if not db_settings.get("enable_domo_back_to_past_users", False):
+        logger.info("過去記事DOMOユーザーへのDOMO返し機能は設定で無効です。")
+        return 0
+
+    logger.info(">>> 過去記事DOMOユーザーへのDOMO返し機能を開始します...")
+    start_time = time.time()
+
+    days_to_check_past = db_settings.get("max_days_to_check_past_activities", 30)
+    max_past_activities = db_settings.get("max_past_activities_to_process", 5)
+    max_users_per_activity = db_settings.get("max_users_to_domo_back_per_activity", 10)
+    max_total_users_overall = db_settings.get("max_total_domo_back_users_per_run", 20)
+    domo_if_not_following_me = db_settings.get("enable_domo_only_if_not_following_me", False)
+    domo_if_i_am_not_following = db_settings.get("enable_domo_only_if_i_am_not_following", True)
+    delay_action_sec = db_settings.get("delay_between_domo_back_action_sec", 5.0)
+
+    my_profile_url = f"{BASE_URL}/users/{current_user_id}"
+    total_domoed_back_count = 0
+    processed_users_for_domo_back_this_session = set() # (user_profile_url) を記録
+
+    # 1. 自分の過去の活動記録を取得
+    logger.info(f"過去 {days_to_check_past} 日間の自分の活動記録を取得します (最大 {max_past_activities} 件処理)。")
+    my_past_activities_urls = get_my_activities_within_period(driver, my_profile_url, days_to_check_past)
+    if not my_past_activities_urls:
+        logger.info("DOMO返し対象の過去の活動記録が見つかりませんでした。")
+        return 0
+
+    # get_my_activities_within_period は新しい順にソートされている想定
+    activities_to_process = my_past_activities_urls[:max_past_activities]
+    logger.info(f"{len(activities_to_process)} 件の過去活動記録を処理対象とします。")
+
+    for past_activity_url in activities_to_process:
+        if total_domoed_back_count >= max_total_users_overall:
+            logger.info(f"今回の実行でのDOMO返し総数が上限 ({max_total_users_overall}) に達しました。処理を中断します。")
+            break
+
+        activity_id_log = past_activity_url.split('/')[-1].split('?')[0]
+        logger.info(f"--- 過去活動記録 ({activity_id_log}) のDOMOユーザーを確認 ---")
+
+        # 2. 各過去記事のDOMOユーザーリストを取得
+        past_domo_users = get_domo_users_from_activity(driver, past_activity_url)
+        if not past_domo_users:
+            logger.info(f"活動記録 ({activity_id_log}) にDOMOユーザーがいませんでした。")
+            continue
+
+        domoed_for_this_activity_count = 0
+        for domo_user_info in past_domo_users:
+            if total_domoed_back_count >= max_total_users_overall:
+                logger.info(f"今回の実行でのDOMO返し総数が上限 ({max_total_users_overall}) に達しました (個別ユーザー処理中)。")
+                break
+            if domoed_for_this_activity_count >= max_users_per_activity:
+                logger.info(f"この活動記録 ({activity_id_log}) でのDOMO返し数が上限 ({max_users_per_activity}) に達しました。")
+                break
+
+            user_profile_url = domo_user_info["profile_url"]
+            user_name = domo_user_info["name"]
+            user_id_short = user_profile_url.split('/')[-1]
+
+            if user_id_short == str(current_user_id): # 自分自身はスキップ
+                logger.debug(f"ユーザー ({user_name}) は自分自身のためスキップ。")
+                continue
+            if user_profile_url in processed_users_for_domo_back_this_session:
+                logger.debug(f"ユーザー ({user_name}) は既にこのセッションでDOMO返し処理済みのためスキップ。")
+                continue
+
+            # 3. 条件確認
+            should_domo_back = True
+
+            # 相手が自分をフォローしていない場合のみDOMO
+            if domo_if_not_following_me:
+                logger.debug(f"ユーザー ({user_name}) が自分をフォローしているか確認します...")
+                # is_user_following_me の実装と呼び出しが必要
+                # 現状は未実装のため警告ログを出力し、この条件は無視して処理を続行（should_domo_back は True のまま）
+                logger.warning(f"条件「相手が自分をフォローしていない場合のみDOMO」の判定ロジックは未実装です。({user_name})")
+                # # 以下、実装する場合のイメージ
+                # driver.get(my_profile_url + "/followers") # 自分のフォロワー一覧へ
+                # # ... 相手がリストにいるか確認する処理 ...
+                # # if is_following_me:
+                # #     logger.info(f"ユーザー ({user_name}) は既に自分をフォローしているため、DOMO返しスキップ。")
+                # #     should_domo_back = False
+                # # else:
+                # #     logger.info(f"ユーザー ({user_name}) は自分をフォローしていません。DOMO返し対象の可能性あり。")
+
+            if not should_domo_back: # 上記の domo_if_not_following_me が False にした場合
+                processed_users_for_domo_back_this_session.add(user_profile_url)
+                continue
+
+            # 自分が相手をフォローしていない場合のみDOMO
+            if domo_if_i_am_not_following:
+                logger.debug(f"自分がユーザー ({user_name}) をフォローしているか確認します...")
+                driver.get(user_profile_url) # 相手のプロフィールページへ
+                try:
+                    WebDriverWait(driver, 15).until(EC.url_contains(user_id_short)) # ページ遷移確認
+                    follow_button = find_follow_button_on_profile_page(driver)
+                    if not follow_button: # フォローボタンがない = 既にフォロー済み
+                        logger.info(f"ユーザー ({user_name}) は既に自分がフォローしているため、DOMO返しスキップ。")
+                        should_domo_back = False
+                    else:
+                        logger.info(f"ユーザー ({user_name}) は自分がまだフォローしていません。DOMO返し対象の可能性あり。")
+                except TimeoutException:
+                    logger.warning(f"ユーザー ({user_name}) のプロフィールページ ({user_profile_url}) 読み込みタイムアウト。フォロー状態確認スキップ。")
+                    save_screenshot(driver, f"DomoBackFollowCheckTimeout_{user_id_short}")
+                    should_domo_back = False # 安全のためスキップ
+                except Exception as e_f_check:
+                    logger.error(f"ユーザー ({user_name}) のフォロー状態確認中にエラー: {e_f_check}", exc_info=True)
+                    save_screenshot(driver, f"DomoBackFollowCheckError_{user_id_short}")
+                    should_domo_back = False # 安全のためスキップ
+
+            if not should_domo_back:
+                processed_users_for_domo_back_this_session.add(user_profile_url)
+                continue
+
+            # 4. ユーザーの最新活動記録にDOMO
+            logger.info(f"ユーザー ({user_name}, {user_id_short}) の最新活動記録へDOMO返しを試みます。")
+            # get_latest_activity_url は相手のプロフィールページにアクセスするため、現在のページが相手のプロフならそのまま使える
+            # find_follow_button_on_profile_page の後なので、既に相手のプロフィールページにいるはず
+            latest_user_activity_url = get_latest_activity_url(driver, user_profile_url, stay_on_page=True)
+            if latest_user_activity_url:
+                latest_activity_id_log = latest_user_activity_url.split('/')[-1].split('?')[0]
+                logger.info(f"ユーザー ({user_name}) の最新活動記録URL: {latest_activity_id_log}")
+                if domo_activity(driver, latest_user_activity_url): # この関数は内部で活動記録ページにアクセスする
+                    logger.info(f"  -> 成功: {user_name} の最新活動 ({latest_activity_id_log}) へのDOMO返し")
+                    total_domoed_back_count += 1
+                    domoed_for_this_activity_count += 1
+                else:
+                    logger.info(f"  -> スキップ/失敗: {user_name} の最新活動 ({latest_activity_id_log}) へのDOMO返し")
+            else:
+                logger.info(f"ユーザー ({user_name}) の最新活動記録が見つかりませんでした。DOMO返しスキップ。")
+
+            processed_users_for_domo_back_this_session.add(user_profile_url)
+            if total_domoed_back_count < max_total_users_overall and domoed_for_this_activity_count < max_users_per_activity :
+                logger.debug(f"DOMO返しアクション後、{delay_action_sec}秒待機します。")
+                time.sleep(delay_action_sec)
+
+    end_time = time.time()
+    logger.info(f"<<< 過去記事DOMOユーザーへのDOMO返し機能完了。処理時間: {end_time - start_time:.2f}秒。")
+    logger.info(f"  合計DOMO返し成功数: {total_domoed_back_count}")
+    return total_domoed_back_count
