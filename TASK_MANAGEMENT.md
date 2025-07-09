@@ -8,6 +8,7 @@
 *   [x] **エラー修正:** 活動記録ページの読み込みタイムアウトエラー対応 (コミット: `[IN_PROGRESS]`)
     *   `my_post_interaction_utils.py` の `get_domo_users_from_activity` 関数内の待機時間を35秒に延長。
     *   セレクタを `div[data-testid='activity-detail-view']` から `main.ActivitiesId__Main` に変更。
+    *   さらにセレクタを `main.ActivitiesId__Main` から `div.ActivitiesId` に変更。
 *   [ ] **新機能:** 過去の記事にDOMOくれたユーザーに対して最新記事にDOMOを返す (コミット: `[IN_PROGRESS]`)
     *   [x] `config.yaml` に機能設定項目 `new_feature_domo_back_to_past_domo_users` を追加。
     *   [x] `my_post_interaction_utils.py` に設定読み込み関数 `_get_domo_back_settings` を追加。
