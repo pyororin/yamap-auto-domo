@@ -79,7 +79,10 @@ from .search_utils import search_follow_and_domo_users
 # follow_back_utils から必要なものをインポート
 from .follow_back_utils import follow_back_users_new
 # my_post_interaction_utils から必要なものをインポート
-from .my_post_interaction_utils import interact_with_domo_users_on_my_posts
+from .my_post_interaction_utils import (
+    interact_with_domo_users_on_my_posts,
+    domo_back_to_past_domo_users # 新機能の関数をインポート
+)
 
 
 import logging # logging_utils.setup_logger() の後で、getLogger を使うために必要
@@ -271,7 +274,8 @@ def execute_main_tasks(driver, user_id, shared_cookies):
         'search_domoed': 0,
         'my_post_followed_back': 0,
         'my_post_domoed_to_user': 0,
-        'unfollowed_inactive': 0 # 新機能のサマリー用
+        'domo_back_to_past_users': 0, # 新機能のサマリー用キーを追加
+        'unfollowed_inactive': 0
     }
     if not driver:
         logger.error("WebDriverが初期化されていないため、メインタスクの実行をスキップします。")
@@ -348,6 +352,21 @@ def execute_main_tasks(driver, user_id, shared_cookies):
         logger.info(f"非アクティブユーザーのアンフォロー機能の処理時間: {end_time - start_time:.2f}秒。アンフォロー数: {summary_counts['unfollowed_inactive']}")
     else:
         logger.info("非アクティブユーザーのアンフォロー機能は設定で無効です。")
+
+    # === 過去記事DOMOユーザーへのDOMO返し機能 ===
+    # この設定は my_post_interaction_utils 内部で config から読み込まれるが、
+    # ここでは main_config を使って有効無効を判定し、呼び出しを制御する。
+    # new_feature_domo_back_to_past_domo_users セクションを main_config から取得
+    domo_back_settings = main_config.get("new_feature_domo_back_to_past_domo_users", {})
+    if domo_back_settings.get("enable_domo_back_to_past_users", False):
+        start_time = time.time()
+        logger.info("過去記事DOMOユーザーへのDOMO返し機能を呼び出します。")
+        domo_back_count = domo_back_to_past_domo_users(driver, user_id, shared_cookies)
+        summary_counts['domo_back_to_past_users'] = domo_back_count
+        end_time = time.time()
+        logger.info(f"過去記事DOMOユーザーへのDOMO返し機能の処理時間: {end_time - start_time:.2f}秒。DOMO返し成功数: {domo_back_count}")
+    else:
+        logger.info("過去記事DOMOユーザーへのDOMO返し機能は設定で無効です。")
 
     return summary_counts
 
@@ -614,7 +633,8 @@ def main():
                 logger.info(f"  検索からのDOMO数 (フォロー後): {summary.get('search_domoed', 0)} 件")
                 logger.info(f"  自分の投稿へのインタラクション - フォローバック数: {summary.get('my_post_followed_back', 0)} 件")
                 logger.info(f"  自分の投稿へのインタラクション - DOMOユーザーへのDOMO数: {summary.get('my_post_domoed_to_user', 0)} 件")
-                logger.info(f"  非アクティブユーザーのアンフォロー数: {summary.get('unfollowed_inactive', 0)} 件") # 新機能のサマリー出力
+                logger.info(f"  過去記事DOMOユーザーへのDOMO返し数: {summary.get('domo_back_to_past_users', 0)} 件") # 新機能のサマリー出力
+                logger.info(f"  非アクティブユーザーのアンフォロー数: {summary.get('unfollowed_inactive', 0)} 件")
             else:
                 logger.info("  サマリー情報の取得に失敗しました。")
             logger.info("----------------------")
