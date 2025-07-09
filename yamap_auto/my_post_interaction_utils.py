@@ -195,17 +195,18 @@ def get_domo_users_from_activity(driver, activity_url):
 
     driver.get(activity_url)
     # Attempt to wait for a general activity page container
-    activity_page_container_selector = "main.ActivitiesId__Main" # セレクタを変更
-    activity_title_selector = "h1.ActivityDetailTabLayout__Title" # タイトルセレクタもHTMLに合わせて更新
+    activity_page_container_selector = "div.ActivitiesId" # 新しいセレクタ案
+    activity_title_selector = "h1.ActivityDetailTabLayout__Title" # これは div.ActivitiesId の内部にある想定
 
     try:
         logger.info(f"活動記録ページ ({activity_id_for_log}) の主要コンテナ ({activity_page_container_selector}) の表示を待ちます...")
         WebDriverWait(driver, 35).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, activity_page_container_selector))
         )
-        logger.info(f"活動記録ページ ({activity_id_for_log}) の主要コンテナの表示を確認。")
+        logger.info(f"活動記録ページ ({activity_id_for_log}) の主要コンテナ ({activity_page_container_selector}) の表示を確認。")
 
-        # Try to find the specific title, but don't fail if it's not there
+        # 主要コンテナが表示された後、少し待ってからタイトル要素の確認を試みる (念のため)
+        time.sleep(0.5)
         try:
             title_element = driver.find_element(By.CSS_SELECTOR, activity_title_selector)
             if title_element.is_displayed():
@@ -217,11 +218,11 @@ def get_domo_users_from_activity(driver, activity_url):
 
     except TimeoutException:
         logger.error(f"活動記録ページ ({activity_url}) の主要コンテナ ({activity_page_container_selector}) の読み込み確認タイムアウト。")
-        save_screenshot(driver, "ActivityPageContainerLoadFail", activity_id_for_log)
+        save_screenshot(driver, "ActivityPageContainerLoadFail_NewSel", activity_id_for_log) # スクリーンショットファイル名変更
         return domo_users
     except Exception as e_page_load:
         logger.error(f"活動記録ページ ({activity_url}) の読み込み中に予期せぬエラー: {e_page_load}", exc_info=True)
-        save_screenshot(driver, "ActivityPageLoadGenericError", activity_id_for_log)
+        save_screenshot(driver, "ActivityPageLoadGenericError_NewSel", activity_id_for_log) # スクリーンショットファイル名変更
         return domo_users
 
     # DOMOしたユーザー一覧へ遷移するボタンを探す (クラス名とテキスト内容で判断)
