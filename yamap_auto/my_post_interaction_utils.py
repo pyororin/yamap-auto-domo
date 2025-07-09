@@ -261,73 +261,95 @@ def get_domo_users_from_activity(driver, activity_url):
         return domo_users
 
     # --- ここからDOMOユーザー一覧ページでの処理 ---
-    # 以下のセレクタはユーザーからの新しいHTML情報に基づいて修正が必要
-    user_list_container_selector = "ul[class*='UserList_list']" # 要確認・修正
-    user_card_selector = "li[class*='UserListItem_container']"   # 要確認・修正
-    user_name_selector = "h2[class*='UserListItem_name']"     # 要確認・修正
-    user_link_selector = "a[class*='UserListItem_avatarLink']" # 要確認・修正
+    # ユーザー提供のHTMLに基づいたセレクタ
+    # <button data-v-a51e5818="" data-v-5bf08ddc="" class="DomoUserListModal__ReadMore BaseButton is-size-m is-variant-outline" data-v-70a616f8="">
+    # <a data-v-5eca6d0a="" href="/users/3462839" class="DomoUserListItem__UserLink">
+    #   <div data-v-69308071="" data-v-5eca6d0a="" class="DomoUserListItem__UserAvatar RidgeUserAvatarImage RidgeUserAvatarImage--size40">
+    #     <img data-v-69308071="" src="..." alt="mako" ...>
+    #   </div>
+    # </a>
+    # 親要素の特定が難しいため、DomoUserListItem__UserLink を持つ要素を直接探す
+    user_list_container_selector = "body" # 広めに取っておき、個別のユーザーリンクを探す
+    user_link_selector_specific = "a.DomoUserListItem__UserLink" # ユーザープロファイルへのリンク
+    # ユーザー名は img の alt 属性から取得する想定
+    user_avatar_image_selector_in_link = "img.RidgeUserAvatarImage__Avatar"
 
-    page_num = 1
-    while True:
-        logger.info(f"DOMOユーザー一覧の {page_num} ページ目を処理中...")
+    # 「もっと見る」ボタンのセレクタ
+    read_more_button_selector = "button.DomoUserListModal__ReadMore.BaseButton.is-size-m.is-variant-outline"
+
+    processed_profile_urls = set() # 既に処理したプロフィールURLを記録
+
+    while True: # 「もっと見る」がなくなるまでループ
         try:
-            WebDriverWait(driver, 15).until( # タイムアウトを15秒に
+            # ユーザーリストが表示されていることを確認 (ここではbodyの存在で代用)
+            WebDriverWait(driver, 15).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, user_list_container_selector))
             )
-            logger.debug(f"DOMOユーザーリストコンテナ ({user_list_container_selector}) を発見。")
         except TimeoutException:
-            logger.warning(f"DOMOユーザーリストコンテナ ({user_list_container_selector}) の読み込みタイムアウト (ページ {page_num})。")
-            break # ループを抜ける
-
-        time.sleep(1.0) # リスト内容の描画待ち
-
-        user_elements = driver.find_elements(By.CSS_SELECTOR, user_card_selector)
-        if not user_elements:
-            logger.info(f"ページ {page_num} にDOMOユーザーが見つかりませんでした。")
-            if page_num == 1:
-                logger.info(f"活動記録 ({activity_id_for_log}) にDOMOユーザーはいません。")
+            logger.warning(f"DOMOユーザーリストのコンテナ ({user_list_container_selector}) の読み込みタイムアウト。")
             break
 
-        logger.info(f"{len(user_elements)} 件のDOMOユーザー候補をページ {page_num} で検出。")
-        for user_el in user_elements:
+        time.sleep(1.5) # ユーザーリストの描画や更新を待つ
+
+        # 現在表示されているすべてのユーザーリンクを取得
+        user_link_elements = driver.find_elements(By.CSS_SELECTOR, user_link_selector_specific)
+        logger.info(f"{len(user_link_elements)} 件のユーザーリンク候補を検出。")
+
+        new_users_found_in_this_iteration = 0
+        for link_el in user_link_elements:
             try:
-                name = user_el.find_element(By.CSS_SELECTOR, user_name_selector).text.strip()
-                link_el = user_el.find_element(By.CSS_SELECTOR, user_link_selector)
                 profile_url_raw = link_el.get_attribute("href")
                 if profile_url_raw:
                     profile_url = profile_url_raw.split('?')[0]
                     if profile_url.startswith("/"):
                         profile_url = BASE_URL + profile_url
 
-                    if "/users/" in profile_url:
-                        domo_users.append({"name": name, "profile_url": profile_url})
-                        logger.debug(f"  DOMOユーザー発見: {name} ({profile_url})")
+                    if "/users/" in profile_url and profile_url not in processed_profile_urls:
+                        user_name = "N/A" # デフォルト名
+                        try:
+                            # リンク内のアバター画像を探し、altテキストからユーザー名を取得
+                            avatar_img = link_el.find_element(By.CSS_SELECTOR, user_avatar_image_selector_in_link)
+                            user_name = avatar_img.get_attribute("alt")
+                            if not user_name: # altが空の場合もあるかもしれない
+                                user_name = f"User_{profile_url.split('/')[-1]}" # IDから仮名を生成
+                        except NoSuchElementException:
+                            logger.warning(f"プロフィール ({profile_url}) のアバター画像または名前が見つかりません。")
+                            user_name = f"User_{profile_url.split('/')[-1]}" # IDから仮名を生成
+
+                        domo_users.append({"name": user_name, "profile_url": profile_url})
+                        processed_profile_urls.add(profile_url)
+                        new_users_found_in_this_iteration +=1
+                        logger.debug(f"  DOMOユーザー発見: {user_name} ({profile_url})")
+                    elif profile_url in processed_profile_urls:
+                        logger.debug(f"  DOMOユーザー ({profile_url}) は既にリストに追加済みです。")
                     else:
-                        logger.warning(f"  無効なプロフィールURL: {profile_url_raw} (ユーザー名: {name})")
-            except NoSuchElementException:
-                logger.warning("DOMOユーザーカード内で名前またはリンク要素が見つかりません。")
+                        logger.warning(f"  無効なプロフィールURL: {profile_url_raw}")
             except Exception as e_user_parse:
                 logger.error(f"DOMOユーザー情報の解析中にエラー: {e_user_parse}", exc_info=True)
 
-        # 「次へ」ボタンの処理 (YAMAPのUIにより調整が必要)
-        next_button_selector = "button[aria-label='次のページに移動する']:not([disabled])" # 仮
+        if new_users_found_in_this_iteration == 0 and len(user_link_elements) > 0 :
+            logger.info("新しいDOMOユーザーは見つかりませんでした。既に全ユーザーを取得済みか、ページの構造が予期しない形になっている可能性があります。")
+            # 状況によってはここでbreakしても良いかもしれないが、「もっと見る」がある限りは続行する
+
+        # 「もっと見る」ボタンを探してクリック
         try:
-            next_button = driver.find_element(By.CSS_SELECTOR, next_button_selector)
-            if next_button.is_displayed() and next_button.is_enabled():
-                logger.info("「次へ」ボタンを発見。クリックします。")
-                driver.execute_script("arguments[0].scrollIntoView(true);", next_button)
-                time.sleep(0.5)
-                next_button.click()
-                page_num += 1
-                time.sleep(2.0)
+            read_more_button = driver.find_element(By.CSS_SELECTOR, read_more_button_selector)
+            if read_more_button.is_displayed() and read_more_button.is_enabled():
+                logger.info("「もっと見る」ボタンを発見。クリックします。")
+                # ボタンが画面内にないとクリックできないことがあるため、スクロールする
+                driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", read_more_button)
+                time.sleep(0.5) # スクロール後の安定待ち
+                read_more_button.click()
+                logger.info("「もっと見る」ボタンをクリックしました。次のユーザーリストの読み込みを待ちます。")
+                time.sleep(2.5) # DOMの更新や追加読み込みを待つ時間
             else:
-                logger.info("「次へ」ボタンが無効または非表示です。最終ページと判断。")
+                logger.info("「もっと見る」ボタンが無効または非表示です。全てのDOMOユーザーを取得したと判断します。")
                 break
         except NoSuchElementException:
-            logger.info("「次へ」ボタンが見つかりません。最終ページと判断。")
+            logger.info("「もっと見る」ボタンが見つかりません。全てのDOMOユーザーを取得したと判断します。")
             break
-        except Exception as e_next:
-            logger.error(f"「次へ」ボタン処理中にエラー: {e_next}", exc_info=True)
+        except Exception as e_read_more:
+            logger.error(f"「もっと見る」ボタン処理中にエラー: {e_read_more}", exc_info=True)
             break
 
     logger.info(f"活動記録 ({activity_id_for_log}) から合計 {len(domo_users)} 件のDOMOユーザー情報を取得しました。")
