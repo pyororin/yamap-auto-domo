@@ -178,6 +178,36 @@ new_feature_my_post_interaction:
   #   既存の `follow_back_settings` の値を参照・準拠するよう実装されています（ただし現実装では簡略化）。
   # - DOMOユーザーの最新活動記録へのDOMOは、1件のみ行われます。
 
+# === 新機能: 過去記事DOMOユーザーへの最新記事DOMO返し設定 ===
+new_feature_domo_back_to_past_domo_users:
+  enable_domo_back_to_past_users: false
+  # true: この機能を有効にします。
+  # false: この機能を無効にします。
+
+  max_days_to_check_past_activities: 30
+  # DOMO返しのためにチェックする自分の過去記事の期間（日数）。
+
+  max_past_activities_to_process: 5
+  # DOMO返しのために処理する自分の過去記事の最大数。
+  # 例: 期間内に10件の記事があっても、この値が5なら新しい方から5件のみ処理。
+
+  max_users_to_domo_back_per_activity: 10
+  # 1つの自分の過去記事あたり、DOMO返しを行うユーザーの最大数。
+
+  max_total_domo_back_users_per_run: 20
+  # 1回のスクリプト実行でDOMO返しを行うユーザーの総最大数。
+
+  enable_domo_only_if_not_following_me: false
+  # true: 自分をまだフォローしていないユーザーに限定してDOMO返しを行います。
+  # false: フォロー状況に関わらずDOMO返しを行います。
+
+  enable_domo_only_if_i_am_not_following: true
+  # true: 自分がまだフォローしていないユーザーに限定してDOMO返しを行います。
+  # false: 自分が既にフォローしているユーザーにもDOMO返しを行います。
+
+  delay_between_domo_back_action_sec: 5.0
+  # 各DOMO返しアクション間の遅延時間 (秒単位)。
+
 # === 新機能: 非アクティブかつ非相互フォローユーザーのアンフォロー設定 ===
 unfollow_inactive_users_settings:
   enable_unfollow_inactive: true
