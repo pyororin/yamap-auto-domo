@@ -5,14 +5,15 @@
 ---
 
 ## 🛠 仕掛中タスク
-*   [ ] **エラー修正:** 活動記録ページの読み込みタイムアウトエラー対応 (コミット: `[IN_PROGRESS]`)
-    *   `my_post_interaction_utils.py` の `get_domo_users_from_activity` 関数内の待機時間を25秒から35秒に延長。
+*   [x] **エラー修正:** 活動記録ページの読み込みタイムアウトエラー対応 (コミット: `[IN_PROGRESS]`)
+    *   `my_post_interaction_utils.py` の `get_domo_users_from_activity` 関数内の待機時間を35秒に延長。
+    *   セレクタを `div[data-testid='activity-detail-view']` から `main.ActivitiesId__Main` に変更。
 *   [ ] **新機能:** 過去の記事にDOMOくれたユーザーに対して最新記事にDOMOを返す (コミット: `[IN_PROGRESS]`)
     *   [x] `config.yaml` に機能設定項目 `new_feature_domo_back_to_past_domo_users` を追加。
     *   [x] `my_post_interaction_utils.py` に設定読み込み関数 `_get_domo_back_settings` を追加。
     *   [x] `my_post_interaction_utils.py` にメイン処理関数 `domo_back_to_past_domo_users` の雛形を追加。
     *   [x] `yamap_auto_domo.py` の `execute_main_tasks` 及びサマリー出力に上記新機能の呼び出しと結果表示を統合。
-    *   [ ] `my_post_interaction_utils.py` の `domo_back_to_past_domo_users` 関数の詳細ロジックを実装。
+    *   [x] `my_post_interaction_utils.py` の `domo_back_to_past_domo_users` 関数の詳細ロジックを実装（フォロー状況に関わらずDOMO返しするよう仕様変更）。
 *   [ ] **修正:** `user_profile_utils.py` のリストアイテム取得時のWebDriverWaitタイムアウトを30秒に延長 (コミット: `[NEEDS_ACTUAL_COMMIT_HASH]`)
     *   動的読み込みされるリストアイテムの表示待ち時間延長のため。
 *   [ ] **修正:** `user_profile_utils.py` のフォロー/フォロワーリスト関連CSSセレクタを詳細化 (コミット: `[PREVIOUS_COMMIT_HASH]`)
