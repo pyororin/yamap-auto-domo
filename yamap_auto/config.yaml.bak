@@ -1,23 +1,3 @@
-# === 機能の有効化/無効化 ===
-enable_follow_back: false
-# true: フォローバック機能を有効にします。
-# false: フォローバック機能を無効にします。
-enable_timeline_domo: false
-# true: タイムラインDOMO機能を有効にします。
-# false: タイムラインDOMO機能を無効にします。
-enable_search_and_follow: false
-# true: 検索結果からのフォロー＆DOMO機能を有効にします。
-# false: 機能を無効にします。
-enable_domo_back_to_past_users: true
-# true: 過去記事DOMOユーザーへの最新記事DOMO返し機能を有効にします。
-# false: この機能を無効にします。
-enable_unfollow_inactive: false
-# true: 非アクティブかつ非相互フォローユーザーのアンフォロー機能を有効にします。
-# false: この機能を無効にします。
-enable_parallel_processing: true
-# true: 並列処理を有効にします (現在はタイムラインDOMO機能が対象)。
-# false: 並列処理を無効にし、全ての処理を逐次実行します。
-
 # === 全体的な設定 ===
 # スクリプト全体の基本的な動作モードや待機時間を設定します。
 
@@ -46,29 +26,22 @@ action_delays:
   # フォロー/フォローバック操作を実行した後に挿入される共通の待機時間 (秒単位)
   # フォロー状態のUI反映や、連続したフォロー操作間のインターバルとして機能します。
 
-# === 並列処理設定 (全体) ===
-# スクリプト内の一部の処理（現在はタイムラインDOMOなど）を並列実行するための共通設定です。
-# 各機能の並列処理を有効にするかは、各機能の設定 (`enable_parallel_...`) で制御します。
-# 注意: 並列処理はアカウントの安全性やYAMAPの利用規約に影響を与える可能性があるため、慎重に使用してください。
-#       過度な並列化は短時間に多くのリクエストを送信することになり、一時的なアクセス制限のリスクを高める可能性があります。
-parallel_processing_settings:
-  max_workers: 24
-  # 並列処理に使用する最大ワーカー（スレッド）数。
-  # PCのスペックやネットワーク環境に応じて調整してください。推奨値は 2〜5 程度です。
-  # 大きすぎる値を設定すると、かえってパフォーマンスが低下したり、アカウントへの負荷が高まる可能性があります。
+# === YAMAP認証情報 ===
+# YAMAPへのログインに使用するメールアドレス、パスワード、および自身のユーザーIDは、
+# このファイル (config.yaml) ではなく、同じディレクトリにある `credentials.yaml` ファイルに記述してください。
+# `credentials.yaml` の例:
+# email: "your_email@example.com"
+# password: "your_password"
+# user_id: "1234567"  # 必ずシングルクォートまたはダブルクォートで囲ってください (数値の場合も)
 
-  use_cookie_sharing: true
-  # true: ログイン時に取得したセッションCookieを、並列実行される各ワーカー（ブラウザインスタンス）で共有しようと試みます。
-  #       これにより、各ワーカーが個別にログイン処理を行う必要がなくなります。
-  # false: Cookie共有を行いません (各ワーカーが独立して動作しようとしますが、ログインが必要な操作は失敗する可能性があります)。
-
-  delay_between_thread_tasks_sec: 0.5 # (変更) 1.0秒から短縮
-  # 各並列タスク（例: 個別のDOMO処理）を開始する前に挿入される基本的な遅延時間 (秒単位)。
-  # これに加えて、スクリプト内でタスクごとに僅かな追加遅延が加えられることがあります。
-  # 同時アクセスを緩和し、サーバー負荷を軽減することを目的としています。
+# これらの設定は、主に `yamap_auto_domo.py` スクリプトから参照され、各自動化機能の動作を制御します。
 
 follow_back_settings:
   # フォローバック機能に関する設定 (自分をフォローしてくれたユーザーを自動でフォローバックする)
+  enable_follow_back: false
+  # true: フォローバック機能を有効にします。
+  # false: フォローバック機能を無効にします。
+
   max_users_to_follow_back: 20
   # 一度のスクリプト実行でフォローバックする最大のユーザー数。
   # フォロワーリストの複数ページをチェックする場合、この合計数に達すると処理を停止します。
@@ -93,6 +66,10 @@ follow_back_settings:
 
 timeline_domo_settings:
   # タイムラインDOMO機能に関する設定 (YAMAPのタイムライン上の活動記録に自動でDOMOする)
+  enable_timeline_domo: false
+  # true: タイムラインDOMO機能を有効にします。
+  # false: タイムラインDOMO機能を無効にします。
+
   max_activities_to_domo_on_timeline: 20
   # タイムライン上でDOMOする活動記録の最大数。
   # タイムラインの新しい投稿から順に、この数に達するまでDOMOを試みます。
@@ -101,6 +78,10 @@ timeline_domo_settings:
 
 search_and_follow_settings:
   # 活動記録検索ページからのフォロー＆DOMO機能に関する設定
+  enable_search_and_follow: false
+  # true: 検索結果からのフォロー＆DOMO機能を有効にします。
+  # false: 機能を無効にします。
+
   search_activities_url: "https://yamap.com/search/activities"
   # 処理を開始する活動記録の検索結果ページのURL。
   # 通常はデフォルトのままで問題ありませんが、特定の検索条件で開始したい場合にカスタマイズ可能です。
@@ -156,6 +137,10 @@ search_and_follow_settings:
 
 # === 新機能: 過去記事DOMOユーザーへの最新記事DOMO返し設定 ===
 new_feature_domo_back_to_past_domo_users:
+  enable_domo_back_to_past_users: true
+  # true: この機能を有効にします。
+  # false: この機能を無効にします。
+
   max_days_to_check_past_activities: 7
   # DOMO返しのためにチェックする自分の過去記事の期間（日数）。
 
@@ -205,6 +190,10 @@ new_feature_domo_back_to_past_domo_users:
 
 # === 新機能: 非アクティブかつ非相互フォローユーザーのアンフォロー設定 ===
 unfollow_inactive_users_settings:
+  enable_unfollow_inactive: false
+  # true: この機能を有効にします。
+  # false: この機能を無効にします。
+
   inactive_threshold_days: 30
   # ユーザーの活動がこの日数以上ない場合に「非アクティブ」と見なします。
 
@@ -231,12 +220,28 @@ unfollow_inactive_users_settings:
   max_workers_unfollow_action: 24     # (追加) アンフォローアクションの最大ワーカー数
   delay_per_worker_unfollow_sec: 2.0  # (追加) 各アンフォローワーカースレッドのアクション後の遅延
 
-# === YAMAP認証情報 ===
-# YAMAPへのログインに使用するメールアドレス、パスワード、および自身のユーザーIDは、
-# このファイル (config.yaml) ではなく、同じディレクトリにある `credentials.yaml` ファイルに記述してください。
-# `credentials.yaml` の例:
-# email: "your_email@example.com"
-# password: "your_password"
-# user_id: "1234567"  # 必ずシングルクォートまたはダブルクォートで囲ってください (数値の場合も)
 
-# これらの設定は、主に `yamap_auto_domo.py` スクリプトから参照され、各自動化機能の動作を制御します。
+# === 並列処理設定 ===
+# スクリプト内の一部の処理（現在はタイムラインDOMO）を並列実行するための設定です。
+# 注意: 並列処理はアカウントの安全性やYAMAPの利用規約に影響を与える可能性があるため、慎重に使用してください。
+#       過度な並列化は短時間に多くのリクエストを送信することになり、一時的なアクセス制限のリスクを高める可能性があります。
+
+parallel_processing_settings:
+  enable_parallel_processing: true
+  # true: 並列処理を有効にします (現在はタイムラインDOMO機能が対象)。
+  # false: 並列処理を無効にし、全ての処理を逐次実行します。
+
+  max_workers: 24
+  # 並列処理に使用する最大ワーカー（スレッド）数。
+  # PCのスペックやネットワーク環境に応じて調整してください。推奨値は 2〜5 程度です。
+  # 大きすぎる値を設定すると、かえってパフォーマンスが低下したり、アカウントへの負荷が高まる可能性があります。
+
+  use_cookie_sharing: true
+  # true: ログイン時に取得したセッションCookieを、並列実行される各ワーカー（ブラウザインスタンス）で共有しようと試みます。
+  #       これにより、各ワーカーが個別にログイン処理を行う必要がなくなります。
+  # false: Cookie共有を行いません (各ワーカーが独立して動作しようとしますが、ログインが必要な操作は失敗する可能性があります)。
+
+  delay_between_thread_tasks_sec: 0.5 # (変更) 1.0秒から短縮
+  # 各並列タスク（例: 個別のDOMO処理）を開始する前に挿入される基本的な遅延時間 (秒単位)。
+  # これに加えて、スクリプト内でタスクごとに僅かな追加遅延が加えられることがあります。
+  # 同時アクセスを緩和し、サーバー負荷を軽減することを目的としています。
