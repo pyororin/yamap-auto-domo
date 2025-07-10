@@ -38,12 +38,13 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from .logging_utils import setup_logger
 
 # driver_utils から必要なものをインポート
+# get_driver_options は create_webdriver に統合されたため削除
 from .driver_utils import (
-    get_driver_options,
     login as util_login, # login関数名がローカルにも存在しうるため別名でインポート
     create_driver_with_cookies,
     get_main_config,
     get_credentials,
+    create_webdriver, # create_webdriver をインポート
     # BASE_URL as UTIL_BASE_URL, # driver_utils側のBASE_URLは内部利用とし、こちらは維持
     # LOGIN_URL as UTIL_LOGIN_URL # 同上
 )
@@ -240,19 +241,20 @@ SEARCH_ACTIVITIES_URL_DEFAULT = f"{BASE_URL}/search/activities"
 
 # --- メイン処理の構造化のための関数群 ---
 
-def initialize_driver():
-    """WebDriverのオプション設定、インスタンス化、暗黙的待機設定を行います。"""
-    logger.info("WebDriverを初期化します...")
-    try:
-        driver_options = get_driver_options()
-        driver = webdriver.Chrome(options=driver_options)
-        implicit_wait = main_config.get("implicit_wait_sec", 7)
-        driver.implicitly_wait(implicit_wait)
-        logger.info("WebDriverの初期化が完了しました。")
-        return driver
-    except Exception as e:
-        logger.critical(f"WebDriverの初期化中にエラーが発生しました: {e}", exc_info=True)
-        return None
+def initialize_driver_new(): # 関数名を変更 initialize_driver -> initialize_driver_new
+    """
+    driver_utils.create_webdriver() を呼び出してWebDriverを初期化します。
+    この関数は、config.yaml の設定に基づいてローカルまたはDocker環境向けのWebDriverを返します。
+    """
+    logger.info("WebDriverの初期化処理を開始します (driver_utils.create_webdriver経由)...")
+    driver = create_webdriver() # driver_utils.py内の新しい初期化関数を呼び出す
+    if driver:
+        # create_webdriver内でログ出力されるので、ここでは簡潔に
+        logger.info("WebDriverの初期化が正常に完了しました。")
+    else:
+        # create_webdriver内でエラーログが出力されるはず
+        logger.critical("WebDriverの初期化に失敗しました。driver_utils.create_webdriverがNoneを返しました。")
+    return driver
 
 def perform_login(driver, email, password, user_id):
     """ログイン処理を呼び出し、成功したか否かを返します。"""
@@ -641,7 +643,7 @@ def main():
     logger.info(f"=========== {os.path.basename(__file__)} スクリプト開始 ===========")
     driver = None
     try:
-        driver = initialize_driver()
+        driver = initialize_driver_new() # 変更: initialize_driver_new を呼び出す
         if not driver:
             logger.critical("WebDriverの初期化に失敗したため、処理を中止します。")
             return

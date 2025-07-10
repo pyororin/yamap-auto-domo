@@ -31,6 +31,19 @@ implicit_wait_sec: 5
 
 # === WebDriver設定 ===
 webdriver_settings:
+  # "local" または "docker_container"
+  execution_environment: "local"
+  # local: ローカル環境で実行。ChromeDriverはシステムPATHにあるか、`chromedriver_path`で指定。
+  # docker_container: Dockerコンテナ内で実行。ChromeDriverはコンテナ内の期待されるパスにある想定。
+
+  chromedriver_path: "" # ローカル実行時、ChromeDriverの実行ファイルへの絶対パス。空の場合、システムPATHから探す。
+  # 例: "C:/path/to/chromedriver.exe" や "/usr/local/bin/chromedriver"
+
+  chrome_binary_location: "" # ヘッドレスモードや特定環境でChrome/Chromiumのバイナリパスを明示的に指定する場合
+  # Dockerコンテナ内ではDockerfileで設定されたパス (例: /usr/bin/google-chrome-stable や /usr/bin/chromium) を
+  # driver_utils.py側で自動的に設定するよう試みるため、通常は空で良い。
+  # ローカルで特殊な場所にChromeをインストールしている場合に指定。
+
   user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.102 Safari/537.36"
   # WebDriverが使用するUser-Agent文字列。空文字にするとWebDriverのデフォルトを使用します。
   # YAMAPが特定のUser-Agentをブロックする場合などに変更を検討してください。

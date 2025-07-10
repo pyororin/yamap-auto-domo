@@ -180,21 +180,52 @@ def get_driver_options():
         webdriver.ChromeOptions: 設定済みのChromeオプションオブジェクト。
     """
     main_conf = get_main_config() # 設定を確実にロード
+    webdriver_settings_conf = main_conf.get("webdriver_settings", {})
+    execution_env = webdriver_settings_conf.get("execution_environment", "local")
+
     options = webdriver.ChromeOptions()
 
-    # headless_mode はルートレベルから取得
-    if main_conf.get("headless_mode", False):
+    # ヘッドレスモード設定 (config.yaml のルートレベルから取得)
+    if main_conf.get("headless_mode", True): # デフォルトTrueに変更
         logger.info("ヘッドレスモードで起動します。")
         options.add_argument('--headless')
-        options.add_argument('--disable-gpu')
-        options.add_argument('--no-sandbox')
-        options.add_argument('--disable-dev-shm-usage')
-        options.add_argument('--remote-debugging-port=9222')
-        options.add_argument('--window-size=1280x800')
-        options.binary_location = "/usr/bin/chromium" # Linux環境でのChromiumバイナリパス
+        options.add_argument('--disable-gpu') # GPUハードウェアアクセラレーションなし
+        options.add_argument('--window-size=1280x800') # ウィンドウサイズ指定
 
-    # User-Agent は webdriver_settings から取得
-    webdriver_settings_conf = main_conf.get("webdriver_settings", {})
+    # Dockerコンテナ環境向けの共通オプション
+    if execution_env == "docker_container":
+        logger.info("Dockerコンテナ環境向けのWebDriverオプションを設定します。")
+        options.add_argument('--no-sandbox') # サンドボックスなし (コンテナ実行にしばしば必要)
+        options.add_argument('--disable-dev-shm-usage') # /dev/shmパーティションの使用を無効化 (リソース制限のある環境向け)
+        options.add_argument('--remote-debugging-port=9222') # デバッグポート（オプション）
+
+        # DockerfileでChrome/Chromiumのパスが固定されていることを期待
+        # chrome_binary_location はDockerfile側でENV等で設定されるか、標準パスにあることを想定
+        # config.yaml の chrome_binary_location は主にローカルでの特殊ケース用
+        # Dockerfile内のChromeのパスに合わせて調整が必要な場合がある
+        # 例: options.binary_location = "/usr/bin/google-chrome-stable" または "/usr/bin/chromium"
+        # ここではDockerfileで適切にインストールされPATHが通っていると仮定し、明示的には設定しない。
+        # もし問題があれば、下記のようにconfigから読むか、固定値を設定する。
+        container_chrome_binary = webdriver_settings_conf.get("chrome_binary_location")
+        if container_chrome_binary:
+            logger.info(f"Dockerコンテナ内のChromeバイナリとして {container_chrome_binary} を使用します。")
+            options.binary_location = container_chrome_binary
+        else:
+            # 一般的なパスを試す (Dockerfileのインストール先に依存)
+            possible_paths = ["/usr/bin/google-chrome-stable", "/usr/bin/chromium"]
+            found_path = None
+            for path in possible_paths:
+                if os.path.exists(path):
+                    found_path = path
+                    break
+            if found_path:
+                logger.info(f"Dockerコンテナ内でChromeバイナリとして {found_path} を自動検出して使用します。")
+                options.binary_location = found_path
+            else:
+                logger.warning(f"Dockerコンテナ環境でChromeバイナリのパスを自動検出できませんでした。標準のPATHに期待します。")
+
+
+    # User-Agent (webdriver_settings から取得)
     user_agent_string = webdriver_settings_conf.get("user_agent")
     if user_agent_string:
         logger.info(f"指定されたUser-Agentを使用します: {user_agent_string}")
@@ -203,6 +234,65 @@ def get_driver_options():
         logger.info("User-Agentは指定されていません。WebDriverのデフォルトを使用します。")
 
     return options
+
+def create_webdriver():
+    """
+    config.yamlの設定に基づいて適切なWebDriver (Chrome) インスタンスを作成します。
+    - execution_environment: "local" または "docker_container"
+    - headless_mode: true/false
+    - chromedriver_path: ローカル実行時のChromeDriverパス
+    """
+    main_conf = get_main_config()
+    webdriver_settings_conf = main_conf.get("webdriver_settings", {})
+    execution_env = webdriver_settings_conf.get("execution_environment", "local")
+    options = get_driver_options() # 上で定義したオプション取得関数を呼び出す
+
+    driver = None
+    logger.info(f"WebDriverを {execution_env} 環境向けに初期化します。")
+
+    try:
+        if execution_env == "local":
+            chromedriver_path = webdriver_settings_conf.get("chromedriver_path", "")
+            if chromedriver_path and os.path.exists(chromedriver_path):
+                logger.info(f"指定されたChromeDriverパスを使用します: {chromedriver_path}")
+                service = webdriver.chrome.service.Service(executable_path=chromedriver_path)
+                driver = webdriver.Chrome(service=service, options=options)
+            else:
+                if chromedriver_path:
+                    logger.warning(f"指定されたChromeDriverパス '{chromedriver_path}' が見つかりません。システムPATHから探します。")
+                else:
+                    logger.info("ChromeDriverパスは指定されていません。システムPATHから探します。")
+                driver = webdriver.Chrome(options=options) # PATHから探す
+        elif execution_env == "docker_container":
+            # Dockerコンテナ内では、ChromeDriverはPATHに通っているか、
+            # /usr/local/bin/chromedriver のような標準的な場所にあることを期待します。
+            # Dockerfileで適切に配置されている前提。
+            # Serviceオブジェクトを使わずに直接 options のみで初期化。
+            # もし特定のパスを指定する必要があれば、Serviceオブジェクトを使う。
+            # (例: service = webdriver.chrome.service.Service(executable_path="/usr/local/bin/chromedriver"))
+            logger.info("Dockerコンテナ環境のため、システムPATH上のChromeDriverを使用します。")
+            driver = webdriver.Chrome(options=options)
+        else:
+            raise ValueError(f"未対応の execution_environment: {execution_env}")
+
+        logger.info("WebDriverの初期化に成功しました。")
+        # implicit_wait_sec はルートレベルから取得 (メインのドライバー用)
+        implicit_wait = main_conf.get("implicit_wait_sec", 7)
+        driver.implicitly_wait(implicit_wait)
+        logger.info(f"WebDriverの暗黙的待機時間を {implicit_wait} 秒に設定しました。")
+        return driver
+
+    except Exception as e:
+        logger.error(f"WebDriverの初期化中にエラーが発生しました ({execution_env}環境): {e}", exc_info=True)
+        if execution_env == "docker_container":
+            logger.error("Dockerコンテナ環境でのエラーの場合、DockerfileでのChrome/ChromeDriverのインストールやパス設定を確認してください。")
+        elif webdriver_settings_conf.get("chromedriver_path"):
+            logger.error(f"ローカル環境でChromeDriverパス({webdriver_settings_conf.get('chromedriver_path')})が指定されている場合、そのパスが正しいか、実行権限があるか確認してください。")
+        else:
+            logger.error("ローカル環境でChromeDriverがシステムPATHに正しく設定されているか確認してください。")
+        # エラー発生時はNoneを返す
+        return None
+
 
 def login(driver, email, password, user_id_for_check):
     """
@@ -287,12 +377,20 @@ def create_driver_with_cookies(cookies, current_user_id, initial_page_for_cookie
     original_cookies_for_log = [c.copy() for c in cookies]
 
     try:
-        options = get_driver_options()
-        driver = webdriver.Chrome(options=options)
+        # create_webdriver() を使用して、設定に基づいたWebDriverインスタンスを取得
+        driver = create_webdriver()
+        if not driver:
+            logger.error("create_webdriver() でWebDriverの作成に失敗したため、Cookie付きドライバーの作成を中止します。")
+            return None
 
-        webdriver_settings = main_conf.get("webdriver_settings", {}) # webdriver_settings を再度取得
-        implicit_wait = webdriver_settings.get("implicit_wait_sec", 7) # ここから取得
-        driver.implicitly_wait(implicit_wait)
+        # create_webdriver 内で implicit_wait は設定済みのはずだが、
+        # webdriver_settings の implicit_wait_sec を優先するならここで再設定。
+        # 今回は create_webdriver の設定に任せる。
+        # webdriver_settings = main_conf.get("webdriver_settings", {})
+        # implicit_wait_cookie_driver = webdriver_settings.get("implicit_wait_sec", 7)
+        # driver.implicitly_wait(implicit_wait_cookie_driver)
+        # logger.info(f"Cookieドライバーの暗黙的待機時間を {implicit_wait_cookie_driver} 秒に設定しました。")
+
 
         logger.debug(f"Cookie設定のため、初期ページ ({initial_page_for_cookie_setting}) にアクセスします。")
         driver.get(initial_page_for_cookie_setting)
