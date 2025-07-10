@@ -21,7 +21,7 @@ enable_parallel_processing: true
 # === 全体的な設定 ===
 # スクリプト全体の基本的な動作モードや待機時間を設定します。
 
-headless_mode: false
+headless_mode: true
 # ブラウザをヘッドレスモードで実行するかどうか (true: ヘッドレス, false: 通常モード)
 # ヘッドレスモードではブラウザウィンドウは表示されませんが、バックグラウンドで動作します。デバッグ時は false が推奨されます。
 
