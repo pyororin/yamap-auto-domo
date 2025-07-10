@@ -210,4 +210,5 @@ yamap_auto/credentials.yaml
 
 # Custom ignores
 logs/screenshots/
+logs/
 yamap_auto/credentials.yaml
