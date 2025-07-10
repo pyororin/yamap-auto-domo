@@ -1,0 +1,11 @@
+service:
+  name: selenium-batch-job
+  type: cloudrun
+  region: asia-northeast1
+  runtime: docker
+  platform: gcp
+  env:
+    - name: YAMAP_LOGIN_ID
+      secret: gcp-secret-yamap-id
+    - name: YAMAP_LOGIN_PASSWORD
+      secret: gcp-secret-yamap-password
