@@ -29,6 +29,16 @@ implicit_wait_sec: 5
 # Selenium WebDriverが要素を見つけるまでの暗黙的な最大待機時間 (秒単位)
 # ページ要素の読み込みが遅い場合に、この時間まで待機します。
 
+# === WebDriver設定 ===
+webdriver_settings:
+  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.102 Safari/537.36"
+  # WebDriverが使用するUser-Agent文字列。空文字にするとWebDriverのデフォルトを使用します。
+  # YAMAPが特定のUser-Agentをブロックする場合などに変更を検討してください。
+  implicit_wait_sec: 7 # driver_utils.py 内の create_driver_with_cookies で使用されるため、config.yaml にも定義
+  # この implicit_wait_sec は create_driver_with_cookies 内で driver.implicitly_wait() に渡される値です。
+  # ルートレベルの implicit_wait_sec はメインスクリプト (yamap_auto_domo.py) の初期WebDriver用です。
+  # 必要に応じて値を調整してください。
+
 # === アクション共通の遅延設定 ===
 # DOMOやフォローなど、特定のアクション実行後や要素待機時の共通の遅延時間を設定します。
 # これらはサーバーへの負荷軽減や、UIの反応待ちを目的としています。
