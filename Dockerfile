@@ -15,6 +15,7 @@ RUN apt-get update && apt-get install -y \
     libatk-bridge2.0-0 \
     libgtk-3-0 \
     fonts-liberation \
+    gnupg \
     # ChromeDriverのバージョンに合わせたChromeのバージョンをインストールすることが重要
     # 最新版のChromeをインストールする例:
     && curl -sSL https://dl.google.com/linux/linux_signing_key.pub | apt-key add - \
