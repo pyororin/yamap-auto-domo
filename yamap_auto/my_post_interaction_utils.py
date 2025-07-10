@@ -258,7 +258,32 @@ def get_domo_users_from_activity(driver, activity_url):
             EC.element_to_be_clickable((By.XPATH, domo_button_xpath))
         )
         button_text_for_log = domo_button.text.strip()
-        logger.info(f"DOMOしたユーザー一覧へのボタン ('{button_text_for_log}') を発見。クリックします。")
+        logger.info(f"DOMOしたユーザー一覧へのボタン ('{button_text_for_log}') を発見。")
+
+        # DOMO数をパース
+        domo_count = 0
+        try:
+            # "人" を取り除き、数値に変換
+            domo_count_str = button_text_for_log.replace("人", "").strip()
+            if domo_count_str.isdigit(): # "コメントする" など他のテキストでないことを確認
+                domo_count = int(domo_count_str)
+            else:
+                # "人" を含むが数値ではない場合 (例: "コメントする" のような想定外のボタンを拾った場合)
+                # 基本的にXPathで `contains(normalize-space(), '人')` を指定しているので、
+                # 純粋な数字+"人" の形式を期待している。
+                logger.warning(f"DOMOボタンのテキスト ('{button_text_for_log}') からDOMO数をパースできませんでした。DOMO数0として扱います。")
+                domo_count = 0 # 安全のため0人扱い
+
+        except ValueError:
+            logger.warning(f"DOMOボタンのテキスト ('{button_text_for_log}') からDOMO数をパース中にエラー。DOMO数0として扱います。")
+            domo_count = 0 # パース失敗時も0人扱い
+
+        if domo_count == 0:
+            logger.info(f"DOMOユーザー数が見つかったボタンテキスト ('{button_text_for_log}') から0人と判断されたため、DOMOユーザー一覧の取得処理をスキップします。")
+            return domo_users # 空のリストを返す
+
+        # DOMO数が0より大きい場合のみクリックと待機処理を行う
+        logger.info(f"DOMOユーザー数が {domo_count} 人のため、ボタンをクリックします。")
         domo_button.click()
 
         # DOMOユーザー一覧ページへの遷移/表示を待機
@@ -275,12 +300,13 @@ def get_domo_users_from_activity(driver, activity_url):
         logger.info("DOMOユーザー一覧ページへの遷移/表示を確認。")
 
     except TimeoutException:
-        logger.warning(f"DOMOしたユーザー一覧へのボタンクリック後、DOMOユーザー一覧の表示（ユーザーリンクまたはURL）でタイムアウトしました。")
-        save_screenshot(driver, "DomoButtonClickOrTransitionFail", activity_id_for_log)
-        return domo_users # DOMOユーザーがいなかった、またはボタンが見つからなかった場合
+        # このTimeoutExceptionは、主にDOMOボタン自体が見つからない場合に発生する
+        logger.warning(f"DOMOしたユーザー一覧へのボタンが見つからないか、クリック後のDOMOユーザー一覧表示でタイムアウトしました。活動記録 ({activity_id_for_log})")
+        save_screenshot(driver, "DomoButtonOrListTimeout", activity_id_for_log)
+        return domo_users
     except Exception as e_button_click:
-        logger.error(f"DOMOボタンのクリックまたは遷移待機中に予期せぬエラー: {e_button_click}", exc_info=True)
-        save_screenshot(driver, "DomoButtonClickError", activity_id_for_log)
+        logger.error(f"DOMOボタンの処理または遷移待機中に予期せぬエラー: {e_button_click}", exc_info=True)
+        save_screenshot(driver, "DomoButtonProcessingError", activity_id_for_log)
         return domo_users
 
     # --- ここからDOMOユーザー一覧ページでの処理 ---
