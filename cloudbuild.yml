@@ -13,3 +13,5 @@ steps:
       - --timeout=300
       - --no-allow-unauthenticated
       - --set-secrets=_YAMAP_LOGIN_ID=gcp-secret-yamap-id:latest,_YAMAP_LOGIN_PASSWORD=gcp-secret-yamap-password:latest
+options:
+  logging: CLOUD_LOGGING_ONLY

@@ -1,17 +1,17 @@
 # === 機能の有効化/無効化 ===
-enable_follow_back: false
+enable_follow_back: true
 # true: フォローバック機能を有効にします。
 # false: フォローバック機能を無効にします。
-enable_timeline_domo: false
+enable_timeline_domo: true
 # true: タイムラインDOMO機能を有効にします。
 # false: タイムラインDOMO機能を無効にします。
-enable_search_and_follow: false
+enable_search_and_follow: true
 # true: 検索結果からのフォロー＆DOMO機能を有効にします。
 # false: 機能を無効にします。
 enable_domo_back_to_past_users: true
 # true: 過去記事DOMOユーザーへの最新記事DOMO返し機能を有効にします。
 # false: この機能を無効にします。
-enable_unfollow_inactive: false
+enable_unfollow_inactive: true
 # true: 非アクティブかつ非相互フォローユーザーのアンフォロー機能を有効にします。
 # false: この機能を無効にします。
 enable_parallel_processing: true
