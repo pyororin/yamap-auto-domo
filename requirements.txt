@@ -1,5 +1,10 @@
-Flask
-gunicorn
+# Flask と gunicorn は Cloud Functions の HTTP トリガーでは不要
+# Flask
+# gunicorn
 selenium
 PyYAML
 beautifulsoup4
+# Cloud Functions Python 3.x ランタイムには標準で含まれていることが多いですが、
+# 明示的にバージョンを指定したい場合や、特定のバージョンが必要な場合は記載します。
+# google-cloud-functions
+# google-cloud-scheduler (これはクライアントライブラリなので通常Functions側には不要)
