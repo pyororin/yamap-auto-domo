@@ -179,18 +179,36 @@ def search_follow_and_domo_users(driver, current_user_id, shared_cookies_from_ma
     sf_settings = _get_search_follow_settings()
     ad_settings = _get_action_delays_sf()
 
-    if not sf_settings.get("enable_search_and_follow", False):
-        logger.info("検索からのフォロー＆DOMO機能は設定で無効になっています。")
+    log_prefix_main = "[SF_MAIN] " # 追加 (ログプレフィックスの一元化)
+
+    # 機能全体の有効無効チェック
+    enable_search_and_follow_overall = sf_settings.get("enable_search_and_follow", False)
+    logger.info(f"{log_prefix_main}設定 enable_search_and_follow: {enable_search_and_follow_overall}") # 追加ログ
+    if not enable_search_and_follow_overall:
+        logger.info(f"{log_prefix_main}検索からのフォロー＆DOMO機能は設定で無効 (enable_search_and_follow: False)。")
         return {'followed': 0, 'domoed': 0}
 
-    is_parallel_enabled = sf_settings.get("enable_parallel_search_follow", False)
-    max_workers = sf_settings.get("max_workers_search_follow", 2) if is_parallel_enabled else 1
-    if is_parallel_enabled and not shared_cookies_from_main:
-        logger.warning("並列検索＆フォローが有効ですが、共有Cookieが提供されませんでした。逐次処理にフォールバックします。")
-        is_parallel_enabled = False
+    # 並列処理設定の読み込みとログ出力
+    config_enable_parallel = sf_settings.get("enable_parallel_search_follow", False)
+    has_shared_cookies = bool(shared_cookies_from_main)
+    logger.info(f"{log_prefix_main}設定 enable_parallel_search_follow: {config_enable_parallel}") # 追加ログ
+    logger.info(f"{log_prefix_main}共有Cookieの有無: {has_shared_cookies}") # 追加ログ
 
-    log_prefix_main = "[SF_MAIN] "
-    logger.info(f"{log_prefix_main}>>> 検索からのフォロー＆DOMO機能を開始します... (並列処理: {'有効 (MaxWorkers: ' + str(max_workers) + ')' if is_parallel_enabled else '無効'})")
+    is_parallel_enabled = config_enable_parallel
+    if is_parallel_enabled and not has_shared_cookies:
+        logger.warning(f"{log_prefix_main}並列検索＆フォローが設定上は有効 (enable_parallel_search_follow: True) ですが、"
+                       "共有Cookieが提供されませんでした。逐次処理にフォールバックします。") # ログメッセージ改善
+        is_parallel_enabled = False
+    elif not is_parallel_enabled:
+        logger.info(f"{log_prefix_main}並列検索＆フォローは設定上無効 (enable_parallel_search_follow: False) です。逐次処理を行います。") # 追加ログ
+
+    max_workers = sf_settings.get("max_workers_search_follow", 2) if is_parallel_enabled else 1
+
+    # 最終的な並列処理の有効状態をログに出力
+    if is_parallel_enabled:
+        logger.info(f"{log_prefix_main}>>> 検索からのフォロー＆DOMO機能を開始します... (並列処理: 有効, MaxWorkers: {max_workers})")
+    else:
+        logger.info(f"{log_prefix_main}>>> 検索からのフォロー＆DOMO機能を開始します... (並列処理: 無効, 逐次実行)")
 
     start_url = sf_settings.get("search_activities_url", SEARCH_ACTIVITIES_URL_DEFAULT)
     max_pages = sf_settings.get("max_pages_to_process_search", 1)

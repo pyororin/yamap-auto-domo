@@ -571,25 +571,43 @@ def domo_back_to_past_domo_users(driver, current_user_id, shared_cookies):
         tuple[int, int]: フォローしたユーザーの総数と、DOMO返しに成功した総数。
                          (total_followed_count, total_domoed_back_count)
     """
-    config = _get_config_cached() # main_config全体を取得
-    if not config.get("enable_domo_back_to_past_users", False): # トップレベルのキーを参照
-        logger.info("過去記事DOMOユーザーへのDOMO返し機能は設定で無効です。 (トップレベル設定による)")
-        return 0, 0 # フォロー数とDOMO数を返す
+    config = _get_config_cached()
+    # トップレベルの有効無効スイッチのログ
+    enable_domo_back_overall = config.get("enable_domo_back_to_past_users", False)
+    log_prefix_main = "[DBF_MAIN] " # DOMO_BACK_FOLLOW_MAIN (ログプレフィックスを早めに定義)
+    logger.info(f"{log_prefix_main}設定 enable_domo_back_to_past_users (全体スイッチ): {enable_domo_back_overall}") # 追加ログ
 
-    db_settings = _get_domo_back_settings() # 詳細設定は引き続き専用セクションから取得
-    sf_settings = _get_search_follow_settings_for_domo_back() # フォロー条件用
-    ad_settings = _get_action_delays_mpi() # アクション遅延用
+    if not enable_domo_back_overall:
+        logger.info(f"{log_prefix_main}過去記事DOMOユーザーへのDOMO返し機能は設定で無効です。 (トップレベル設定 enable_domo_back_to_past_users: False)")
+        return 0, 0
 
-    is_parallel_enabled = db_settings.get("enable_parallel_domo_back", False)
-    max_workers = db_settings.get("max_workers_domo_back", 2) if is_parallel_enabled else 1
-    if is_parallel_enabled and not shared_cookies:
-        logger.warning("並列DOMO返しが有効ですが、共有Cookieが提供されませんでした。逐次処理にフォールバックします。")
+    db_settings = _get_domo_back_settings()
+    sf_settings = _get_search_follow_settings_for_domo_back()
+    ad_settings = _get_action_delays_mpi()
+
+    # 並列処理設定の読み込みとログ出力 (search_utils.py と同様の形式で)
+    config_enable_parallel_db = db_settings.get("enable_parallel_domo_back", False) # "db" suffix for clarity
+    has_shared_cookies_db = bool(shared_cookies) # "db" suffix for clarity
+    logger.info(f"{log_prefix_main}機能別設定 enable_parallel_domo_back: {config_enable_parallel_db}") # 追加ログ
+    logger.info(f"{log_prefix_main}共有Cookieの有無: {has_shared_cookies_db}") # 追加ログ
+
+    is_parallel_enabled = config_enable_parallel_db # 初期値は機能別設定
+    if is_parallel_enabled and not has_shared_cookies_db:
+        logger.warning(f"{log_prefix_main}並列DOMO返しが設定上は有効 (enable_parallel_domo_back: True) ですが、"
+                       "共有Cookieが提供されませんでした。逐次処理にフォールバックします。") # ログメッセージ改善
         is_parallel_enabled = False
+    elif not is_parallel_enabled: # config_enable_parallel_db が False の場合
+        logger.info(f"{log_prefix_main}並列DOMO返しは機能別設定で無効 (enable_parallel_domo_back: False) です。逐次処理を行います。") # 追加ログ
 
-    log_prefix_main = "[DBF_MAIN] " # DOMO_BACK_FOLLOW_MAIN
-    logger.info(f"{log_prefix_main}>>> 過去記事DOMOユーザーへのDOMO返し＆フォロー機能を開始します... (並列処理: {'有効 (MaxWorkers: ' + str(max_workers) + ')' if is_parallel_enabled else '無効'})")
+    max_workers = db_settings.get("max_workers_domo_back", 2) if is_parallel_enabled else 1
+
+    # 最終的な並列処理の有効状態をログに出力 (search_utils.py と同様の形式で)
+    if is_parallel_enabled:
+        logger.info(f"{log_prefix_main}>>> 過去記事DOMOユーザーへのDOMO返し＆フォロー機能を開始します... (並列処理: 有効, MaxWorkers: {max_workers})")
+    else:
+        logger.info(f"{log_prefix_main}>>> 過去記事DOMOユーザーへのDOMO返し＆フォロー機能を開始します... (並列処理: 無効, 逐次実行)")
+
     start_time = time.time()
-
     days_to_check_past = db_settings.get("max_days_to_check_past_activities", 30)
     max_past_activities_to_process = db_settings.get("max_past_activities_to_process", 5)
     max_users_per_activity = db_settings.get("max_users_to_domo_back_per_activity", 10) # 1活動あたりの処理ユーザー上限
