@@ -15,7 +15,7 @@ steps:
       - --platform=managed # プラットフォームを指定
       - --port=8080 # コンテナがリッスンするポート
       - --allow-unauthenticated # 公開アクセスを許可 (必要に応じて変更)
-      - --set-secrets=_YAMAP_LOGIN_ID=gcp-secret-yamap-id:latest,_YAMAP_LOGIN_PASSWORD=gcp-secret-yamap-password:latest
+      - --set-secrets=YAMAP_LOGIN_ID=gcp-secret-yamap-id:latest,YAMAP_LOGIN_PASSWORD=gcp-secret-yamap-password:latest,YAMAP_USER_ID=gcp-secret-yamap-user-id:latest
       - --memory=1Gi
       # --task-timeout, --max-retries, --command, --args はServiceデプロイでは通常不要または異なる方法で設定
 
