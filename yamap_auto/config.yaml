@@ -170,7 +170,7 @@ new_feature_domo_back_to_past_domo_users:
   # 1回のスクリプト実行でDOMO返しを行うユーザーの総最大数。
 
   # --- DOMO返し時のフォロー設定 ---
-  enable_follow_during_domo_back: false
+  enable_follow_during_domo_back: true
   # true: DOMO返しを行う際、まだフォローしていなければ条件に基づいてフォローも試みます。
   # false: DOMO返しのみ行い、フォローは試みません。
   # フォロー条件 (最低フォロワー数、フォロー/フォロワー比率の閾値) は、
@@ -182,7 +182,7 @@ new_feature_domo_back_to_past_domo_users:
   # true: 自分をまだフォローしていないユーザーに限定してDOMO返しを行います。
   # false: フォロー状況に関わらずDOMO返しを行います。
 
-  enable_domo_only_if_i_am_not_following: true # (この設定の扱いは要検討、フォロー機能と重複する可能性)
+  enable_domo_only_if_i_am_not_following: false
   # true: 自分がまだフォローしていないユーザーに限定してDOMO返しを行います。
   # false: 自分が既にフォローしているユーザーにもDOMO返しを行います。
 
@@ -200,7 +200,7 @@ new_feature_domo_back_to_past_domo_users:
   # 並列DOMO返し時、各ワーカースレッドが1ユーザーの一連の処理を完了した後に挿入される遅延時間 (秒単位)。
 
   # --- 逐次処理時の遅延 ---
-  delay_between_domo_back_action_sec: 5.0 # 逐次処理時のアクション間遅延
+  delay_between_domo_back_action_sec: 3.0 # 逐次処理時のアクション間遅延
   # `enable_parallel_domo_back` が false の場合、各ユーザーへのDOMO返しアクション間の遅延時間 (秒単位)。
 
 # === 新機能: 非アクティブかつ非相互フォローユーザーのアンフォロー設定 ===
