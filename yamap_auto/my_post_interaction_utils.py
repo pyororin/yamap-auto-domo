@@ -526,14 +526,8 @@ def domo_back_to_past_domo_users(driver, current_user_id, shared_cookies):
 
             # 4. ユーザーの最新活動記録にDOMO
             logger.info(f"ユーザー ({user_name}, {user_id_short}) の最新活動記録へDOMO返しを試みます。")
-            # driver.get(user_profile_url) は以前のフォロー確認ロジックで実行されていた可能性があるため、
-            # 最新活動記録取得前に確実に相手のプロフィールページにいるようにする。
-            # ただし、get_latest_activity_url が内部で driver.get するなら不要。
-            # get_latest_activity_url の stay_on_page=True を活かすため、ここでは driver.get は行わない。
-            # get_latest_activity_url が user_profile_url を受け取るので、そこで遷移する。
-            # get_latest_activity_url は相手のプロフィールページにアクセスするため、現在のページが相手のプロフならそのまま使える
-            # find_follow_button_on_profile_page の後なので、既に相手のプロフィールページにいるはず
-            latest_user_activity_url = get_latest_activity_url(driver, user_profile_url, stay_on_page=True)
+            # get_latest_activity_url は、必要に応じて内部でユーザープロフィールページへ遷移します。
+            latest_user_activity_url = get_latest_activity_url(driver, user_profile_url)
             if latest_user_activity_url:
                 latest_activity_id_log = latest_user_activity_url.split('/')[-1].split('?')[0]
                 logger.info(f"ユーザー ({user_name}) の最新活動記録URL: {latest_activity_id_log}")
