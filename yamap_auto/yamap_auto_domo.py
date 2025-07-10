@@ -138,19 +138,20 @@ try:
 
     YAMAP_EMAIL = os.environ.get("YAMAP_LOGIN_ID")
     YAMAP_PASSWORD = os.environ.get("YAMAP_LOGIN_PASSWORD")
+    MY_USER_ID = os.environ.get("USER_ID") # 環境変数 USER_ID から取得
 
     # MY_USER_ID は引き続き credentials.yaml から読み込む想定
     # credentials.yaml の読み込み処理は get_credentials() に残っている前提
     # ただし、YAMAP_EMAIL と YAMAP_PASSWORD が環境変数から取得できなかった場合のフォールバックは考慮しない
-    credentials_data_for_userid = get_credentials()
-    MY_USER_ID = credentials_data_for_userid.get("user_id")
+    # credentials_data_for_userid = get_credentials() # credentials.yaml は使用しないためコメントアウト
+    # MY_USER_ID = credentials_data_for_userid.get("user_id") # 環境変数から取得するためコメントアウト
 
 
     if not all([YAMAP_EMAIL, YAMAP_PASSWORD, MY_USER_ID, main_config]):
         missing_items = []
         if not YAMAP_EMAIL: missing_items.append("YAMAP_LOGIN_ID (環境変数)")
         if not YAMAP_PASSWORD: missing_items.append("YAMAP_LOGIN_PASSWORD (環境変数)")
-        if not MY_USER_ID: missing_items.append("user_id (credentials.yaml)")
+        if not MY_USER_ID: missing_items.append("USER_ID (環境変数)")
         if not main_config: missing_items.append("main_config (config.yaml)")
         logger.critical(f"必須の設定情報が不足しています: {', '.join(missing_items)}。処理を中止します。")
         exit()
@@ -159,7 +160,7 @@ try:
         logger.info(f"  YAMAP_LOGIN_ID (from env): {'設定済み' if YAMAP_EMAIL else '未設定'}")
         # パスワード自体はログに出力しない
         logger.info(f"  YAMAP_LOGIN_PASSWORD (from env): {'設定済み' if YAMAP_PASSWORD else '未設定'}")
-        logger.info(f"  user_id (from credentials.yaml): {MY_USER_ID if MY_USER_ID else '未設定'}")
+        logger.info(f"  USER_ID (from env): {MY_USER_ID if MY_USER_ID else '未設定'}")
 
 
     # 各機能ごとの設定セクションを読み込み (存在しない場合は空の辞書として扱う)
