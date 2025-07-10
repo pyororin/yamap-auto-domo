@@ -169,12 +169,15 @@ def follow_back_users_new(driver, current_user_id, shared_cookies_from_main=None
     config.yaml の follow_back_settings に従って動作する。
     並列処理に対応。
     """
+    # main_config_root = _get_config_cached() # 呼び出し元でチェックするため不要
     fb_settings = _get_follow_back_settings()
     action_delays = _get_action_delays()
 
-    if not fb_settings.get("enable_follow_back", False):
-        logger.info("フォローバック機能は設定で無効になっています。")
-        return
+    # 呼び出し元の yamap_auto_domo.py の execute_main_tasks で
+    # main_config.get("enable_follow_back") をチェックしているので、ここでのガードは不要。
+    # if not main_config_root.get("enable_follow_back", False):
+    #     logger.info("フォローバック機能は設定で無効になっています。(from follow_back_utils)")
+    #     return 0
 
     is_parallel_enabled = fb_settings.get("enable_parallel_follow_back", False)
     max_workers = fb_settings.get("max_workers_follow_back", 2) if is_parallel_enabled else 1

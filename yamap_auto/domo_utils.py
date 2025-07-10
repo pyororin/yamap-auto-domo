@@ -241,9 +241,11 @@ def domo_timeline_activities(driver):
         driver (webdriver.Chrome): Selenium WebDriverインスタンス。
     """
     # 機能が有効かチェック (config.yaml の設定)
-    if not TIMELINE_DOMO_SETTINGS.get("enable_timeline_domo", False):
-        logger.info("タイムラインDOMO機能は設定で無効になっています。")
-        return
+    # 呼び出し元の yamap_auto_domo.py の execute_main_tasks で
+    # main_config.get("enable_timeline_domo") をチェックしているので、ここでのガードは不要。
+    # if not main_config.get("enable_timeline_domo", False): # main_config はグローバル/モジュールレベルで利用可能
+    #     logger.info("タイムラインDOMO機能は設定で無効になっています。(from domo_utils.domo_timeline_activities)")
+    #     return # 呼び出し元は戻り値を期待していないので、そのままreturn
 
     logger.info(">>> タイムラインDOMO機能を開始します (一覧上で直接DOMO)...")
     timeline_page_url = TIMELINE_URL
@@ -582,10 +584,14 @@ def domo_timeline_activities_parallel(driver, shared_cookies, current_user_id): 
         current_user_id (str): 現在ログインしているユーザーのID。
     """
     # 機能が有効かチェック (config.yaml)
-    if not TIMELINE_DOMO_SETTINGS.get("enable_timeline_domo", False):
-        logger.info("タイムラインDOMO機能は設定で無効になっています。")
-        return 0 # DOMO件数0を返す
+    # 呼び出し元の yamap_auto_domo.py の execute_main_tasks で
+    # main_config.get("enable_timeline_domo") をチェックしているので、ここでのガードは不要。
+    # if not main_config.get("enable_timeline_domo", False): # main_config はグローバル/モジュールレベルで利用可能
+    #     logger.info("タイムラインDOMO機能は設定で無効になっています。(from domo_utils.domo_timeline_activities_parallel)")
+    #     return 0 # DOMO件数0を返す
+
     # 並列処理自体が有効かチェック (config.yaml)
+    # PARALLEL_PROCESSING_SETTINGS は main_config から取得済みなのでそのまま利用
     if not PARALLEL_PROCESSING_SETTINGS.get("enable_parallel_processing", False):
         logger.info("並列処理が無効なため、タイムラインDOMOは逐次実行されます (一覧DOMO版)。")
         # 逐次版 (domo_timeline_activities) は既に一覧DOMOに対応済みのため、それを呼び出す

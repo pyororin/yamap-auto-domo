@@ -176,17 +176,19 @@ def search_follow_and_domo_users(driver, current_user_id, shared_cookies_from_ma
     そのユーザーの最新活動記録にDOMOする。
     config.yaml の search_and_follow_settings に従って動作する。並列処理対応。
     """
+    # main_config_root = _get_config_cached_sf() # 呼び出し元でチェックするため不要
     sf_settings = _get_search_follow_settings()
     ad_settings = _get_action_delays_sf()
 
-    log_prefix_main = "[SF_MAIN] " # 追加 (ログプレフィックスの一元化)
+    log_prefix_main = "[SF_MAIN] "
 
-    # 機能全体の有効無効チェック
-    enable_search_and_follow_overall = sf_settings.get("enable_search_and_follow", False)
-    logger.info(f"{log_prefix_main}設定 enable_search_and_follow: {enable_search_and_follow_overall}") # 追加ログ
-    if not enable_search_and_follow_overall:
-        logger.info(f"{log_prefix_main}検索からのフォロー＆DOMO機能は設定で無効 (enable_search_and_follow: False)。")
-        return {'followed': 0, 'domoed': 0}
+    # 呼び出し元の yamap_auto_domo.py の execute_main_tasks で
+    # main_config.get("enable_search_and_follow") をチェックしているので、ここでのガードは不要。
+    # enable_search_and_follow_overall = main_config_root.get("enable_search_and_follow", False)
+    # logger.info(f"{log_prefix_main}設定 enable_search_and_follow (from root): {enable_search_and_follow_overall}")
+    # if not enable_search_and_follow_overall:
+    #     logger.info(f"{log_prefix_main}検索からのフォロー＆DOMO機能は設定で無効 (enable_search_and_follow from root: False)。")
+    #     return {'followed': 0, 'domoed': 0}
 
     # 並列処理設定の読み込みとログ出力
     config_enable_parallel = sf_settings.get("enable_parallel_search_follow", False)
