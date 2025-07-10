@@ -197,16 +197,39 @@ new_feature_domo_back_to_past_domo_users:
   max_total_domo_back_users_per_run: 20
   # 1回のスクリプト実行でDOMO返しを行うユーザーの総最大数。
 
+  # --- DOMO返し時のフォロー設定 ---
+  enable_follow_during_domo_back: false
+  # true: DOMO返しを行う際、まだフォローしていなければ条件に基づいてフォローも試みます。
+  # false: DOMO返しのみ行い、フォローは試みません。
+  # フォロー条件 (最低フォロワー数、フォロー/フォロワー比率の閾値) は、
+  # `search_and_follow_settings` セクション内の
+  # `min_followers_for_search_follow` と `follow_ratio_threshold_for_search` の値を共通で利用します。
+
+  # --- DOMO返し時の条件 (従来のDOMOに関するもの) ---
   enable_domo_only_if_not_following_me: false
   # true: 自分をまだフォローしていないユーザーに限定してDOMO返しを行います。
   # false: フォロー状況に関わらずDOMO返しを行います。
 
-  enable_domo_only_if_i_am_not_following: true
+  enable_domo_only_if_i_am_not_following: true # (この設定の扱いは要検討、フォロー機能と重複する可能性)
   # true: 自分がまだフォローしていないユーザーに限定してDOMO返しを行います。
   # false: 自分が既にフォローしているユーザーにもDOMO返しを行います。
 
-  delay_between_domo_back_action_sec: 5.0
-  # 各DOMO返しアクション間の遅延時間 (秒単位)。
+  # --- 並列処理設定 ---
+  enable_parallel_domo_back: false
+  # true: DOMO返し処理 (各ユーザーへのプロフィール確認、フォロー試行、最新記事へのDOMO) を並列実行します。
+  # false: 逐次処理を実行します。
+  # 注意: YAMAPの利用規約やサーバー負荷を考慮し、自己責任で有効にしてください。
+
+  max_workers_domo_back: 2
+  # 並列DOMO返し処理の最大ワーカー（スレッド）数。
+  # `enable_parallel_domo_back` が true の場合に参照されます。推奨: 2-3程度。
+
+  delay_per_worker_domo_back_sec: 2.5
+  # 並列DOMO返し時、各ワーカースレッドが1ユーザーの一連の処理を完了した後に挿入される遅延時間 (秒単位)。
+
+  # --- 逐次処理時の遅延 ---
+  delay_between_domo_back_action_sec: 5.0 # 逐次処理時のアクション間遅延
+  # `enable_parallel_domo_back` が false の場合、各ユーザーへのDOMO返しアクション間の遅延時間 (秒単位)。
 
 # === 新機能: 非アクティブかつ非相互フォローユーザーのアンフォロー設定 ===
 unfollow_inactive_users_settings:
