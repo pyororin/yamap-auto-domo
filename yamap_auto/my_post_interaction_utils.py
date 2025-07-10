@@ -571,11 +571,12 @@ def domo_back_to_past_domo_users(driver, current_user_id, shared_cookies):
         tuple[int, int]: フォローしたユーザーの総数と、DOMO返しに成功した総数。
                          (total_followed_count, total_domoed_back_count)
     """
-    db_settings = _get_domo_back_settings()
-    if not db_settings.get("enable_domo_back_to_past_users", False):
-        logger.info("過去記事DOMOユーザーへのDOMO返し機能は設定で無効です。")
-        return 0, 0 # フォロー数とDOMO数を返すように変更
+    config = _get_config_cached() # main_config全体を取得
+    if not config.get("enable_domo_back_to_past_users", False): # トップレベルのキーを参照
+        logger.info("過去記事DOMOユーザーへのDOMO返し機能は設定で無効です。 (トップレベル設定による)")
+        return 0, 0 # フォロー数とDOMO数を返す
 
+    db_settings = _get_domo_back_settings() # 詳細設定は引き続き専用セクションから取得
     sf_settings = _get_search_follow_settings_for_domo_back() # フォロー条件用
     ad_settings = _get_action_delays_mpi() # アクション遅延用
 
