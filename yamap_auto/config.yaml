@@ -160,24 +160,6 @@ search_and_follow_settings:
   # この値が小さすぎると、YAMAPからの応答エラーやアカウント制限のリスクが高まる可能性があります。
   # 逐次処理の場合は `delay_between_user_processing_in_search_sec` がユーザー間の遅延として使用されます。
 
-# === 新機能: 自分の投稿へのDOMOユーザーインタラクション設定 ===
-new_feature_my_post_interaction:
-  enable_my_post_interaction: true
-  # true: この機能を有効にします。
-  # false: この機能を無効にします。
-
-  max_days_to_check_my_posts: 7
-  # 何日前までの自分の活動記録をチェック対象とするか (例: 7 であれば過去7日間の投稿)。
-
-  delay_between_user_interaction_sec: 4.0
-  # DOMOをくれた各ユーザーへのインタラクション（フォローバック試行、最新投稿へのDOMO試行）の間に挿入される遅延時間 (秒単位)。
-  # サーバー負荷軽減と安定動作のため。
-
-  # 注意:
-  # - この機能によるフォローバックの条件（例: フォロワー数レシオなど）は、
-  #   既存の `follow_back_settings` の値を参照・準拠するよう実装されています（ただし現実装では簡略化）。
-  # - DOMOユーザーの最新活動記録へのDOMOは、1件のみ行われます。
-
 # === 新機能: 過去記事DOMOユーザーへの最新記事DOMO返し設定 ===
 new_feature_domo_back_to_past_domo_users:
   enable_domo_back_to_past_users: false
