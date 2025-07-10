@@ -5,7 +5,7 @@ headless_mode: false
 # ブラウザをヘッドレスモードで実行するかどうか (true: ヘッドレス, false: 通常モード)
 # ヘッドレスモードではブラウザウィンドウは表示されませんが、バックグラウンドで動作します。デバッグ時は false が推奨されます。
 
-implicit_wait_sec: 7
+implicit_wait_sec: 5
 # Selenium WebDriverが要素を見つけるまでの暗黙的な最大待機時間 (秒単位)
 # ページ要素の読み込みが遅い場合に、この時間まで待機します。
 
@@ -22,7 +22,7 @@ action_delays:
   # ユーザープロフィールページなどで、最新の活動日記へのリンクが表示されるまでの最大待機時間 (秒単位)
   # ページコンテンツの動的な読み込みに対応するために使用されます。
 
-  after_follow_action_sec: 2.0
+  after_follow_action_sec: 1.0
   # フォロー/フォローバック操作を実行した後に挿入される共通の待機時間 (秒単位)
   # フォロー状態のUI反映や、連続したフォロー操作間のインターバルとして機能します。
 
@@ -38,19 +38,19 @@ action_delays:
 
 follow_back_settings:
   # フォローバック機能に関する設定 (自分をフォローしてくれたユーザーを自動でフォローバックする)
-  enable_follow_back: true
+  enable_follow_back: false
   # true: フォローバック機能を有効にします。
   # false: フォローバック機能を無効にします。
 
-  max_users_to_follow_back: 10 # テスト用に変更
+  max_users_to_follow_back: 20
   # 一度のスクリプト実行でフォローバックする最大のユーザー数。
   # フォロワーリストの複数ページをチェックする場合、この合計数に達すると処理を停止します。
 
-  max_pages_for_follow_back: 5 # テスト用に変更
+  max_pages_for_follow_back: 10
   # フォローバック対象者を探すために、フォロワーリストの何ページ目まで確認するかを指定します。
   # 例えば `5` を指定すると、最新のフォロワーから最大5ページ分遡って確認します。
 
-  enable_parallel_follow_back: true # テスト用に変更
+  enable_parallel_follow_back: true
   # true: フォローバック機能の並列処理を有効にします。
   # false: 従来の逐次処理を実行します。
 
@@ -66,7 +66,7 @@ follow_back_settings:
 
 timeline_domo_settings:
   # タイムラインDOMO機能に関する設定 (YAMAPのタイムライン上の活動記録に自動でDOMOする)
-  enable_timeline_domo: true
+  enable_timeline_domo: false
   # true: タイムラインDOMO機能を有効にします。
   # false: タイムラインDOMO機能を無効にします。
 
@@ -74,36 +74,11 @@ timeline_domo_settings:
   # タイムライン上でDOMOする活動記録の最大数。
   # タイムラインの新しい投稿から順に、この数に達するまでDOMOを試みます。
 
-  # === タイムライン一覧上での直接DOMOに関する追加設定 (vX.Y.Z以降) ===
-  # 以下の設定は、タイムラインの各活動記録ページに遷移せず、一覧上で直接DOMOを行う場合の動作を調整します。
-  # これにより、処理速度の向上が期待できます。
-
-  # domo_button_selectors_on_timeline:
-  #   - "button[data-testid='ActivityDomoButton']"
-  #   - "button#DomoActionButton"
-  #   - "div.ActivityItemActions__DomoActionContainer button" # ユーザー提供HTMLに基づく候補
-  # タイムラインのフィードアイテム内でDOMOボタンを見つけるためのCSSセレクタのリスト。
-  # 上から順に試行されます。YAMAPのUI変更に合わせて調整が必要になる場合があります。
-  # デフォルトでは、活動記録ページと同じセレクタと、一般的な候補が使用されます。
-
-  # domo_button_wait_sec_on_timeline: 3
-  # タイムラインのフィードアイテム内でDOMOボタンがクリック可能になるまでの最大待機時間 (秒単位)。
-  # デフォルトは3秒です。
-
-  # wait_after_feed_load_sec: 1.5
-  # タイムラインのフィードアイテム群が最初に読み込まれた後、処理を開始するまでの安定待ち時間 (秒単位)。
-  # デフォルトは1.5秒です。
-
-  # delay_between_item_processing_sec: 0.3
-  # タイムライン上の各フィードアイテムの処理（DOMO試行またはスキップ）が完了した後、
-  # 次のアイテムの処理を開始するまでの短い遅延時間 (秒単位)。 StaleElement対策や負荷軽減が目的です。
-  # デフォルトは0.3秒です。
-
   # タイムラインでの各DOMO実行後の待機時間は `action_delays.after_domo_sec` を参照します。
 
 search_and_follow_settings:
   # 活動記録検索ページからのフォロー＆DOMO機能に関する設定
-  enable_search_and_follow: true
+  enable_search_and_follow: false
   # true: 検索結果からのフォロー＆DOMO機能を有効にします。
   # false: 機能を無効にします。
 
@@ -111,11 +86,11 @@ search_and_follow_settings:
   # 処理を開始する活動記録の検索結果ページのURL。
   # 通常はデフォルトのままで問題ありませんが、特定の検索条件で開始したい場合にカスタマイズ可能です。
 
-  max_pages_to_process_search: 1 # テスト用に変更
+  max_pages_to_process_search: 2
   # 検索結果の何ページ目まで処理を続けるかを指定します。
   # 例えば `3` を指定すると、最初のページから3ページ目まで処理します。
 
-  max_users_to_process_per_page: 24 # テスト用に変更
+  max_users_to_process_per_page: 24
   # 検索結果の各ページで、最大何人のユーザー（活動記録の投稿者）を処理対象とするかを指定します。
 
   min_followers_for_search_follow: 8
@@ -131,7 +106,7 @@ search_and_follow_settings:
   # true: 上記の条件でユーザーをフォローした後、そのユーザーの最新の活動記録にDOMOします。
   # false: フォローのみ行い、DOMOはしません。
 
-  delay_between_user_processing_in_search_sec: 5.0
+  delay_between_user_processing_in_search_sec: 2.0
   # 検索結果ページで一人のユーザーの処理（フォロー/DOMOまたはスキップ）が完了した後、
   # 次のユーザーの処理を開始するまでの待機時間 (秒単位)。
 
@@ -139,7 +114,7 @@ search_and_follow_settings:
   # 検索結果のページネーション（「次へ」ボタンクリックなど）を実行した後の待機時間 (秒単位)。
   # 新しいページのコンテンツが完全に読み込まれるのを待つために使用します。
 
-  enable_parallel_search_follow: true # テスト用に変更
+  enable_parallel_search_follow: true
   # true: 検索＆フォロー機能のユーザー処理部分（プロフィール確認、フォロー、DOMO）を並列化します。
   #       メインスレッドが検索結果ページからユーザー情報を収集し、ワーカースレッド群が個別のユーザー処理を並行して行います。
   # false: 従来の逐次処理を実行します（メインスレッドが一人ずつユーザー処理を行います）。
@@ -153,7 +128,7 @@ search_and_follow_settings:
   # 値を大きくしすぎると、リソース競合やYAMAPサーバーへの過度な負荷により、かえって性能が低下したり、
   # アカウントが一時的に制限されるリスクが高まる可能性があります。
 
-  delay_per_worker_user_processing_sec: 2.0 # (変更) 3.5秒から短縮
+  delay_per_worker_user_processing_sec: 2.0
   # 並列検索＆フォロー時、各ワーカースレッドが1ユーザーの一連の処理（プロフ確認、フォロー、DOMOなど）を完了した後に挿入される個別の遅延時間 (秒単位)。
   # 複数のワーカースレッドが同時にYAMAPへリクエストを送信するため、各アクション後に適切な遅延を入れることで、
   # サーバーへの瞬間的な負荷を軽減し、安定した動作を目指します。
@@ -162,21 +137,21 @@ search_and_follow_settings:
 
 # === 新機能: 過去記事DOMOユーザーへの最新記事DOMO返し設定 ===
 new_feature_domo_back_to_past_domo_users:
-  enable_domo_back_to_past_users: false
+  enable_domo_back_to_past_users: true
   # true: この機能を有効にします。
   # false: この機能を無効にします。
 
-  max_days_to_check_past_activities: 30
+  max_days_to_check_past_activities: 7
   # DOMO返しのためにチェックする自分の過去記事の期間（日数）。
 
-  max_past_activities_to_process: 5
+  max_past_activities_to_process: 10
   # DOMO返しのために処理する自分の過去記事の最大数。
   # 例: 期間内に10件の記事があっても、この値が5なら新しい方から5件のみ処理。
 
-  max_users_to_domo_back_per_activity: 10
+  max_users_to_domo_back_per_activity: 100
   # 1つの自分の過去記事あたり、DOMO返しを行うユーザーの最大数。
 
-  max_total_domo_back_users_per_run: 20
+  max_total_domo_back_users_per_run: 1000
   # 1回のスクリプト実行でDOMO返しを行うユーザーの総最大数。
 
   # --- DOMO返し時のフォロー設定 ---
@@ -197,12 +172,12 @@ new_feature_domo_back_to_past_domo_users:
   # false: 自分が既にフォローしているユーザーにもDOMO返しを行います。
 
   # --- 並列処理設定 ---
-  enable_parallel_domo_back: false
+  enable_parallel_domo_back: true
   # true: DOMO返し処理 (各ユーザーへのプロフィール確認、フォロー試行、最新記事へのDOMO) を並列実行します。
   # false: 逐次処理を実行します。
   # 注意: YAMAPの利用規約やサーバー負荷を考慮し、自己責任で有効にしてください。
 
-  max_workers_domo_back: 2
+  max_workers_domo_back: 20
   # 並列DOMO返し処理の最大ワーカー（スレッド）数。
   # `enable_parallel_domo_back` が true の場合に参照されます。推奨: 2-3程度。
 
@@ -215,7 +190,7 @@ new_feature_domo_back_to_past_domo_users:
 
 # === 新機能: 非アクティブかつ非相互フォローユーザーのアンフォロー設定 ===
 unfollow_inactive_users_settings:
-  enable_unfollow_inactive: true
+  enable_unfollow_inactive: false
   # true: この機能を有効にします。
   # false: この機能を無効にします。
 
