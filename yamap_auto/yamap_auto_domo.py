@@ -491,10 +491,15 @@ def unfollow_inactive_not_following_back_users(driver, my_user_id, shared_cookie
     3. アンフォローアクション自体も設定に応じて並列実行可能。
     """
     logger.info("非アクティブかつフォローバックしていないユーザーのアンフォロー処理を開始します。")
-    settings = UNFOLLOW_INACTIVE_SETTINGS # This should be loaded from main_config at the start of the script
-    if not settings.get("enable_unfollow_inactive", False):
-        logger.info("設定で無効化されているため、アンフォロー処理をスキップします。")
-        return 0
+    # settings = UNFOLLOW_INACTIVE_SETTINGS
+
+    # 呼び出し元の yamap_auto_domo.py の execute_main_tasks で
+    # main_config.get("enable_unfollow_inactive") をチェックしているので、ここでのガードは不要。
+    # if not main_config.get("enable_unfollow_inactive", False):
+    #     logger.info("設定で無効化されているため、アンフォロー処理をスキップします。(from yamap_auto_domo.unfollow_inactive)")
+    #     return 0
+
+    settings = UNFOLLOW_INACTIVE_SETTINGS
 
     inactive_threshold_days = settings.get("inactive_threshold_days", 90)
     max_to_unfollow_total = settings.get("max_users_to_unfollow_per_run", 5)
