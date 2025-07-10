@@ -32,7 +32,7 @@ RUN curl -sSLo /tmp/chromedriver_linux64.zip https://storage.googleapis.com/chro
     && rm /tmp/chromedriver_linux64.zip \
     && mv /usr/local/bin/chromedriver-linux64/chromedriver /usr/local/bin/chromedriver \
     && chmod +x /usr/local/bin/chromedriver \
-    && rmdir /usr/local/bin/chromedriver-linux64
+    && rm -rf /usr/local/bin/chromedriver-linux64
 
 # 作業ディレクトリの設定
 WORKDIR /app
