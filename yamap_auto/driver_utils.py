@@ -182,9 +182,9 @@ def get_driver_options():
     main_conf = get_main_config() # 設定を確実にロード
     options = webdriver.ChromeOptions()
 
-    webdriver_settings = main_conf.get("webdriver_settings", {})
+    # webdriver_settings = main_conf.get("webdriver_settings", {}) # この行を削除またはコメントアウト
 
-    if webdriver_settings.get("headless_mode", False): # headless_modeもwebdriver_settingsから取得
+    if main_conf.get("headless_mode", False): # ルートレベルの headless_mode を参照
         logger.info("ヘッドレスモードで起動します。")
         options.add_argument('--headless')
         options.add_argument('--disable-gpu')
