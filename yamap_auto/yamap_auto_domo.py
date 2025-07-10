@@ -131,14 +131,36 @@ try:
     # main_config の取得前にロガーが利用可能であることを確認
     logger.debug("メイン設定情報の読み込み開始 (driver_utils経由)")
     main_config = get_main_config()
-    credentials = get_credentials()
-    YAMAP_EMAIL = credentials.get("email")
-    YAMAP_PASSWORD = credentials.get("password")
-    MY_USER_ID = credentials.get("user_id")
+    # credentials = get_credentials() # 環境変数から読み込むためコメントアウト
+    # YAMAP_EMAIL = credentials.get("email") # 環境変数から読み込む
+    # YAMAP_PASSWORD = credentials.get("password") # 環境変数から読み込む
+    # MY_USER_ID = credentials.get("user_id") # credentials.yaml から引き続き読み込む
+
+    YAMAP_EMAIL = os.environ.get("YAMAP_LOGIN_ID")
+    YAMAP_PASSWORD = os.environ.get("YAMAP_LOGIN_PASSWORD")
+
+    # MY_USER_ID は引き続き credentials.yaml から読み込む想定
+    # credentials.yaml の読み込み処理は get_credentials() に残っている前提
+    # ただし、YAMAP_EMAIL と YAMAP_PASSWORD が環境変数から取得できなかった場合のフォールバックは考慮しない
+    credentials_data_for_userid = get_credentials()
+    MY_USER_ID = credentials_data_for_userid.get("user_id")
+
 
     if not all([YAMAP_EMAIL, YAMAP_PASSWORD, MY_USER_ID, main_config]):
-        logger.critical("設定情報 (main_config または credentials) の取得に失敗しました。driver_utilsからの読み込みを確認してください。")
+        missing_items = []
+        if not YAMAP_EMAIL: missing_items.append("YAMAP_LOGIN_ID (環境変数)")
+        if not YAMAP_PASSWORD: missing_items.append("YAMAP_LOGIN_PASSWORD (環境変数)")
+        if not MY_USER_ID: missing_items.append("user_id (credentials.yaml)")
+        if not main_config: missing_items.append("main_config (config.yaml)")
+        logger.critical(f"必須の設定情報が不足しています: {', '.join(missing_items)}。処理を中止します。")
         exit()
+    else:
+        logger.info("環境変数と設定ファイルから情報を正常に読み込みました。")
+        logger.info(f"  YAMAP_LOGIN_ID (from env): {'設定済み' if YAMAP_EMAIL else '未設定'}")
+        # パスワード自体はログに出力しない
+        logger.info(f"  YAMAP_LOGIN_PASSWORD (from env): {'設定済み' if YAMAP_PASSWORD else '未設定'}")
+        logger.info(f"  user_id (from credentials.yaml): {MY_USER_ID if MY_USER_ID else '未設定'}")
+
 
     # 各機能ごとの設定セクションを読み込み (存在しない場合は空の辞書として扱う)
     DOMO_SETTINGS = main_config.get("domo_settings", {})

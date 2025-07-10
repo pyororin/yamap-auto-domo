@@ -1,142 +1,111 @@
 # YAMAP 自動操作スクリプト
 
+# YAMAP 自動操作スクリプト for Google Cloud Run
+
 ## 概要
 
-このリポジトリには、YAMAP ([https://yamap.com](https://yamap.com)) のウェブサイト上で、特定の条件に基づいてDOMOの付与やフォロー申請などを自動的に行うPythonスクリプトが含まれています。
-Selenium WebDriverを使用してブラウザを操作し、設定ファイル (`yamap_auto/config.yaml`) と認証情報ファイル (`yamap_auto/credentials.yaml`) によって動作を細かく制御できます。
+このリポジトリは、YAMAP ([https://yamap.com](https://yamap.com)) のウェブサイト上で特定の操作を自動化するPythonスクリプトを、**Google Cloud Run** 上で定期実行するための構成です。
+Selenium WebDriver (Headless Chrome) を使用し、設定ファイル (`yamap_auto/config.yaml`) と環境変数を通じて動作を制御します。
 
-このリポジトリのメインスクリプト (`yamap_auto/yamap_auto_domo.py`) は、以下の主要な機能を持ちます。
+メインスクリプト (`yamap_auto/yamap_auto_domo.py`) は、以下の主要な機能を持ちます（詳細は既存の機能説明を参照）。
 
-*   **ログイン機能**: 最初にYAMAPへログインします。
-*   **フォロワーとの交流機能**:
-    *   **フォローバック**: 自分をフォローしてくれたユーザーを自動でフォローバックします。
-    *   **タイムラインDOMO**: タイムライン上の活動記録へ自動でDOMOします。
-*   **新規フォローの拡充機能**:
-    *   **検索結果からのフォロー＆DOMO**: 活動記録の検索結果 (`https://yamap.com/search/activities`) を巡回し、条件（ユーザーのフォロー数がフォロワー数よりも多く、かつ指定のRatioを満たすなど）に合うユーザーをフォローし、そのユーザーの最新の活動記録へDOMOします。
-*   ログファイル: `yamap_auto_domo.log`
+*   ログイン機能
+*   フォロワーとの交流機能（フォローバック、タイムラインDOMO）
+*   新規フォローの拡充機能（検索結果からのフォロー＆DOMO）
 
-スクリプトは `config.yaml` 内の設定に基づいて動作します。
+**注意**: 自動操作はYAMAPの利用規約を遵守する範囲で使用してください。
 
-**注意**: これらのスクリプトはYAMAPの利用規約を遵守する範囲で使用してください。過度な自動操作はアカウントの制限等に繋がる可能性があります。自己責任においてご利用ください。
+## Google Cloud Run での実行
 
-## 動作環境
+このプロジェクトは、Jules (Google Cloud 開発支援ツール) を用いて、Git push時に自動でDockerイメージのビルドとCloud Runへのデプロイが行われるように構成されています。
 
-- Python 3.7以上 (推奨)
+### 必要なファイル
+
+ルートディレクトリに以下のファイルが配置されます。
+
+*   **`Dockerfile`**: Cloud Runで実行するDockerイメージをビルドするための定義ファイルです。Python 3.10をベースに、ChromeとChromeDriver、必要なPythonライブラリをインストールします。
+*   **`requirements.txt`**: Pythonの依存ライブラリをリストしたファイルです。主に `selenium` が含まれます。
+*   **`jules.yml`**: JulesがCloud Runサービスをデプロイするための設定ファイルです。サービス名、リージョン、環境変数（Secret Managerからの参照を含む）などを定義します。
+*   **`README.md`**: このファイルです。
+
+### 認証情報の設定
+
+YAMAPへのログインに使用するメールアドレスとパスワードは、`jules.yml` で定義された環境変数 `YAMAP_LOGIN_ID` と `YAMAP_LOGIN_PASSWORD` を通じて、Google Secret Managerに保存されたシークレットから読み込まれます。
+
+`yamap_auto/credentials.yaml` ファイルは、`user_id` のみを読み込むために引き続き使用されます。**Cloud Run環境に `credentials.yaml` を含める場合は、`user_id` 以外の認証情報を削除またはコメントアウトしてください。**
+
+```yaml
+# yamap_auto/credentials.yaml のCloud Run用設定例
+# email: "your_email@example.com"  # 環境変数 YAMAP_LOGIN_ID を使用
+# password: "your_password"        # 環境変数 YAMAP_LOGIN_PASSWORD を使用
+user_id: "1234567"                 # 【必須】あなたのYAMAPユーザーID
+```
+
+### 定期実行 (Cloud Scheduler)
+
+Cloud Runサービスは、Cloud Schedulerを使用して定期的にトリガーできます。以下は、毎週月曜日の午前10時に実行する例です。
+
+```bash
+gcloud scheduler jobs create http selenium-batch-run \
+  --schedule="0 10 * * 1" \
+  --uri="https://<your-service-name>-<project-hash>-<region>.a.run.app" \
+  --http-method=GET \
+  --oidc-service-account-email=<your-service-account>@<project-id>.iam.gserviceaccount.com
+```
+`<your-service-name>`、`<project-hash>`、`<region>`、`<your-service-account>`、`<project-id>` は実際の値に置き換えてください。Cloud RunサービスのURLはデプロイ後に確認できます。
+
+## ローカルでの開発・実行（従来通り）
+
+ローカル環境でスクリプトを実行する場合のセットアップや実行方法は基本的に従来通りです。
+
+### 動作環境 (ローカル)
+
+- Python 3.7以上 (Cloud Run環境はPython 3.10)
 - Google Chrome ブラウザ
-- ChromeDriver (使用するChromeブラウザのバージョンに適合するもの)
-- 必要なPythonライブラリ (Selenium, PyYAML)
+- ChromeDriver (ローカルのChromeバージョンに適合するもの)
+- 必要なPythonライブラリ (Selenium, PyYAMLなど)
 
-## 初期準備
+### 初期準備 (ローカル)
 
-1.  **Pythonのインストール**:
-    Pythonがインストールされていない場合は、[公式サイト](https://www.python.org/)からダウンロードしてインストールしてください。
-
-2.  **Google Chromeのインストール**:
-    最新版のGoogle Chromeブラウザをインストールしてください。
-
-3.  **ChromeDriverのダウンロードと配置**:
-    -   お使いのGoogle Chromeのバージョンを確認します (Chromeの設定 > Chromeについて)。
-    -   [ChromeDriverの公式サイト](https://chromedriver.chromium.org/downloads) から、Chromeのバージョンに対応するChromeDriverをダウンロードします。
-    -   ダウンロードした `chromedriver.exe` (Windowsの場合) または `chromedriver` (macOS/Linuxの場合) を、以下のいずれかの場所に配置します:
-        -   メインスクリプト (`yamap_auto_domo.py`) と同じディレクトリ (`yamap_auto/`)。
-        -   システムのPATH環境変数が通っているディレクトリ。
-
-4.  **必要なPythonライブラリのインストール**:
-    ターミナルまたはコマンドプロンプトを開き、以下のコマンドを実行して、スクリプトの実行に必要なライブラリをインストールします。
+1.  Python、Google Chrome、ChromeDriverをインストールします。
+2.  必要なPythonライブラリをインストールします。
     ```bash
-    pip install selenium PyYAML
+    pip install -r requirements.txt  # requirements.txt を使用
+    pip install PyYAML # config.yaml の読み込みに必要
     ```
-    (もし `pip` コマンドが見つからない場合は `python -m pip install selenium PyYAML` を試してください。)
 
-## 設定
+### 設定 (ローカル)
 
-スクリプトの動作は主に以下の2つのYAMLファイルで設定します。これらのファイルは `yamap_auto/` ディレクトリ内に配置または作成してください。
+ローカル実行時は、`yamap_auto/credentials.yaml` にメールアドレス、パスワード、ユーザーIDを直接記述します。
+`yamap_auto/config.yaml` の設定はCloud Run実行時と共通です。
 
-1.  **認証情報ファイル (必須): `yamap_auto/credentials.yaml`**
-    このファイルにご自身のYAMAPログイン情報を記述します。**このファイルはGit管理に含めないように `.gitignore` で指定されていますが、ローカルでの作成と管理は自己責任でお願いします。**
-    ファイルが存在しない場合は、以下の内容で新規作成してください。
+```yaml
+# yamap_auto/credentials.yaml のローカル実行用設定例
+email: "your_yamap_email@example.com"
+password: "your_yamap_password"
+user_id: "1234567"
+```
 
-    ```yaml
-    # yamap_auto/credentials.yaml の内容例
-    email: "your_email@example.com"
-    password: "your_password"
-    user_id: "1234567" # あなたのYAMAPユーザーID (プロフィールページのURL末尾の数字)
-    ```
-    -   `email`: あなたのYAMAPログインメールアドレス。
-    -   `password`: あなたのYAMAPログインパスワード。
-    -   `user_id`: あなたのYAMAPユーザーID (数字)。例: プロフィールURLが `https://yamap.com/users/1234567` の場合、`1234567` を指定します。
+### 動作方法 (ローカル)
 
-2.  **設定ファイル: `yamap_auto/config.yaml`**
-    このファイルでスクリプトの機能のON/OFFや詳細な動作パラメータ（処理上限数、待機時間など）を設定します。
-    ファイル内のコメントを参照しながら、必要に応じて値を編集してください。
-
-    主な設定項目およびセクション:
-    *   `headless_mode`: ブラウザを非表示で実行するか (true/false) - トップレベル設定
-    *   `implicit_wait_sec`: 要素が見つかるまでの暗黙的な待機時間 (秒) - トップレベル設定
-    *   `action_delays`: DOMOやフォロー後の待機時間など、アクション間の遅延に関する設定。
-        *   `after_domo_sec`: DOMO操作後の共通待機時間 (秒)
-        *   `wait_for_activity_link_sec`: プロフィールページ等で活動日記リンクが表示されるまでの待機時間 (秒)
-        *   `after_follow_action_sec`: フォロー操作後の共通待機時間 (秒)
-        *   その他、詳細は `config.yaml` を参照。
-    *   `follow_back_settings`: フォローバック機能に関する設定。
-        *   `enable_follow_back`: 機能の有効/無効 (true/false)
-        *   `max_users_to_follow_back`: 一度にフォローバックする最大ユーザー数 (全ページを通じての合計)
-        *   `max_pages_for_follow_back`: フォローバック確認のためにチェックするフォロワーリストの最大ページ数
-    *   `timeline_domo_settings`: タイムライン上の活動記録へのDOMO機能に関する設定。
-        *   `enable_timeline_domo`: 機能の有効/無効 (true/false)
-        *   `max_activities_to_domo_on_timeline`: DOMOする最大の活動記録数
-    *   `search_and_follow_settings`: 検索結果からのフォロー＆DOMO機能に関する設定。
-        *   `enable_search_and_follow`: 機能の有効/無効 (true/false)
-        *   `search_activities_url`: 活動記録検索ページのURL
-        *   `max_pages_to_process_search`: 処理する検索結果の最大ページ数
-        *   `max_users_to_process_per_page`: 1ページあたりで処理する最大ユーザー数
-        *   `min_followers_for_search_follow`: フォロー対象とするユーザーの最低フォロワー数
-        *   `follow_ratio_threshold_for_search`: フォロー対象とするユーザーのフォロー数/フォロワー数比率の閾値
-        *   `domo_latest_activity_after_follow`: フォロー後にそのユーザーの最新活動記録へDOMOするかのフラグ (true/false)
-        *   `delay_between_user_processing_in_search_sec`: 検索結果でのユーザー処理間の待機時間 (秒)
-        *   `delay_after_pagination_sec`: 検索結果のページネーション後の待機時間 (秒)
-        *   その他、詳細は `config.yaml` を参照。
-    *   `parallel_processing_settings`: 並列処理に関する設定。(注: この機能は実験的なものであり、期待通りに動作しない場合があります)
-        *   `enable_parallel_processing`: 並列処理を有効にするか (true/false)
-        *   `max_workers`: 最大ワーカー数 (ThreadPoolExecutor の最大並列実行数)
-        *   `use_cookie_sharing`: ログインセッションのCookieを共有して並列処理を試みるか (true/false)
-        *   `delay_between_thread_tasks_sec`: 各並列タスク開始前の遅延時間 (秒)
-        *   その他、詳細は `config.yaml` を参照。
-
-    上記は主要な設定項目です。全ての詳細設定は `yamap_auto/config.yaml` ファイル内のコメントを確認してください。
-    また、`config.yaml` 内には、以前のバージョンのスクリプトで使用されていた「旧 domo_settings」や「旧 follow_settings」といった項目がコメントアウトされて残っている場合があります。これらは現在の `yamap_auto_domo.py` スクリプトでは直接使用されていませんので、設定変更の際はご注意ください。
-
-**注意**: `credentials.yaml` と `config.yaml` はYAML形式です。インデント（字下げ）が重要な意味を持つため、構造を崩さないように編集してください。
-
-## 動作方法
-
-1.  上記の「初期準備」と「設定」を完了させます。
-2.  ターミナルまたはコマンドプロンプトで、この `README.md` があるディレクトリ (プロジェクトのルートディレクトリ) に移動します。
-3.  以下のコマンドを実行します。
-
-    ```bash
-    python -m yamap_auto.yamap_auto_domo
-    ```
-    ログは `yamap_auto/yamap_auto_domo.log` に出力されます。
-
-    **重要**: 上記のコマンドは、プロジェクトのルートディレクトリ (この `README.md` があるディレクトリ) から実行してください。`-m` オプションを使用することで、Pythonは `yamap_auto` ディレクトリをパッケージとして正しく認識し、スクリプト内の相対インポート (`from .driver_utils import ...` など) が正常に動作します。直接 `python yamap_auto/yamap_auto_domo.py` を実行すると `ImportError` が発生します。
-
-4.  スクリプトが起動すると、設定に基づいてブラウザが自動的に操作されます。
-5.  実行状況はコンソールに出力され、より詳細なログは `yamap_auto_domo.log` ファイルに記録されます。
-6.  設定された処理が完了すると、スクリプトは自動的に終了します。
+プロジェクトのルートディレクトリから以下のコマンドで実行します。
+```bash
+python -m yamap_auto.yamap_auto_domo
+```
+ログは `logs/yamap_auto_domo.log` に出力されます (ログディレクトリはスクリプト実行時にクリアされます)。
 
 ## トラブルシューティング
 
+(従来と同様のトラブルシューティング情報)
+
 -   **`モジュールが見つかりません` (ModuleNotFoundError)**:
-    `pip install selenium PyYAML` を正しく実行したか確認してください。
--   **`WebDriverException: 'chromedriver' executable needs to be in PATH`**:
-    ChromeDriverが正しく配置されていないか、PATHが通っていません。「初期準備」の3番を確認してください。
+    `pip install -r requirements.txt` および `pip install PyYAML` を正しく実行したか確認してください。
+-   **`WebDriverException: 'chromedriver' executable needs to be in PATH`** (ローカル実行時):
+    ChromeDriverが正しく配置されていないか、PATHが通っていません。
 -   **`設定ファイルの形式が正しくありません` (yaml.YAMLError)**:
-    `config.yaml` の記述（特にインデント）が正しいYAML形式になっているか確認してください。オンラインのYAMLバリデーターでチェックするのも有効です。
+    `config.yaml` の記述（特にインデント）が正しいYAML形式になっているか確認してください。
 -   **要素が見つからないエラー (NoSuchElementException, TimeoutException)**:
-    YAMAPのサイト構造が変更された可能性があります。スクリプト内のCSSセレクタやXPathの修正が必要になる場合があります。ログファイル (`yamap_auto_domo.log`) でどの要素が見つからなかったかを確認してください。
--   **その他**:
-    問題が発生した場合は、コンソールのエラーメッセージと `yamap_auto_domo.log` の内容を確認し、開発者に報告してください。
+    YAMAPのサイト構造が変更された可能性があります。スクリプト内のCSSセレクタやXPathの修正が必要になる場合があります。
 
 ## 免責事項
 
