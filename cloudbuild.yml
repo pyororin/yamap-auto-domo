@@ -1,26 +1,41 @@
 steps:
+  # 1. Docker イメージをビルドして Artifact Registry にプッシュ
+  # YOUR_ARTIFACT_REGISTRY_REPO_NAME は事前に作成したリポジトリ名に置き換えてください (例: my-automation-repo)
+  # PROJECT_ID はCloud Buildによって自動的に置換されます
   - name: 'gcr.io/cloud-builders/docker'
-    args: [ 'build', '-t', 'gcr.io/$PROJECT_ID/yamap-auto-domo-follow', '.' ]
+    args: [ 'build', '-t', 'asia-northeast1-docker.pkg.dev/$PROJECT_ID/my-automation-repo/yamap-auto-domo-cf:$COMMIT_SHA', '.' ]
 
   - name: 'gcr.io/cloud-builders/docker'
-    args: [ 'push', 'gcr.io/$PROJECT_ID/yamap-auto-domo-follow' ]
+    args: [ 'push', 'asia-northeast1-docker.pkg.dev/$PROJECT_ID/my-automation-repo/yamap-auto-domo-cf:$COMMIT_SHA' ]
 
-  - name: 'gcr.io/cloud-builders/gcloud'
+  # 2. Cloud Functions (第2世代) をデプロイ
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
     args:
-      - run
-      - deploy # 'jobs deploy' から 'deploy' に変更
-      - yamap-auto-domo-follow # サービス名
-      - --image=gcr.io/$PROJECT_ID/yamap-auto-domo-follow
+      - functions
+      - deploy
+      - run-yamap-auto-domo-function # Cloud Function 名 (任意)
+      - --gen2
       - --region=asia-northeast1
-      - --platform=managed # プラットフォームを指定
-      - --port=8080 # コンテナがリッスンするポート
-      - --allow-unauthenticated # 公開アクセスを許可 (必要に応じて変更)
+      - --runtime=python310 # Dockerfile を使用する場合でもベースランタイムを指定
+      # --source=. # イメージを直接指定する場合、sourceは不要になることが多い
+      - --entry-point=run_yamap_auto_domo_function # main.py の関数名
+      - --trigger-http
+      - --allow-unauthenticated # Schedulerからの呼び出しのため (本番環境ではOIDC認証を強く推奨)
+      - --max-instances=1 # Selenium処理のためインスタンス数を制限
+      - --timeout=540s # 9分 (Selenium処理は時間がかかる可能性)
+      - --cpu=1
+      - --memory=1Gi # Headless Chrome はメモリを消費するため
+      # 環境変数はSecret Manager経由で設定
       - --set-secrets=YAMAP_LOGIN_ID=gcp-secret-yamap-id:latest,YAMAP_LOGIN_PASSWORD=gcp-secret-yamap-password:latest,YAMAP_USER_ID=gcp-secret-yamap-user-id:latest
-      - --memory=1Gi
-      # --task-timeout, --max-retries, --command, --args はServiceデプロイでは通常不要または異なる方法で設定
+      # ビルドしたコンテナイメージを指定してデプロイ
+      - --image=asia-northeast1-docker.pkg.dev/$PROJECT_ID/my-automation-repo/yamap-auto-domo-cf:$COMMIT_SHA
+
+images: # Cloud Build がビルドしたイメージを記録 (オプション)
+  - 'asia-northeast1-docker.pkg.dev/$PROJECT_ID/my-automation-repo/yamap-auto-domo-cf:$COMMIT_SHA'
 
 options:
   logging: CLOUD_LOGGING_ONLY
-
-images:
-  - gcr.io/$PROJECT_ID/yamap-auto-domo-follow
+  # substitution_option: ALLOW_LOOSE # COMMIT_SHA などが未定義でもエラーにしない場合 (通常は不要)
+  # substitutions:
+  #   _YOUR_ARTIFACT_REGISTRY_REPO_NAME: 'my-automation-repo' # ここで定義するか、直接書き換える
