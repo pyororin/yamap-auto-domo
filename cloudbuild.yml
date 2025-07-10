@@ -5,7 +5,7 @@ service:
   runtime: docker
   platform: gcp
   env:
-    - name: YAMAP_LOGIN_ID
+    - name: _YAMAP_LOGIN_ID
       secret: gcp-secret-yamap-id
-    - name: YAMAP_LOGIN_PASSWORD
+    - name: _YAMAP_LOGIN_PASSWORD
       secret: gcp-secret-yamap-password
