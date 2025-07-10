@@ -60,42 +60,54 @@ def load_settings(force_reload=False):
     """
     global _main_config, _credentials_config, _YAMAP_EMAIL, _YAMAP_PASSWORD, _MY_USER_ID
 
-    if _main_config and _credentials_config and not force_reload:
+    # credentials.yaml は使用しないため、_credentials_config のチェックを削除
+    if _main_config and not force_reload: # and _credentials_config を削除
         logger.debug("設定は既に読み込み済みです。")
         return
 
-    logger.info(f"設定ファイル ({CONFIG_FILE}, {CREDENTIALS_FILE}) を読み込みます...")
+    # credentials.yaml は使用しないため、ログメッセージから削除
+    logger.info(f"設定ファイル ({CONFIG_FILE}) を読み込みます...")
     try:
-        # 1. `credentials.yaml` (認証情報ファイル) の読み込み
-        try:
-            with open(CREDENTIALS_FILE, 'r', encoding='utf-8') as f:
-                loaded_credentials = yaml.safe_load(f)
-            if not loaded_credentials:
-                raise ValueError("認証ファイルが空か、内容を読み取れませんでした。")
+        # 1. `credentials.yaml` (認証情報ファイル) の読み込み処理を削除
+        # try:
+        #     with open(CREDENTIALS_FILE, 'r', encoding='utf-8') as f:
+        #         loaded_credentials = yaml.safe_load(f)
+        #     if not loaded_credentials:
+        #         raise ValueError("認証ファイルが空か、内容を読み取れませんでした。")
 
-            email = loaded_credentials.get("email")
-            password = loaded_credentials.get("password")
-            user_id = str(loaded_credentials.get("user_id", ""))
+        #     email = loaded_credentials.get("email")
+        #     password = loaded_credentials.get("password")
+        #     user_id = str(loaded_credentials.get("user_id", ""))
 
-            if not all([email, password, user_id]):
-                err_msg = f"認証ファイル ({CREDENTIALS_FILE}) に email, password, user_id のいずれかが正しく設定されていません。"
-                logger.critical(err_msg)
-                raise ValueError(err_msg)
+        #     if not all([email, password, user_id]):
+        #         err_msg = f"認証ファイル ({CREDENTIALS_FILE}) に email, password, user_id のいずれかが正しく設定されていません。"
+        #         logger.critical(err_msg)
+        #         raise ValueError(err_msg)
 
-            _credentials_config = loaded_credentials
-            _YAMAP_EMAIL = email
-            _YAMAP_PASSWORD = password
-            _MY_USER_ID = user_id
-            logger.info("認証情報を正常に読み込みました。")
+        #     _credentials_config = loaded_credentials
+        #     _YAMAP_EMAIL = email
+        #     _YAMAP_PASSWORD = password
+        #     _MY_USER_ID = user_id
+        #     logger.info("認証情報を正常に読み込みました。")
 
-        except FileNotFoundError:
-            err_msg = f"認証ファイル ({CREDENTIALS_FILE}) が見つかりません。"
-            logger.critical(err_msg)
-            raise
-        except (yaml.YAMLError, ValueError) as e_cred:
-            err_msg = f"認証ファイル ({CREDENTIALS_FILE}) の形式が不正か、内容に問題があります。エラー: {e_cred}"
-            logger.critical(err_msg)
-            raise
+        # except FileNotFoundError:
+        #     # 環境変数から読み込むため、ファイルが存在しなくてもエラーとしない
+        #     logger.info(f"認証ファイル ({CREDENTIALS_FILE}) が見つかりません。環境変数からの読み込みを試みます。")
+        #     _credentials_config = {} # 空の辞書で初期化
+        #     # _YAMAP_EMAIL, _YAMAP_PASSWORD, _MY_USER_ID は環境変数から別途設定される想定
+        # except (yaml.YAMLError, ValueError) as e_cred:
+        #     # 環境変数から読み込むため、ファイル形式エラーも致命的ではない場合がある
+        #     logger.warning(f"認証ファイル ({CREDENTIALS_FILE}) の形式が不正か、内容に問題があります。環境変数からの読み込みを試みます。エラー: {e_cred}")
+        #     _credentials_config = {} # 空の辞書で初期化
+
+        # 環境変数から認証情報を取得 (メインスクリプト側で行うのでここでは直接設定しない)
+        # ただし、このモジュール内で _YAMAP_EMAIL などが参照される場合に備え、
+        # get_credentials() が呼ばれた際に環境変数から取得する形にするか、
+        # またはこのモジュールでは認証情報を直接扱わないようにする。
+        # ここでは、get_credentials() が環境変数を参照するように変更するため、
+        # load_settings での _credentials_config, _YAMAP_EMAIL 等の直接設定は行わない。
+        # _credentials_config は便宜上、空の辞書またはNoneで初期化しておく。
+        _credentials_config = None # または {}
 
         # 2. `config.yaml` (メイン設定ファイル) の読み込み
         try:
@@ -134,13 +146,27 @@ def get_main_config():
     return _main_config
 
 def get_credentials():
-    """認証情報 (credentials.yaml) を返します。未ロードの場合はロード試行します。"""
-    if not _credentials_config:
-        load_settings()
+    """環境変数から認証情報を取得して返します。"""
+    # load_settings() は config.yaml のために呼び出される可能性があるが、
+    # credentials.yaml の読み込みはスキップされるように load_settings が変更されている。
+    # ここでは環境変数から直接取得する。
+    email = os.environ.get("YAMAP_LOGIN_ID")
+    password = os.environ.get("YAMAP_LOGIN_PASSWORD")
+    user_id = os.environ.get("USER_ID")
+
+    if not all([email, password, user_id]):
+        missing = []
+        if not email: missing.append("YAMAP_LOGIN_ID")
+        if not password: missing.append("YAMAP_LOGIN_PASSWORD")
+        if not user_id: missing.append("USER_ID")
+        logger.warning(f"環境変数から次の認証情報が取得できませんでした: {', '.join(missing)}。")
+        # 呼び出し元でNoneチェックをしてもらうため、ここではエラーを発生させずに返す。
+        # あるいは、ここで例外を発生させる設計も可能。
+
     return {
-        "email": _YAMAP_EMAIL,
-        "password": _YAMAP_PASSWORD,
-        "user_id": _MY_USER_ID
+        "email": email,
+        "password": password,
+        "user_id": user_id
     }
 
 # --- WebDriver関連 ---

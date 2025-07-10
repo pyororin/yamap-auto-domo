@@ -30,16 +30,15 @@ Selenium WebDriver (Headless Chrome) を使用し、設定ファイル (`yamap_a
 
 ### 認証情報の設定
 
-YAMAPへのログインに使用するメールアドレスとパスワードは、`jules.yml` で定義された環境変数 `YAMAP_LOGIN_ID` と `YAMAP_LOGIN_PASSWORD` を通じて、Google Secret Managerに保存されたシークレットから読み込まれます。
+YAMAPへのログインに必要な以下の情報は、すべて環境変数を通じて設定されます。
+これにより、`yamap_auto/credentials.yaml` ファイルは不要になりました。
 
-`yamap_auto/credentials.yaml` ファイルは、`user_id` のみを読み込むために引き続き使用されます。**Cloud Run環境に `credentials.yaml` を含める場合は、`user_id` 以外の認証情報を削除またはコメントアウトしてください。**
+-   **`YAMAP_LOGIN_ID`**: YAMAPのログインに使用するメールアドレス。
+-   **`YAMAP_LOGIN_PASSWORD`**: YAMAPのログインに使用するパスワード。
+-   **`USER_ID`**: あなたのYAMAPユーザーID。
 
-```yaml
-# yamap_auto/credentials.yaml のCloud Run用設定例
-# email: "your_email@example.com"  # 環境変数 YAMAP_LOGIN_ID を使用
-# password: "your_password"        # 環境変数 YAMAP_LOGIN_PASSWORD を使用
-user_id: "1234567"                 # 【必須】あなたのYAMAPユーザーID
-```
+これらの環境変数は、`jules.yml` で定義されており、Google Secret Managerに保存されたシークレットから読み込まれます。
+ローカルで実行する場合は、これらの環境変数を手動で設定してください。
 
 ### 定期実行 (Cloud Scheduler)
 
@@ -76,15 +75,30 @@ gcloud scheduler jobs create http selenium-batch-run \
 
 ### 設定 (ローカル)
 
-ローカル実行時は、`yamap_auto/credentials.yaml` にメールアドレス、パスワード、ユーザーIDを直接記述します。
+ローカル実行時は、以下の環境変数を設定してください。
 `yamap_auto/config.yaml` の設定はCloud Run実行時と共通です。
 
-```yaml
-# yamap_auto/credentials.yaml のローカル実行用設定例
-email: "your_yamap_email@example.com"
-password: "your_yamap_password"
-user_id: "1234567"
+-   `YAMAP_LOGIN_ID`: あなたのYAMAPメールアドレス
+-   `YAMAP_LOGIN_PASSWORD`: あなたのYAMAPパスワード
+-   `USER_ID`: あなたのYAMAPユーザーID
+
+環境変数の設定方法は、お使いのOSやシェルによって異なります。以下は一例です。
+
+**Linux / macOS (bash/zshなど):**
+```bash
+export YAMAP_LOGIN_ID="your_yamap_email@example.com"
+export YAMAP_LOGIN_PASSWORD="your_yamap_password"
+export USER_ID="1234567"
 ```
+これらのコマンドをターミナルで実行するか、`.bashrc` や `.zshrc` などのシェル設定ファイルに追記します。
+
+**Windows (PowerShell):**
+```powershell
+$Env:YAMAP_LOGIN_ID = "your_yamap_email@example.com"
+$Env:YAMAP_LOGIN_PASSWORD = "your_yamap_password"
+$Env:USER_ID = "1234567"
+```
+これらのコマンドをPowerShellで実行します。恒久的に設定する場合は、システムの環境変数設定GUIを使用します。
 
 ### 動作方法 (ローカル)
 
