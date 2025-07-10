@@ -2,6 +2,17 @@
 import logging
 import os
 
+# Define TRACE logging level
+TRACE = 5
+logging.addLevelName(TRACE, "TRACE")
+
+def trace(self, message, *args, **kws):
+    # Yes, logger takes its '*args' as 'args'.
+    if self.isEnabledFor(TRACE):
+        self._log(TRACE, message, args, **kws)
+
+logging.Logger.trace = trace
+
 # LOG_FILE_NAME = "yamap_auto_domo.log"  # ログファイル名（メインスクリプトと同じ場所に出力想定）
 # logs ディレクトリ以下に出力するように変更
 LOG_BASE_NAME = "yamap_auto_domo.log"
