@@ -310,6 +310,7 @@ def execute_main_tasks(driver, user_id, shared_cookies):
         # 'my_post_followed_back': 0, # Removed
         # 'my_post_domoed_to_user': 0, # Removed
         'domo_back_to_past_users': 0,
+        'domo_back_followed_past_users': 0, # 追加: 過去記事DOMOユーザーへのフォロー数
         'unfollowed_inactive': 0
     }
     if not driver:
@@ -383,7 +384,7 @@ def execute_main_tasks(driver, user_id, shared_cookies):
         # domo_back_to_past_domo_users 関数は (followed_count, domoed_count) を返すように変更されているため、両方受け取る
         followed_count, domo_back_count = domo_back_to_past_domo_users(driver, user_id, shared_cookies)
         summary_counts['domo_back_to_past_users'] = domo_back_count
-        # summary_counts にフォロー数を記録する項目は現状ないが、ログには出力する
+        summary_counts['domo_back_followed_past_users'] = followed_count # フォロー数を格納
         end_time = time.time()
         logger.info(f"過去記事DOMOユーザーへのDOMO返し機能の処理時間: {end_time - start_time:.2f}秒。DOMO返し成功数: {domo_back_count}, フォロー成功数: {followed_count}")
     else:
@@ -655,6 +656,7 @@ def main():
                 # logger.info(f"  自分の投稿へのインタラクション - フォローバック数: {summary.get('my_post_followed_back', 0)} 件") # Removed
                 # logger.info(f"  自分の投稿へのインタラクション - DOMOユーザーへのDOMO数: {summary.get('my_post_domoed_to_user', 0)} 件") # Removed
                 logger.info(f"  過去記事DOMOユーザーへのDOMO返し数: {summary.get('domo_back_to_past_users', 0)} 件")
+                logger.info(f"  過去記事DOMOユーザーへのフォロー数: {summary.get('domo_back_followed_past_users', 0)} 件") # 追加
                 logger.info(f"  非アクティブユーザーのアンフォロー数: {summary.get('unfollowed_inactive', 0)} 件")
             else:
                 logger.info("  サマリー情報の取得に失敗しました。")
