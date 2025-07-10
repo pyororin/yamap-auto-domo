@@ -187,7 +187,12 @@ def get_driver_options():
         logger.info("ヘッドレスモードで起動します。")
         options.add_argument('--headless')
         options.add_argument('--disable-gpu')
-        options.add_argument('--window-size=1920,1080')
+        options.add_argument('--no-sandbox')
+        options.add_argument('--disable-dev-shm-usage')
+        options.add_argument('--remote-debugging-port=9222')
+        options.add_argument('--disable-gpu')
+        options.add_argument('--window-size=1280x800')
+        options.binary_location = "/usr/bin/chromium" # Linux環境でのChromiumバイナリパス
 
     # User-Agent は webdriver_settings から取得
     webdriver_settings_conf = main_conf.get("webdriver_settings", {})
