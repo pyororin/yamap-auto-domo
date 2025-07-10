@@ -275,17 +275,28 @@ def perform_login(driver, email, password, user_id):
 def get_shared_cookies(driver):
     """並列処理用の共有Cookieを取得します。"""
     if not driver:
+        logger.warning("get_shared_cookies: WebDriverがNoneのため、Cookie取得処理をスキップします。") # 追加ログ
         return None
 
     shared_cookies = None
-    if PARALLEL_PROCESSING_SETTINGS.get("enable_parallel_processing", False) and \
-       PARALLEL_PROCESSING_SETTINGS.get("use_cookie_sharing", True):
+    # 設定値のログ出力
+    enable_parallel = PARALLEL_PROCESSING_SETTINGS.get("enable_parallel_processing", False)
+    use_sharing = PARALLEL_PROCESSING_SETTINGS.get("use_cookie_sharing", True)
+    logger.info(f"get_shared_cookies: 全体並列処理設定 enable_parallel_processing: {enable_parallel}, use_cookie_sharing: {use_sharing}") # 追加ログ
+
+    if enable_parallel and use_sharing:
         try:
+            logger.info("get_shared_cookies: Cookie取得を試みます...") # 追加ログ
             shared_cookies = driver.get_cookies()
-            logger.info(f"ログイン後のCookieを {len(shared_cookies)} 個取得しました。並列処理で利用します。")
+            if shared_cookies:
+                logger.info(f"get_shared_cookies: ログイン後のCookieを {len(shared_cookies)} 個取得しました。並列処理で利用します。")
+            else:
+                logger.warning("get_shared_cookies: Cookieの取得を試みましたが、結果が空でした。") # 追加ログ (取得結果がNoneや空リストの場合)
         except Exception as e_cookie_get:
-            logger.error(f"ログイン後のCookie取得に失敗しました: {e_cookie_get}", exc_info=True)
-            shared_cookies = None
+            logger.error(f"get_shared_cookies: ログイン後のCookie取得に失敗しました: {e_cookie_get}", exc_info=True)
+            shared_cookies = None # 明示的にNoneを設定
+    else:
+        logger.info("get_shared_cookies: 全体並列処理またはCookie共有が無効なため、Cookie取得は行いません。") # 追加ログ
     return shared_cookies
 
 def execute_main_tasks(driver, user_id, shared_cookies):
