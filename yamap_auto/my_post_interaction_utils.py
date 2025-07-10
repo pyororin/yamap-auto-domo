@@ -467,22 +467,26 @@ def _domo_back_and_follow_task(user_profile_url, user_name_for_log, shared_cooki
             logger.info(f"{log_prefix_task}{status_message}フォロー試行を確認します。")
             follow_button = find_follow_button_on_profile_page(task_driver)
             if follow_button:
-                min_followers = sf_settings.get("min_followers_for_search_follow", 20)
-                ratio_threshold = sf_settings.get("follow_ratio_threshold_for_search", 0.9)
+                # search_and_follow_settings からフォロー条件を取得
+                # sf_settings は既に _domo_back_and_follow_task の引数として渡されている
+                min_followers = sf_settings.get("min_followers_for_search_follow", 20) # デフォルト値も search_utils と合わせる
+                ratio_threshold = sf_settings.get("follow_ratio_threshold_for_search", 0.9) # 同上
 
                 follows, followers = get_user_follow_counts(task_driver, user_profile_url)
                 if follows != -1 and followers != -1:
+                    logger.info(f"{log_prefix_task}{status_message}現在のフォロー/フォロワー数: F中={follows}, Fワー={followers} (条件: MinFollowers>={min_followers}, Ratio>={ratio_threshold})")
                     if followers < min_followers:
                         logger.info(f"{log_prefix_task}{status_message}フォロワー数 ({followers}) が閾値 ({min_followers}) 未満。フォローせず。")
                     else:
                         current_ratio = (follows / followers) if followers > 0 else float('inf')
-                        logger.info(f"{log_prefix_task}{status_message}F中={follows}, Fワー={followers}, Ratio={current_ratio:.2f} (閾値 >={ratio_threshold})")
+                        # F中/Fワーは上でログ済みなのでRatioのみをログ出力
+                        logger.info(f"{log_prefix_task}{status_message}計算されたRatio={current_ratio:.2f} (閾値 >={ratio_threshold})")
                         if current_ratio >= ratio_threshold:
                             logger.info(f"{log_prefix_task}{status_message}フォロー条件合致。フォローします。")
-                            if click_follow_button_and_verify(task_driver, follow_button, user_name_for_log):
+                            if click_follow_button_and_verify(task_driver, follow_button, user_name_for_log): # user_name_for_log を渡す
                                 task_followed_count = 1
                                 logger.info(f"{log_prefix_task}{status_message}フォロー成功。")
-                                time.sleep(ad_settings.get("after_follow_action_sec", 2.0))
+                                time.sleep(ad_settings.get("after_follow_action_sec", 2.0)) # ad_settings も引数で渡されている
                             else:
                                 logger.warning(f"{log_prefix_task}{status_message}フォロー失敗。")
                         else:
@@ -497,15 +501,8 @@ def _domo_back_and_follow_task(user_profile_url, user_name_for_log, shared_cooki
         # 4. 最新活動記録へのDOMO実行
         should_domo = True
         # enable_domo_only_if_not_following_me の判定 (自分をフォローしてくれているか) は、
-        # enable_domo_only_if_not_following_me の判定 (相手が自分をフォローしているか):
-        # この条件を厳密に判定するには、このタスク内で相手のフォロワーリストを取得して自分を探すか、
-        # またはメインスレッド側でDOMOユーザーリスト取得時にその情報を付加し、タスクに渡す必要があります。
-        # 現状の実装では、このタスク単独でその判定を行うのはコストが高いため、
-        # この条件は「DOMO返し機能全体として、自分をフォローしていない人にもDOMOするかどうか」という
-        # 大枠のスイッチとして解釈し、このタスク内では個別のユーザーに対してこの条件のみでのDOMO実行判断は行いません。
-        # (つまり、このフラグがfalseでも、他の条件を満たせばDOMOは実行されうる)
-        # もし「自分をフォローしていない人には絶対にDOMOしない」という厳密な動作が必要な場合は、
-        # メインスレッド側でDOMOユーザーリストをフィルタリングする等の追加処理が必要です。
+        # このタスク内では直接行わず、DOMO返し機能全体の大枠のスイッチとして解釈。
+        # 厳密な判定はメインスレッド側でのフィルタリング等が必要。
         # logger.debug(f"{log_prefix_task}DOMO条件 enable_domo_only_if_not_following_me: {db_settings.get('enable_domo_only_if_not_following_me')}")
 
         if db_settings.get("enable_domo_only_if_i_am_not_following", True): # デフォルトTrue
@@ -514,6 +511,8 @@ def _domo_back_and_follow_task(user_profile_url, user_name_for_log, shared_cooki
             if task_followed_count == 1: # このタスクでフォローした
                 is_already_following_after_attempt = True
             else: # このタスクでフォローしていない場合、改めてボタンを確認
+                # find_follow_button_on_profile_page は「フォローする」ボタンを探す。
+                # ボタンがない場合は「フォロー中」と判断できる。
                 if not find_follow_button_on_profile_page(task_driver): # ボタンがない = フォロー中
                     is_already_following_after_attempt = True
 
