@@ -15,6 +15,9 @@ WORKDIR /app
 COPY . /app
 
 # 依存パッケージ
-RUN pip install --no-cache-dir selenium PyYAML
+RUN pip install --no-cache-dir -r requirements.txt
 
-CMD ["python", "-m", "yamap_auto.yamap_auto_domo"]
+# アプリケーションのポートを公開 (任意だが推奨)
+EXPOSE 8080
+
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "main:app"]

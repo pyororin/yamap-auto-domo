@@ -8,17 +8,16 @@ steps:
   - name: 'gcr.io/cloud-builders/gcloud'
     args:
       - run
-      - jobs
-      - deploy
-      - yamap-auto-domo-follow
+      - deploy # 'jobs deploy' から 'deploy' に変更
+      - yamap-auto-domo-follow # サービス名
       - --image=gcr.io/$PROJECT_ID/yamap-auto-domo-follow
       - --region=asia-northeast1
+      - --platform=managed # プラットフォームを指定
+      - --port=8080 # コンテナがリッスンするポート
+      - --allow-unauthenticated # 公開アクセスを許可 (必要に応じて変更)
       - --set-secrets=_YAMAP_LOGIN_ID=gcp-secret-yamap-id:latest,_YAMAP_LOGIN_PASSWORD=gcp-secret-yamap-password:latest
       - --memory=1Gi
-      - --task-timeout=900s
-      - --max-retries=1
-      - --command=python
-      - --args=-m,yamap_auto.yamap_auto_domo
+      # --task-timeout, --max-retries, --command, --args はServiceデプロイでは通常不要または異なる方法で設定
 
 options:
   logging: CLOUD_LOGGING_ONLY
