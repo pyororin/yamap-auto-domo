@@ -182,16 +182,16 @@ def get_driver_options():
     main_conf = get_main_config() # 設定を確実にロード
     options = webdriver.ChromeOptions()
 
-    # webdriver_settings = main_conf.get("webdriver_settings", {}) # この行を削除またはコメントアウト
-
-    if main_conf.get("headless_mode", False): # ルートレベルの headless_mode を参照
+    # headless_mode はルートレベルから取得
+    if main_conf.get("headless_mode", False):
         logger.info("ヘッドレスモードで起動します。")
         options.add_argument('--headless')
         options.add_argument('--disable-gpu')
         options.add_argument('--window-size=1920,1080')
 
-    # 新規追加: User-Agentの設定
-    user_agent_string = webdriver_settings.get("user_agent")
+    # User-Agent は webdriver_settings から取得
+    webdriver_settings_conf = main_conf.get("webdriver_settings", {})
+    user_agent_string = webdriver_settings_conf.get("user_agent")
     if user_agent_string:
         logger.info(f"指定されたUser-Agentを使用します: {user_agent_string}")
         options.add_argument(f"user-agent={user_agent_string}")
