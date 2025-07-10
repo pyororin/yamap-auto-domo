@@ -80,7 +80,7 @@ from .search_utils import search_follow_and_domo_users
 from .follow_back_utils import follow_back_users_new
 # my_post_interaction_utils から必要なものをインポート
 from .my_post_interaction_utils import (
-    interact_with_domo_users_on_my_posts,
+    # interact_with_domo_users_on_my_posts, # Removed
     domo_back_to_past_domo_users # 新機能の関数をインポート
 )
 
@@ -147,7 +147,7 @@ try:
     TIMELINE_DOMO_SETTINGS = main_config.get("timeline_domo_settings", {})
     SEARCH_AND_FOLLOW_SETTINGS = main_config.get("search_and_follow_settings", {})
     PARALLEL_PROCESSING_SETTINGS = main_config.get("parallel_processing_settings", {})
-    MY_POST_INTERACTION_SETTINGS = main_config.get("new_feature_my_post_interaction", {})
+    # MY_POST_INTERACTION_SETTINGS = main_config.get("new_feature_my_post_interaction", {}) # Removed
     UNFOLLOW_INACTIVE_SETTINGS = main_config.get("unfollow_inactive_users_settings", {}) # 新機能の設定読み込み
 
     # 主要な設定セクションの存在確認 (UNFOLLOW_INACTIVE_SETTINGS も対象に追加)
@@ -156,7 +156,7 @@ try:
         TIMELINE_DOMO_SETTINGS,
         SEARCH_AND_FOLLOW_SETTINGS,
         PARALLEL_PROCESSING_SETTINGS,
-        MY_POST_INTERACTION_SETTINGS,
+        # MY_POST_INTERACTION_SETTINGS, # Removed
         UNFOLLOW_INACTIVE_SETTINGS
     ]
     essential_setting_names = [
@@ -164,7 +164,7 @@ try:
         "timeline_domo_settings",
         "search_and_follow_settings",
         "parallel_processing_settings",
-        "new_feature_my_post_interaction",
+        # "new_feature_my_post_interaction", # Removed
         "unfollow_inactive_users_settings"
     ]
 
@@ -272,9 +272,9 @@ def execute_main_tasks(driver, user_id, shared_cookies):
         'timeline_domo': 0,
         'search_followed': 0,
         'search_domoed': 0,
-        'my_post_followed_back': 0,
-        'my_post_domoed_to_user': 0,
-        'domo_back_to_past_users': 0, # 新機能のサマリー用キーを追加
+        # 'my_post_followed_back': 0, # Removed
+        # 'my_post_domoed_to_user': 0, # Removed
+        'domo_back_to_past_users': 0,
         'unfollowed_inactive': 0
     }
     if not driver:
@@ -326,21 +326,8 @@ def execute_main_tasks(driver, user_id, shared_cookies):
     else:
         logger.info("検索結果からのフォロー＆DOMO機能は設定で無効です。")
 
-    # 自分自身の投稿へのDOMOユーザーインタラクション機能
-    # この機能は MY_POST_INTERACTION_SETTINGS を直接参照するため、ここで main_config から読み込む必要はない
-    # my_post_interaction_utils 内部で _get_my_post_interaction_settings() を使って取得する
-    if MY_POST_INTERACTION_SETTINGS.get("enable_my_post_interaction", False): # main_configから直接有効性を確認
-        start_time = time.time()
-        logger.info("自分の投稿へのDOMOユーザーインタラクション機能を呼び出します。")
-        # interact_with_domo_users_on_my_posts は (followed_count, domoed_count) を返す
-        mpi_followed_count, mpi_domoed_count = interact_with_domo_users_on_my_posts(driver, user_id, shared_cookies)
-        summary_counts['my_post_followed_back'] = mpi_followed_count
-        summary_counts['my_post_domoed_to_user'] = mpi_domoed_count
-        end_time = time.time()
-        logger.info(f"自分の投稿へのDOMOユーザーインタラクション機能の処理時間: {end_time - start_time:.2f}秒。")
-        logger.info(f"  インタラクションによるフォローバック数: {mpi_followed_count}, DOMOユーザーへのDOMO数: {mpi_domoed_count}")
-    else:
-        logger.info("自分の投稿へのDOMOユーザーインタラクション機能は設定で無効です。")
+    # 自分自身の投稿へのDOMOユーザーインタラクション機能は削除されました。
+    # new_feature_domo_back_to_past_domo_users がその役割を包含します。
 
     # 非アクティブユーザーのアンフォロー機能
     if UNFOLLOW_INACTIVE_SETTINGS.get("enable_unfollow_inactive", False):
@@ -631,9 +618,9 @@ def main():
                 logger.info(f"  タイムラインDOMO数: {summary.get('timeline_domo', 0)} 件")
                 logger.info(f"  検索からの新規フォロー数: {summary.get('search_followed', 0)} 件")
                 logger.info(f"  検索からのDOMO数 (フォロー後): {summary.get('search_domoed', 0)} 件")
-                logger.info(f"  自分の投稿へのインタラクション - フォローバック数: {summary.get('my_post_followed_back', 0)} 件")
-                logger.info(f"  自分の投稿へのインタラクション - DOMOユーザーへのDOMO数: {summary.get('my_post_domoed_to_user', 0)} 件")
-                logger.info(f"  過去記事DOMOユーザーへのDOMO返し数: {summary.get('domo_back_to_past_users', 0)} 件") # 新機能のサマリー出力
+                # logger.info(f"  自分の投稿へのインタラクション - フォローバック数: {summary.get('my_post_followed_back', 0)} 件") # Removed
+                # logger.info(f"  自分の投稿へのインタラクション - DOMOユーザーへのDOMO数: {summary.get('my_post_domoed_to_user', 0)} 件") # Removed
+                logger.info(f"  過去記事DOMOユーザーへのDOMO返し数: {summary.get('domo_back_to_past_users', 0)} 件")
                 logger.info(f"  非アクティブユーザーのアンフォロー数: {summary.get('unfollowed_inactive', 0)} 件")
             else:
                 logger.info("  サマリー情報の取得に失敗しました。")
