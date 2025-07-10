@@ -2,7 +2,11 @@
 import logging
 import os
 
-LOG_FILE_NAME = "yamap_auto_domo.log"  # ログファイル名（メインスクリプトと同じ場所に出力想定）
+# LOG_FILE_NAME = "yamap_auto_domo.log"  # ログファイル名（メインスクリプトと同じ場所に出力想定）
+# logs ディレクトリ以下に出力するように変更
+LOG_BASE_NAME = "yamap_auto_domo.log"
+LOG_DIRECTORY = "logs"
+LOG_FILE_NAME = os.path.join(LOG_DIRECTORY, LOG_BASE_NAME)
 
 def setup_logger():
     """
@@ -26,8 +30,16 @@ def setup_logger():
 
         # FileHandler (ログファイルへの出力設定)
         try:
-            # ログファイルはカレントディレクトリ（通常はリポジトリルート）に出力
-            log_file_path = LOG_FILE_NAME
+            # ログファイルはカレントディレクトリ（通常はリポジトリルート）の LOG_DIRECTORY 下に出力
+            log_file_path = LOG_FILE_NAME # LOG_FILE_NAME は既に os.path.join(LOG_DIRECTORY, LOG_BASE_NAME) となっている
+
+            # ログディレクトリが存在しない場合は作成
+            log_dir = os.path.dirname(log_file_path)
+            if not os.path.exists(log_dir):
+                os.makedirs(log_dir)
+                # logger はまだファイルハンドラが追加されていないので、ここでは print で通知
+                print(f"ログディレクトリ '{log_dir}' を作成しました。")
+
             # ログファイルを毎回クリアするために mode='w' に変更
             file_handler = logging.FileHandler(log_file_path, encoding='utf-8', mode='w')  # 'w'モードで新規書き込み（クリア）
             file_handler.setLevel(logging.DEBUG)  # ファイルにはDEBUGレベル以上のログを全て記録
