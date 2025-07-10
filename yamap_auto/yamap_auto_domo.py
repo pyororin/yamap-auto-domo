@@ -364,19 +364,18 @@ def execute_main_tasks(driver, user_id, shared_cookies):
         logger.info("非アクティブユーザーのアンフォロー機能は設定で無効です。")
 
     # === 過去記事DOMOユーザーへのDOMO返し機能 ===
-    # この設定は my_post_interaction_utils 内部で config から読み込まれるが、
-    # ここでは main_config を使って有効無効を判定し、呼び出しを制御する。
-    # new_feature_domo_back_to_past_domo_users セクションを main_config から取得
-    domo_back_settings = main_config.get("new_feature_domo_back_to_past_domo_users", {})
-    if domo_back_settings.get("enable_domo_back_to_past_users", False):
+    # 機能の有効/無効はトップレベルの `enable_domo_back_to_past_users` で判定
+    if main_config.get("enable_domo_back_to_past_users", False):
         start_time = time.time()
         logger.info("過去記事DOMOユーザーへのDOMO返し機能を呼び出します。")
-        domo_back_count = domo_back_to_past_domo_users(driver, user_id, shared_cookies)
+        # domo_back_to_past_domo_users 関数は (followed_count, domoed_count) を返すように変更されているため、両方受け取る
+        followed_count, domo_back_count = domo_back_to_past_domo_users(driver, user_id, shared_cookies)
         summary_counts['domo_back_to_past_users'] = domo_back_count
+        # summary_counts にフォロー数を記録する項目は現状ないが、ログには出力する
         end_time = time.time()
-        logger.info(f"過去記事DOMOユーザーへのDOMO返し機能の処理時間: {end_time - start_time:.2f}秒。DOMO返し成功数: {domo_back_count}")
+        logger.info(f"過去記事DOMOユーザーへのDOMO返し機能の処理時間: {end_time - start_time:.2f}秒。DOMO返し成功数: {domo_back_count}, フォロー成功数: {followed_count}")
     else:
-        logger.info("過去記事DOMOユーザーへのDOMO返し機能は設定で無効です。")
+        logger.info("過去記事DOMOユーザーへのDOMO返し機能は設定で無効です。 (トップレベル設定による)")
 
     return summary_counts
 
