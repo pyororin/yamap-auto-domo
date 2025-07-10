@@ -321,7 +321,7 @@ def execute_main_tasks(driver, user_id, shared_cookies):
         return summary_counts
 
     # フォローバック機能
-    if FOLLOW_BACK_SETTINGS.get("enable_follow_back", False):
+    if main_config.get("enable_follow_back", False): # ★修正: main_config から直接取得
         start_time = time.time()
         logger.info("フォローバック機能呼び出し。並列処理は設定とCookieの有無に依存。")
         followed_back_count = follow_back_users_new(driver, user_id, shared_cookies_from_main=shared_cookies)
@@ -332,7 +332,7 @@ def execute_main_tasks(driver, user_id, shared_cookies):
         logger.info("フォローバック機能は設定で無効です。")
 
     # タイムラインDOMO機能
-    if TIMELINE_DOMO_SETTINGS.get("enable_timeline_domo", False):
+    if main_config.get("enable_timeline_domo", False): # ★修正: main_config から直接取得
         start_time = time.time()
         timeline_domo_count = 0
         if PARALLEL_PROCESSING_SETTINGS.get("enable_parallel_processing", False) and shared_cookies:
@@ -350,7 +350,7 @@ def execute_main_tasks(driver, user_id, shared_cookies):
         logger.info("タイムラインDOMO機能は設定で無効です。")
 
     # 検索結果からのフォロー＆DOMO機能
-    if SEARCH_AND_FOLLOW_SETTINGS.get("enable_search_and_follow", False):
+    if main_config.get("enable_search_and_follow", False): # ★修正: main_config から直接取得
         start_time = time.time()
         logger.info("検索結果からのフォロー＆DOMO機能呼び出し。並列処理は設定とCookieの有無に依存。")
         search_results = search_follow_and_domo_users(driver, user_id, shared_cookies_from_main=shared_cookies)
@@ -366,7 +366,7 @@ def execute_main_tasks(driver, user_id, shared_cookies):
     # new_feature_domo_back_to_past_domo_users がその役割を包含します。
 
     # 非アクティブユーザーのアンフォロー機能
-    if UNFOLLOW_INACTIVE_SETTINGS.get("enable_unfollow_inactive", False):
+    if main_config.get("enable_unfollow_inactive", False): # ★修正: main_config から直接取得
         start_time = time.time()
         logger.info("非アクティブユーザーのアンフォロー機能を呼び出します。")
         unfollowed_count = unfollow_inactive_not_following_back_users(driver, user_id, shared_cookies)
