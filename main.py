@@ -88,6 +88,7 @@ def health_check():
     return jsonify({"status": "healthy"}), 200
 
 if __name__ == '__main__':
+    logger.info("Starting application...")
     # Check for required environment variables
     required_env_vars = ["YAMAP_LOGIN_ID", "YAMAP_LOGIN_PASSWORD", "YAMAP_USER_ID"]
     missing_env_vars = [var for var in required_env_vars if not os.environ.get(var)]
@@ -95,7 +96,12 @@ if __name__ == '__main__':
     if missing_env_vars:
         logger.critical(f"Missing required environment variables: {', '.join(missing_env_vars)}. Please set them and try again.")
     else:
-        # Cloud Run環境では、PORT環境変数がGunicornによって使用されます。
-        # この部分は主にローカルでのデバッグ実行用です。
-        port = int(os.environ.get("PORT", 8080))
-        app.run(host='0.0.0.0', port=port, debug=True)
+        try:
+            # Cloud Run環境では、PORT環境変数がGunicornによって使用されます。
+            # この部分は主にローカルでのデバッグ実行用です。
+            port = int(os.environ.get("PORT", 8080))
+            logger.info(f"Attempting to start Flask application on port {port}")
+            app.run(host='0.0.0.0', port=port, debug=True)
+            logger.info("Flask application has started.")
+        except Exception as e:
+            logger.critical(f"Failed to start Flask application: {e}", exc_info=True)
