@@ -32,118 +32,56 @@ _MODULE_DIR = os.path.dirname(__file__)
 CONFIG_FILE = os.path.join(_MODULE_DIR, "config.yaml")
 CREDENTIALS_FILE = os.path.join(_MODULE_DIR, "credentials.yaml")
 
-# --- グローバル変数 (設定情報) ---
-# これらの変数は、初回アクセス時に `load_settings()` によってロードされます。
-# モジュール外からは `get_main_config()` や `get_credentials()` でアクセスすることを推奨。
-_main_config = None
-_credentials_config = None
-_YAMAP_EMAIL = None
-_YAMAP_PASSWORD = None
-_MY_USER_ID = None
+# --- グローバル変数 (設定情報キャッシュ) ---
+# 設定ファイルの内容をキャッシュして、不要なファイル読み込みを防ぎます。
+_main_config_cache = None
 
 # --- 定数 ---
 BASE_URL = "https://yamap.com" # create_driver_with_cookies で使用
 LOGIN_URL = f"{BASE_URL}/login"
 
-def load_settings(force_reload=False):
-    """
-    設定ファイル (config.yaml, credentials.yaml) を読み込み、グローバル変数に格納します。
-    既に読み込み済みの場合は、force_reload=True でない限り再読み込みしません。
-
-    Args:
-        force_reload (bool): Trueの場合、既に設定が読み込まれていても強制的に再読み込みします。
-
-    Raises:
-        FileNotFoundError: 設定ファイルが見つからない場合。
-        yaml.YAMLError: YAMLファイルの解析に失敗した場合。
-        ValueError: 設定ファイルの内容が不正な場合。
-    """
-    global _main_config, _credentials_config, _YAMAP_EMAIL, _YAMAP_PASSWORD, _MY_USER_ID
-
-    # credentials.yaml は使用しないため、_credentials_config のチェックを削除
-    if _main_config and not force_reload: # and _credentials_config を削除
-        logger.debug("設定は既に読み込み済みです。")
-        return
-
-    # credentials.yaml は使用しないため、ログメッセージから削除
-    logger.info(f"設定ファイル ({CONFIG_FILE}) を読み込みます...")
-    try:
-        # 1. `credentials.yaml` (認証情報ファイル) の読み込み処理を削除
-        # try:
-        #     with open(CREDENTIALS_FILE, 'r', encoding='utf-8') as f:
-        #         loaded_credentials = yaml.safe_load(f)
-        #     if not loaded_credentials:
-        #         raise ValueError("認証ファイルが空か、内容を読み取れませんでした。")
-
-        #     email = loaded_credentials.get("email")
-        #     password = loaded_credentials.get("password")
-        #     user_id = str(loaded_credentials.get("user_id", ""))
-
-        #     if not all([email, password, user_id]):
-        #         err_msg = f"認証ファイル ({CREDENTIALS_FILE}) に email, password, user_id のいずれかが正しく設定されていません。"
-        #         logger.critical(err_msg)
-        #         raise ValueError(err_msg)
-
-        #     _credentials_config = loaded_credentials
-        #     _YAMAP_EMAIL = email
-        #     _YAMAP_PASSWORD = password
-        #     _MY_USER_ID = user_id
-        #     logger.info("認証情報を正常に読み込みました。")
-
-        # except FileNotFoundError:
-        #     # 環境変数から読み込むため、ファイルが存在しなくてもエラーとしない
-        #     logger.info(f"認証ファイル ({CREDENTIALS_FILE}) が見つかりません。環境変数からの読み込みを試みます。")
-        #     _credentials_config = {} # 空の辞書で初期化
-        #     # _YAMAP_EMAIL, _YAMAP_PASSWORD, _MY_USER_ID は環境変数から別途設定される想定
-        # except (yaml.YAMLError, ValueError) as e_cred:
-        #     # 環境変数から読み込むため、ファイル形式エラーも致命的ではない場合がある
-        #     logger.warning(f"認証ファイル ({CREDENTIALS_FILE}) の形式が不正か、内容に問題があります。環境変数からの読み込みを試みます。エラー: {e_cred}")
-        #     _credentials_config = {} # 空の辞書で初期化
-
-        # 環境変数から認証情報を取得 (メインスクリプト側で行うのでここでは直接設定しない)
-        # ただし、このモジュール内で _YAMAP_EMAIL などが参照される場合に備え、
-        # get_credentials() が呼ばれた際に環境変数から取得する形にするか、
-        # またはこのモジュールでは認証情報を直接扱わないようにする。
-        # ここでは、get_credentials() が環境変数を参照するように変更するため、
-        # load_settings での _credentials_config, _YAMAP_EMAIL 等の直接設定は行わない。
-        # _credentials_config は便宜上、空の辞書またはNoneで初期化しておく。
-        _credentials_config = None # または {}
-
-        # 2. `config.yaml` (メイン設定ファイル) の読み込み
-        try:
-            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
-                loaded_main_config = yaml.safe_load(f)
-            if not loaded_main_config:
-                raise ValueError("メインの設定ファイル (config.yaml) が空か、内容を読み取れませんでした。")
-            _main_config = loaded_main_config
-            logger.info("メイン設定ファイルを正常に読み込みました。")
-
-        except FileNotFoundError:
-            err_msg = f"メイン設定ファイル ({CONFIG_FILE}) が見つかりません。"
-            logger.critical(err_msg)
-            raise
-        except (yaml.YAMLError, ValueError) as e_main_conf:
-            err_msg = f"メイン設定ファイル ({CONFIG_FILE}) の形式が不正か、内容に問題があります。エラー: {e_main_conf}"
-            logger.critical(err_msg)
-            raise
-
-        logger.info("全ての設定ファイルの読み込みが完了しました。")
-
-    except Exception as e:
-        logger.critical(f"設定ファイルの読み込み中に予期せぬエラーが発生しました: {e}", exc_info=True)
-        # モジュールレベル変数をリセットして、不正な状態を防ぐ
-        _main_config = None
-        _credentials_config = None
-        _YAMAP_EMAIL = None
-        _YAMAP_PASSWORD = None
-        _MY_USER_ID = None
-        raise # エラーを再送出して呼び出し元に通知
-
 def get_main_config():
-    """メイン設定 (config.yaml) を返します。未ロードの場合はロード試行します。"""
-    if not _main_config:
-        load_settings()
-    return _main_config
+    """
+    メインの設定ファイルを読み込み、その内容を返します。
+    環境変数 YAMAP_CONFIG_FILE が設定されていればそのパスを、
+    そうでなければデフォルトの 'yamap_auto/config.yaml' を使用します。
+    """
+    global _main_config_cache
+
+    # 環境変数から設定ファイルのパスを取得、未設定ならデフォルト値を使用
+    default_config_path = "yamap_auto/config.yaml"
+    config_path = os.environ.get("YAMAP_CONFIG_FILE", default_config_path)
+
+    # キャッシュが存在し、要求された設定ファイルがキャッシュされたものと同じであればキャッシュを返す
+    if _main_config_cache is not None and _main_config_cache.get('_source_path') == config_path:
+        logger.debug(f"メイン設定のキャッシュを使用します ('{config_path}')。")
+        return _main_config_cache
+
+    logger.info(f"メイン設定ファイル '{config_path}' を読み込みます...")
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = yaml.safe_load(f)
+            if config:
+                config['_source_path'] = config_path  # キャッシュ識別のためにソースパスを格納
+                _main_config_cache = config  # 成功した場合にキャッシュに保存
+                logger.info(f"メイン設定ファイル '{config_path}' の読み込みに成功しました。")
+            else:
+                logger.warning(f"設定ファイル '{config_path}' は空または無効なYAMLです。")
+                _main_config_cache = None # 不正な場合はキャッシュをクリア
+                return None
+            return config
+    except FileNotFoundError:
+        logger.error(f"設定ファイル '{config_path}' が見つかりません。")
+        _main_config_cache = None
+        return None
+    except yaml.YAMLError as e:
+        logger.error(f"設定ファイル '{config_path}' の解析中にエラーが発生しました: {e}", exc_info=True)
+        _main_config_cache = None
+        return None
+    except Exception as e:
+        logger.error(f"設定ファイル '{config_path}' の読み込み中に予期せぬエラーが発生しました: {e}", exc_info=True)
+        _main_config_cache = None
+        return None
 
 def get_credentials():
     """環境変数から認証情報を取得して返します。"""
