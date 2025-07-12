@@ -1,14 +1,5 @@
 steps:
-  # 1. Docker イメージをビルドして Artifact Registry にプッシュ
-  # YOUR_ARTIFACT_REGISTRY_REPO_NAME は事前に作成したリポジトリ名に置き換えてください (例: my-automation-repo)
-  # PROJECT_ID はCloud Buildによって自動的に置換されます
-  - name: 'gcr.io/cloud-builders/docker'
-    args: [ 'build', '-t', 'asia-northeast1-docker.pkg.dev/$PROJECT_ID/my-automation-repo/yamap-auto-domo-cf:$COMMIT_SHA', '.' ]
-
-  - name: 'gcr.io/cloud-builders/docker'
-    args: [ 'push', 'asia-northeast1-docker.pkg.dev/$PROJECT_ID/my-automation-repo/yamap-auto-domo-cf:$COMMIT_SHA' ]
-
-  # 2. Cloud Functions (第2世代) をデプロイ
+  # 1. Cloud Functions (第2世代) をデプロイ
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
@@ -18,7 +9,7 @@ steps:
       - --gen2
       - --region=asia-northeast1
       - --runtime=python310 # Dockerfile を使用する場合でもベースランタイムを指定
-      # --source=. # イメージを直接指定する場合、sourceは不要になることが多い
+      - --source=. # ビルドコンテキストを現在のディレクトリに設定
       - --entry-point=run_yamap_auto_domo_function # main.py の関数名
       - --trigger-http
       - --allow-unauthenticated # Schedulerからの呼び出しのため (本番環境ではOIDC認証を強く推奨)
@@ -28,14 +19,6 @@ steps:
       - --memory=1Gi # Headless Chrome はメモリを消費するため
       # 環境変数はSecret Manager経由で設定
       - --set-secrets=YAMAP_LOGIN_ID=gcp-secret-yamap-id:latest,YAMAP_LOGIN_PASSWORD=gcp-secret-yamap-password:latest,YAMAP_USER_ID=gcp-secret-yamap-user-id:latest
-      # ビルドしたコンテナイメージを指定してデプロイ
-      - --image=asia-northeast1-docker.pkg.dev/$PROJECT_ID/my-automation-repo/yamap-auto-domo-cf:$COMMIT_SHA
-
-images: # Cloud Build がビルドしたイメージを記録 (オプション)
-  - 'asia-northeast1-docker.pkg.dev/$PROJECT_ID/my-automation-repo/yamap-auto-domo-cf:$COMMIT_SHA'
 
 options:
   logging: CLOUD_LOGGING_ONLY
-  # substitution_option: ALLOW_LOOSE # COMMIT_SHA などが未定義でもエラーにしない場合 (通常は不要)
-  # substitutions:
-  #   _YOUR_ARTIFACT_REGISTRY_REPO_NAME: 'my-automation-repo' # ここで定義するか、直接書き換える
