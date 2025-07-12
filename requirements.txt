@@ -1,6 +1,7 @@
 # Flask と gunicorn は Cloud Functions の HTTP トリガーでは不要
 # Flask
 # gunicorn
+gunicorn
 selenium
 PyYAML
 beautifulsoup4
