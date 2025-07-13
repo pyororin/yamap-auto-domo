@@ -30,27 +30,3 @@ def run_yamap_auto_domo_function(request): # 引数を request に変更
     except Exception as e:
         logger.error(f"yamap_auto_domo.main() の実行中にエラーが発生しました: {e}", exc_info=True)
         return f"Error during function execution: {e}", 500
-
-# 従来のFlaskアプリ部分はCloud Functionsでは不要なためコメントアウトまたは削除
-# from flask import Flask, jsonify
-# app = Flask(__name__)
-#
-# @app.route('/start', methods=['GET'])
-# def start_process():
-#     logger.info("/start エンドポイントが呼び出されました。")
-#     # Cloud FunctionsではHTTPリクエストごとに独立して実行されるため、
-#     # バックグラウンドスレッドは通常不要です。
-#     # Schedulerが直接エントリーポイント関数を呼び出します。
-#     run_yamap_auto_domo_function(None, None) # 直接実行する場合の例
-#     return jsonify({"message": "処理を開始しました。"}), 200
-#
-# @app.route('/', methods=['GET'])
-# def health_check():
-#     logger.info("/ (ヘルスチェック) エンドポイントが呼び出されました。")
-#     return jsonify({"status": "healthy"}), 200
-#
-# if __name__ == '__main__':
-#     # Cloud Functions環境では、この部分は実行されません。
-#     # ローカルでのテスト用に残すか、削除します。
-#     # app.run(host='0.0.0.0', port=8080, debug=True)
-#     pass
