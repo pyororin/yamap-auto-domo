@@ -20,7 +20,7 @@ steps:
       # 環境変数はSecret Manager経由で設定
       - --set-secrets=YAMAP_LOGIN_ID=gcp-secret-yamap-id:latest,YAMAP_LOGIN_PASSWORD=gcp-secret-yamap-password:latest,YAMAP_USER_ID=gcp-secret-yamap-user-id:latest
       # 使用する設定ファイルを環境変数で指定
-      - --update-env-vars=YAMAP_CONFIG_FILE=yamap_auto/config_sequential.yaml
+      - --update-env-vars=YAMAP_CONFIG_FILE=yamap_auto/config.yaml
 
 options:
   logging: CLOUD_LOGGING_ONLY
