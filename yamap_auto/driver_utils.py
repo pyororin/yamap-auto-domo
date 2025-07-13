@@ -135,7 +135,7 @@ def get_driver_options():
         logger.info("Dockerコンテナ環境向けのWebDriverオプションを設定します。")
         options.add_argument('--no-sandbox') # サンドボックスなし (コンテナ実行にしばしば必要)
         options.add_argument('--disable-dev-shm-usage') # /dev/shmパーティションの使用を無効化 (リソース制限のある環境向け)
-        options.add_argument('--remote-debugging-port=9222') # デバッグポート（オプション）
+        # options.add_argument('--remote-debugging-port=9222') # デバッグポート（オプション） - ポート競合の原因となるため削除
 
         # DockerfileでChrome/Chromiumのパスが固定されていることを期待
         # chrome_binary_location はDockerfile側でENV等で設定されるか、標準パスにあることを想定
