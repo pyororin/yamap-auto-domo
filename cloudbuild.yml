@@ -16,7 +16,7 @@ steps:
       - --max-instances=1 # Selenium処理のためインスタンス数を制限
       - --timeout=540s # 9分 (Selenium処理は時間がかかる可能性)
       - --cpu=1
-      - --memory=1Gi # Headless Chrome はメモリを消費するため
+      - --memory=2Gi # Headless Chrome はメモリを消費するため
       # 環境変数はSecret Manager経由で設定
       - --set-secrets=YAMAP_LOGIN_ID=gcp-secret-yamap-id:latest,YAMAP_LOGIN_PASSWORD=gcp-secret-yamap-password:latest,YAMAP_USER_ID=gcp-secret-yamap-user-id:latest
       # 使用する設定ファイルを環境変数で指定
