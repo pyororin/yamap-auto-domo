@@ -54,60 +54,52 @@ gcloud scheduler jobs create http selenium-batch-run \
 ```
 `<your-service-name>`、`<project-hash>`、`<region>`、`<your-service-account>`、`<project-id>` は実際の値に置き換えてください。Cloud RunサービスのURLはデプロイ後に確認できます。
 
-## ローカルでの開発・実行（従来通り）
+## ローカルでの開発・実行
 
-ローカル環境でスクリプトを実行する場合のセットアップや実行方法は基本的に従来通りです。
+ローカルでの開発とテストは、**Dockerコンテナを使用**して行います。これにより、GCP上の実行環境と完全に一致させることができ、環境差異による問題を未然に防ぎます。
 
 ### 動作環境 (ローカル)
 
-- Python 3.7以上 (Cloud Run環境はPython 3.10)
-- Google Chrome ブラウザ
-- ChromeDriver (ローカルのChromeバージョンに適合するもの)
-- 必要なPythonライブラリ (Selenium, PyYAMLなど)
+-   Docker Desktop (または同等のDocker環境)
 
 ### 初期準備 (ローカル)
 
-1.  Python、Google Chrome、ChromeDriverをインストールします。
-2.  必要なPythonライブラリをインストールします。
+1.  Docker Desktopをインストールし、起動します。
+2.  プロジェクトのルートディレクトリで、以下のコマンドを実行してDockerイメージをビルドします。
     ```bash
-    pip install -r requirements.txt  # requirements.txt を使用
-    pip install PyYAML # config.yaml の読み込みに必要
+    docker build -t yamap-auto-domo-local .
     ```
-
-### 設定 (ローカル)
-
-ローカル実行時は、以下の環境変数を設定してください。
-`yamap_auto/config.yaml` の設定はCloud Run実行時と共通です。
-
--   `YAMAP_LOGIN_ID`: あなたのYAMAPメールアドレス
--   `YAMAP_LOGIN_PASSWORD`: あなたのYAMAPパスワード
--   `USER_ID`: あなたのYAMAPユーザーID
-
-環境変数の設定方法は、お使いのOSやシェルによって異なります。以下は一例です。
-
-**Linux / macOS (bash/zshなど):**
-```bash
-export YAMAP_LOGIN_ID="your_yamap_email@example.com"
-export YAMAP_LOGIN_PASSWORD="your_yamap_password"
-export USER_ID="1234567"
-```
-これらのコマンドをターミナルで実行するか、`.bashrc` や `.zshrc` などのシェル設定ファイルに追記します。
-
-**Windows (PowerShell):**
-```powershell
-$Env:YAMAP_LOGIN_ID = "your_yamap_email@example.com"
-$Env:YAMAP_LOGIN_PASSWORD = "your_yamap_password"
-$Env:USER_ID = "1234567"
-```
-これらのコマンドをPowerShellで実行します。恒久的に設定する場合は、システムの環境変数設定GUIを使用します。
+    -   `Dockerfile` や `requirements.txt` を変更した場合は、このコマンドを再実行してイメージを更新してください。
 
 ### 動作方法 (ローカル)
 
-プロジェクトのルートディレクトリから以下のコマンドで実行します。
+以下のコマンドでDockerコンテナを起動し、スクリプトを実行します。
+
 ```bash
-python -m yamap_auto.yamap_auto_domo
+docker run --rm -it \
+  -e YAMAP_LOGIN_ID="あなたのメールアドレス" \
+  -e YAMAP_LOGIN_PASSWORD="あなたのパスワード" \
+  -e USER_ID="あなたのユーザーID" \
+  -e YAMAP_CONFIG_FILE="yamap_auto/config.yaml" \
+  yamap-auto-domo-local
 ```
-ログは `logs/yamap_auto_domo.log` に出力されます (ログディレクトリはスクリプト実行時にクリアされます)。
+
+**コマンドの解説:**
+
+-   `docker run`: コンテナを実行するコマンドです。
+-   `--rm`: コンテナ終了時に自動でコンテナを削除します。
+-   `-it`: コンテナのログを直接ターミナルに表示します。
+-   `-e 環境変数名="値"`: コンテナ内で使用する環境変数を設定します。**YAMAPの認証情報はここで設定してください。**
+-   `yamap-auto-domo-local`: ビルドしたDockerイメージの名前です。
+
+**設定ファイルの切り替え:**
+
+-   逐次処理（並列なし）でテストしたい場合は、`YAMAP_CONFIG_FILE`の値を変更します。
+    ```bash
+    -e YAMAP_CONFIG_FILE="yamap_auto/config_sequential.yaml" \
+    ```
+
+スクリプトのログは、コンテナの標準出力としてターミナルに直接表示されます。
 
 ## トラブルシューティング
 

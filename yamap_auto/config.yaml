@@ -32,7 +32,7 @@ implicit_wait_sec: 5
 # === WebDriver設定 ===
 webdriver_settings:
   # "local" または "docker_container"
-  execution_environment: "local"
+  execution_environment: "docker_container"
   # local: ローカル環境で実行。ChromeDriverはシステムPATHにあるか、`chromedriver_path`で指定。
   # docker_container: Dockerコンテナ内で実行。ChromeDriverはコンテナ内の期待されるパスにある想定。
 
