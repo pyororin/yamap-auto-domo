@@ -419,9 +419,9 @@ def create_driver_with_cookies(cookies, current_user_id, initial_page_for_cookie
             # URLが異なる場合は即時失敗とはせず、他の要素でログイン状態を確認する
 
         # --- 確認ステップ2: 主要なログインインジケータ (ユーザーメニューボタン) ---
-        user_menu_button_selector = "button[aria-label='ユーザーメニューを開く']"
+        user_menu_button_selector = "button[aria-label*='ユーザーメニュー'], button[data-testid*='user-menu']"
         # ヘッダーアバター画像セレクタ (alt属性確認用) - より具体的なセレクタに変更が必要な場合あり
-        header_avatar_selector = "header button[aria-label='ユーザーメニューを開く'] img, header a[href*='/users/'] img" # 複数候補
+        header_avatar_selector = "header img[alt*='プロフィール画像'], header img[data-testid*='avatar']"
 
         try:
             user_menu_element = WebDriverWait(driver, 15).until( # 少し短縮
@@ -478,7 +478,7 @@ def create_driver_with_cookies(cookies, current_user_id, initial_page_for_cookie
         # --- 確認ステップ3: 補助的なログインインジケータ (プロフィール編集ボタン) ---
         # 主要な確認 (ユーザーメニュー＋アバター) でOKでなければ、こちらを試す
         if not my_page_login_ok:
-            profile_edit_button_selector = "a[href$='/profile/edit'], button[data-testid='profile-edit-button']"
+            profile_edit_button_selector = "a[href*='/profile/edit'], a[data-testid*='profile-edit']"
             logger.info(f"主要確認でNGだったため、セカンダリのログイン確認要素 ({profile_edit_button_selector}) の確認を試みます...")
             try:
                 edit_element = WebDriverWait(driver, 7).until( # 短めのタイムアウト
