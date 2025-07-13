@@ -44,15 +44,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 # アプリケーションコードのコピー
 COPY . .
 
-# Cloud Functions の場合、CMD や EXPOSE は通常不要です。
-# Google Cloud Functions は、デプロイ時に指定されたエントリーポイント（例: main.run_yamap_auto_domo_function）を
-# 直接呼び出します。
-# EXPOSE 8080
-# CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers=1", "main:app"]
+# Gunicorn を使用してアプリケーションを起動します。
+# Cloud Run は PORT 環境変数でリッスンするポートを指定します。
+# Gunicorn はワーカーを1つ、スレッドを8つ持つように設定し、タイムアウトを延長します。
+# ログは標準出力に直接出すように設定します。
+EXPOSE 8080
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers=1", "--threads=8", "--timeout=300", "main:app", "--log-level=info", "--log-file=-"]
 
 # 環境変数 (オプション、必要に応じて設定)
 # 例: ENV GOOGLE_APPLICATION_CREDENTIALS /app/credentials.json
 ENV PYTHONUNBUFFERED TRUE
-
-# main.py 内の関数が呼び出されることを想定
-# Cloud Functionsのデプロイ時にエントリーポイントとして `run_yamap_auto_domo_function` を指定

@@ -36,6 +36,7 @@ YAMAPへのログインに必要な以下の情報は、すべて環境変数を
 -   **`YAMAP_LOGIN_ID`**: YAMAPのログインに使用するメールアドレス。
 -   **`YAMAP_LOGIN_PASSWORD`**: YAMAPのログインに使用するパスワード。
 -   **`USER_ID`**: あなたのYAMAPユーザーID。
+-   **`YAMAP_CONFIG_FILE`**: (オプション) 使用する設定ファイルを指定します。デフォルトは `yamap_auto/config.yaml` です。`yamap_auto/config_sequential.yaml` を指定すると、並列処理を無効にした設定で実行できます。
 
 これらの環境変数は、`jules.yml` で定義されており、Google Secret Managerに保存されたシークレットから読み込まれます。
 ローカルで実行する場合は、これらの環境変数を手動で設定してください。
