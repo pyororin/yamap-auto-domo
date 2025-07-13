@@ -75,7 +75,7 @@ action_delays:
 # 注意: 並列処理はアカウントの安全性やYAMAPの利用規約に影響を与える可能性があるため、慎重に使用してください。
 #       過度な並列化は短時間に多くのリクエストを送信することになり、一時的なアクセス制限のリスクを高める可能性があります。
 parallel_processing_settings:
-  max_workers: 2
+  max_workers: 24
   # 並列処理に使用する最大ワーカー（スレッド）数。
   # PCのスペックやネットワーク環境に応じて調整してください。推奨値は 2〜5 程度です。
   # 大きすぎる値を設定すると、かえってパフォーマンスが低下したり、アカウントへの負荷が高まる可能性があります。
@@ -104,7 +104,7 @@ follow_back_settings:
   # true: フォローバック機能の並列処理を有効にします。
   # false: 従来の逐次処理を実行します。
 
-  max_workers_follow_back: 2
+  max_workers_follow_back: 24
   # フォローバック機能を並列処理する場合の最大ワーカー（スレッド）数。
   # enable_parallel_follow_back が true の場合に参照されます。
 
@@ -162,7 +162,7 @@ search_and_follow_settings:
   # false: 従来の逐次処理を実行します（メインスレッドが一人ずつユーザー処理を行います）。
   # 注意: YAMAPの利用規約やサーバー負荷を考慮し、自己責任で有効にしてください。短時間に多くのリクエストが発生する可能性があります。
 
-  max_workers_search_follow: 2
+  max_workers_search_follow: 24
   # 検索＆フォロー機能を並列処理する場合の最大ワーカー（スレッド）数。
   # enable_parallel_search_follow が true の場合に参照されます。
   # PCのCPUコア数やネットワーク帯域、対象サイトの応答性によって最適な値は異なります。
@@ -215,7 +215,7 @@ new_feature_domo_back_to_past_domo_users:
   # false: 逐次処理を実行します。
   # 注意: YAMAPの利用規約やサーバー負荷を考慮し、自己責任で有効にしてください。
 
-  max_workers_domo_back: 2
+  max_workers_domo_back: 24
   # 並列DOMO返し処理の最大ワーカー（スレッド）数。
   # `enable_parallel_domo_back` が true の場合に参照されます。推奨: 2-3程度。
 
