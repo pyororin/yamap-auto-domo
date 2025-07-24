@@ -94,10 +94,14 @@ def domo_activity(driver, activity_url, base_url="https://yamap.com"): # base_ur
         # 2. DOMO済みかどうかの判定
         is_domoed = False
         try:
-            domo_done_button_selector = "button.domo-done-button"
-            if driver.find_elements(By.CSS_SELECTOR, domo_done_button_selector):
-                is_domoed = True
-                logger.info(f"既にDOMO済みです (DOMO済みボタンが検出されました): {activity_id_for_log}")
+            reacted_button_selector = "button.emoji-button.viewer-has-reacted"
+            reacted_buttons = driver.find_elements(By.CSS_SELECTOR, reacted_button_selector)
+            for button in reacted_buttons:
+                count_span = button.find_element(By.CSS_SELECTOR, "span.reaction-count")
+                if count_span.text == '1':
+                    is_domoed = True
+                    logger.info(f"既にDOMOまたは他のリアクション済みです (reaction-countが1): {activity_id_for_log}")
+                    break
         except Exception:
             pass
 
@@ -348,10 +352,14 @@ def domo_activity_on_timeline(driver, feed_item_element, domo_button_selectors, 
         # 2. DOMO済みかどうかの判定
         is_domoed = False
         try:
-            domo_done_button_selector = "button.domo-done-button"
-            if feed_item_element.find_elements(By.CSS_SELECTOR, domo_done_button_selector):
-                is_domoed = True
-                logger.info(f"既にDOMO済みです (DOMO済みボタンが検出されました): {activity_id_for_log}")
+            reacted_button_selector = "button.emoji-button.viewer-has-reacted"
+            reacted_buttons = feed_item_element.find_elements(By.CSS_SELECTOR, reacted_button_selector)
+            for button in reacted_buttons:
+                count_span = button.find_element(By.CSS_SELECTOR, "span.reaction-count")
+                if count_span.text == '1':
+                    is_domoed = True
+                    logger.info(f"既にDOMOまたは他のリアクション済みです (reaction-countが1): {activity_id_for_log}")
+                    break
         except Exception:
             pass
 
