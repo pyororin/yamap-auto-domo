@@ -91,131 +91,63 @@ def domo_activity(driver, activity_url, base_url="https://yamap.com"): # base_ur
         else:
             logger.debug(f"既に活動日記ページ ({activity_url}) にいます。")
 
-        # 2. DOMOボタンの探索
-        domo_button_selectors = [
-            "button.emoji-picker-button",  # 新しい絵文字ピッカーボタン
-            "button[data-testid='ActivityDomoButton']",  # プライマリセレクタ
-            "button#DomoActionButton"                    # セカンダリセレクタ
-        ]
-        logger.debug(f"DOMOボタン探索開始。試行セレクタリスト: {domo_button_selectors} for activity: {activity_id_for_log}")
-
-        domo_button = None
-        current_selector_used = ""
-        button_found_but_not_clickable = False
-
-        for idx, selector in enumerate(domo_button_selectors):
-            logger.debug(f"DOMOボタン探索試行 #{idx+1} (セレクタ: '{selector}') for activity: {activity_id_for_log}")
-            try:
-                wait_time = 5 if idx == 0 else 2 # 最初のセレクタは少し長めに待つ
-                # まず要素が存在するか確認
-                WebDriverWait(driver, wait_time).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, selector))
-                )
-                # 次に要素がクリック可能か確認
-                domo_button_candidate = WebDriverWait(driver, 1).until( # クリック可能確認は短いタイムアウト
-                    EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
-                )
-                if domo_button_candidate:
-                    domo_button = domo_button_candidate
-                    current_selector_used = selector
-                    logger.info(f"DOMOボタンを発見し、クリック可能です (使用セレクタ: '{selector}') for activity: {activity_id_for_log}")
-                    button_found_but_not_clickable = False
-                    break
-                else: # WebDriverWait が None を返すことは通常ないが、念のため
-                    logger.debug(f"セレクタ '{selector}' でDOMOボタン候補が見つかりましたが、無効な要素でした (activity: {activity_id_for_log})。")
-            except TimeoutException:
-                # presence_of_element_located は成功したが element_to_be_clickable でタイムアウトした場合
-                try:
-                    if driver.find_elements(By.CSS_SELECTOR, selector): # 要素自体は存在するか再確認
-                        logger.warning(f"セレクタ '{selector}' でDOMOボタン要素は存在しますが、クリック可能状態になりませんでした (activity: {activity_id_for_log})。")
-                        button_found_but_not_clickable = True # クリックできないボタンがあったフラグ
-                    else:
-                        logger.debug(f"セレクタ '{selector}' でDOMOボタンが見つからず、タイムアウトしました (activity: {activity_id_for_log})。")
-                except Exception as e_find_check:
-                     logger.debug(f"セレクタ '{selector}' でDOMOボタンの存在確認中にエラー: {e_find_check} (activity: {activity_id_for_log})")
-
-            except Exception as e_sel: # その他の例外 (例: StaleElementなど)
-                logger.warning(f"セレクタ '{selector}' でDOMOボタン探索中に予期せぬエラー: {type(e_sel).__name__} - {e_sel} (activity: {activity_id_for_log})", exc_info=True)
-                # このセレクタでの探索は失敗として続行
-
-        if not domo_button:
-            if button_found_but_not_clickable:
-                logger.error(f"DOMO失敗: DOMOボタン要素は見つかりましたがクリック可能な状態ではありませんでした (activity: {activity_id_for_log}, selectors: {domo_button_selectors})。")
-            else:
-                logger.error(f"DOMO失敗: DOMOボタンが見つかりませんでした (activity: {activity_id_for_log}, selectors: {domo_button_selectors})。")
-            # スクリーンショットは各種例外ハンドラで撮影されるため、ここでは不要
-            return False
-
-        # 3. DOMO済みかどうかの判定 (新しいUIに合わせて変更)
-        # titleがDOMOではない絵文字が表示されている場合、DOMO済みと判断
+        # 2. DOMO済みかどうかの判定
+        # DOMO済みの場合、DOMOアイコンが表示されないため、それで判定
         is_domoed = False
         try:
-            img_in_button = domo_button.find_element(By.CSS_SELECTOR, "img.emojiImage")
-            if "DOMO" not in img_in_button.get_attribute("src"):
+            domo_済_button_selector = "button.domo-done-button"
+            if driver.find_elements(By.CSS_SELECTOR, domo_済_button_selector):
                 is_domoed = True
-                logger.info(f"既にDOMO済みです (DOMO以外の絵文字が表示されています): {activity_id_for_log}")
-        except NoSuchElementException:
-            # 古いUIの判定ロジックも残す
-            aria_label_before = domo_button.get_attribute("aria-label")
-            if aria_label_before and ("Domo済み" in aria_label_before or "domoed" in aria_label_before.lower() or "ドモ済み" in aria_label_before):
-                is_domoed = True
-                logger.info(f"既にDOMO済みです (aria-label='{aria_label_before}'): {activity_id_for_log}")
-            else:
-                try:
-                    icon_span = domo_button.find_element(By.CSS_SELECTOR, "span[class*='DomoActionContainer__DomoIcon'], span.RidgeIcon")
-                    if "is-active" in icon_span.get_attribute("class"):
-                        is_domoed = True
-                        logger.info(f"既にDOMO済みです (アイコン is-active 確認): {activity_id_for_log}")
-                except NoSuchElementException:
-                    logger.debug("DOMO済みかどうかの判定ができませんでした。処理を続行します。")
+                logger.info(f"既にDOMO済みです (DOMO済みボタンが検出されました): {activity_id_for_log}")
+        except Exception:
+            pass
 
-        # 4. DOMO実行 (まだDOMOしていなければ)
-        if not is_domoed:
-            logger.info(f"DOMOを実行します: {activity_id_for_log} (使用ボタンセレクタ: '{current_selector_used}')")
-            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", domo_button)
-            time.sleep(0.1)
-            domo_button.click()
+        if is_domoed:
+            return False
 
-            # 絵文字ピッカーが表示されるのを待つ
-            try:
-                emoji_picker_selector = "div.emoji-picker"
-                WebDriverWait(driver, 5).until(
-                    EC.visibility_of_element_located((By.CSS_SELECTOR, emoji_picker_selector))
-                )
-                logger.info("絵文字ピッカーが表示されました。")
+        # 3. DOMO実行
+        try:
+            # 「＋」ボタンをクリックして絵文字ピッカーを開く
+            add_emoji_button_selector = "button.emoji-add-button"
+            add_emoji_button = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, add_emoji_button_selector))
+            )
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", add_emoji_button)
+            time.sleep(0.2)
+            add_emoji_button.click()
+            logger.info("絵文字追加ボタンをクリックしました。")
 
-                # titleがDOMOの絵文字を探してクリック
-                domo_emoji_selector = "button[title='DOMO']"
-                domo_emoji = WebDriverWait(driver, 5).until(
-                    EC.element_to_be_clickable((By.CSS_SELECTOR, domo_emoji_selector))
-                )
-                domo_emoji.click()
-                logger.info("「DOMO」絵文字をクリックしました。")
+            # 絵文字ピッカーボタンをクリック
+            emoji_picker_button_selector = "button.emoji-picker-button"
+            emoji_picker_button = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, emoji_picker_button_selector))
+            )
+            emoji_picker_button.click()
+            logger.info("絵文字ピッカーボタンをクリックしました。")
 
-            except TimeoutException:
-                logger.warning("絵文字ピッカーまたは「DOMO」絵文字が見つかりませんでした。DOMO処理を続行できません。")
-                return False
+            # 「DOMO」絵文字をクリック
+            domo_emoji_selector = "button[title='DOMO']"
+            domo_emoji = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, domo_emoji_selector))
+            )
+            domo_emoji.click()
+            logger.info("「DOMO」絵文字をクリックしました。")
 
+            # DOMO後の状態確認
             action_delays = main_config.get("action_delays", {})
             delay_after_action = action_delays.get("after_domo_sec", 1.5)
 
-            # DOMO後の状態確認
-            try:
-                # DOMO済みの状態（DOMO以外の絵文字が表示されている）になるのを待つ
-                WebDriverWait(driver, 5).until(
-                    lambda d: "DOMO" not in d.find_element(By.CSS_SELECTOR, f"{current_selector_used} img.emojiImage").get_attribute("src")
-                )
-                logger.info(f"DOMO成功を確認しました: {activity_id_for_log}")
-                time.sleep(delay_after_action)
-                return True
-            except TimeoutException:
-                logger.error(f"DOMO失敗: DOMO実行後、状態変化の確認でタイムアウト (Activity: {activity_id_for_log})")
-                save_screenshot(driver, error_type="DOMO_ConfirmTimeout", context_info=activity_id_for_log)
-                time.sleep(delay_after_action)
-                return False
-        else: # is_domoed is True
-            logger.info(f"DOMOスキップ: 既にDOMO済みです ({activity_id_for_log})。")
-            return False # DOMOを実行しなかったのでFalse
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "button.domo-done-button"))
+            )
+            logger.info(f"DOMO成功を確認しました: {activity_id_for_log}")
+            time.sleep(delay_after_action)
+            return True
+
+        except TimeoutException:
+            logger.error(f"DOMO失敗: DOMO処理のいずれかのステップでタイムアウト (Activity: {activity_id_for_log})")
+            save_screenshot(driver, error_type="DOMO_ProcessTimeout", context_info=activity_id_for_log)
+            return False
 
     except TimeoutException as e_timeout:
         logger.error(f"DOMO失敗: DOMO処理中に予期せぬタイムアウト ({activity_id_for_log})。エラー: {type(e_timeout).__name__} - {e_timeout}")
@@ -467,95 +399,59 @@ def domo_activity_on_timeline(driver, feed_item_element, domo_button_selectors, 
                 logger.error(f"DOMO失敗(Timeline): DOMOボタンがアイテム内で見つかりませんでした (item: {activity_id_for_log}, selectors: {domo_button_selectors})。")
             return False
 
-        # 2. DOMO済みかどうかの判定 (新しいUIに合わせて変更)
+        # 2. DOMO済みかどうかの判定
+        # DOMO済みの場合、DOMOアイコンが表示されないため、それで判定
         is_domoed = False
         try:
-            img_in_button = domo_button.find_element(By.CSS_SELECTOR, "img.emojiImage")
-            if "DOMO" not in img_in_button.get_attribute("src"):
+            domo_済_button_selector = "button.domo-done-button"
+            if feed_item_element.find_elements(By.CSS_SELECTOR, domo_済_button_selector):
                 is_domoed = True
-                logger.info(f"既にDOMO済みです (DOMO以外の絵文字が表示されています): {activity_id_for_log}")
-        except NoSuchElementException:
-            # 古いUIの判定ロジックも残す
-            aria_label_before = domo_button.get_attribute("aria-label")
-            if aria_label_before and ("Domo済み" in aria_label_before or "domoed" in aria_label_before.lower() or "ドモ済み" in aria_label_before):
-                is_domoed = True
-            else:
-                try:
-                    icon_span = domo_button.find_element(By.CSS_SELECTOR, "span.RidgeIcon, span[class*='DomoActionContainer__DomoIcon']") # より汎用的に
-                    if "is-active" in (icon_span.get_attribute("class") or ""):
-                        is_domoed = True
-                except NoSuchElementException:
-                    logger.debug(f"DOMOボタン内のis-activeアイコンspanが見つかりませんでした (item: {activity_id_for_log})。aria-labelに依存します。")
+                logger.info(f"既にDOMO済みです (DOMO済みボタンが検出されました): {activity_id_for_log}")
+        except Exception:
+            pass
 
         if is_domoed:
-            logger.info(f"既にDOMO済みです (タイムラインアイテム: {activity_id_for_log})")
-            return False # 既にDOMO済みなのでFalseを返して処理終了 (DOMOは実行していない)
+            return False
 
-        # 3. DOMO実行 (まだDOMOしていなければ)
-        logger.info(f"タイムラインアイテム ({activity_id_for_log}) 上でDOMOを実行します (使用ボタンセレクタ: '{current_selector_used}')")
-        url_before_click = driver.current_url # クリック前のURLを記録
-
+        # 3. DOMO実行
         try:
-            # 要素が画面内に表示されるようにスクロール (中央揃え)
-            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", domo_button)
-            time.sleep(0.2) # スクロール後の描画待ち
-            ActionChains(driver).move_to_element(domo_button).click().perform()
-            logger.debug(f"DOMOボタンクリック実行 (ActionChains経由) (item: {activity_id_for_log})。")
-
-            # 絵文字ピッカーが表示されるのを待つ
-            emoji_picker_selector = "div.emoji-picker"
-            WebDriverWait(driver, 5).until(
-                EC.visibility_of_element_located((By.CSS_SELECTOR, emoji_picker_selector))
+            # 「＋」ボタンをクリックして絵文字ピッカーを開く
+            add_emoji_button_selector = "button.emoji-add-button"
+            add_emoji_button = WebDriverWait(feed_item_element, 10).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, add_emoji_button_selector))
             )
-            logger.info("絵文字ピッカーが表示されました。")
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", add_emoji_button)
+            time.sleep(0.2)
+            ActionChains(driver).move_to_element(add_emoji_button).click().perform()
+            logger.info("絵文字追加ボタンをクリックしました。")
 
-            # titleがDOMOの絵文字を探してクリック
+            # 絵文字ピッカーボタンをクリック
+            emoji_picker_button_selector = "button.emoji-picker-button"
+            emoji_picker_button = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, emoji_picker_button_selector))
+            )
+            emoji_picker_button.click()
+            logger.info("絵文字ピッカーボタンをクリックしました。")
+
+            # 「DOMO」絵文字をクリック
             domo_emoji_selector = "button[title='DOMO']"
-            domo_emoji = WebDriverWait(driver, 5).until(
+            domo_emoji = WebDriverWait(driver, 10).until(
                 EC.element_to_be_clickable((By.CSS_SELECTOR, domo_emoji_selector))
             )
             domo_emoji.click()
             logger.info("「DOMO」絵文字をクリックしました。")
 
-        except Exception as e_click:
-            logger.error(f"DOMOボタンのクリックまたは絵文字の選択に失敗しました (item: {activity_id_for_log}): {e_click}", exc_info=True)
-            save_screenshot(driver, error_type="DOMO_ClickError_Timeline", context_info=f"{activity_id_for_log}")
-            return False
-
-        # 4. ページ遷移が発生したか確認
-        time.sleep(0.5) # ページ遷移が発生する可能性を考慮した短い待機
-        url_after_click = driver.current_url
-        if url_after_click != url_before_click:
-            logger.warning(
-                f"DOMOボタンクリック後、意図しないページ遷移が発生しました (item: {activity_id_for_log})。"
-                f"遷移前URL: {url_before_click}, 遷移後URL: {url_after_click}。"
-                f"元のタイムライン ({timeline_url}) に戻ろうと試みます。"
-            )
-            save_screenshot(driver, error_type="UnexpectedPageTransition_DOMO_Timeline", context_info=f"{activity_id_for_log}_to_{url_after_click.split('/')[-1]}")
-            driver.get(timeline_url) # 元のタイムラインに戻る
-            try:
-                WebDriverWait(driver, 10).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, "li.TimelineList__Feed"))
-                )
-                logger.info(f"元のタイムライン ({timeline_url}) に正常に戻りました。")
-            except TimeoutException:
-                logger.error(f"タイムライン ({timeline_url}) に戻ろうとしましたが、フィードアイテムの再表示確認でタイムアウトしました。このアイテムの処理は中断します。")
-            return False # ページ遷移が発生した場合は、DOMO成否に関わらずこのアイテムの処理は失敗として扱う
-
-        # 5. DOMO後の状態変化確認 (ページ遷移がなかった場合のみ実行される)
-        try:
-            WebDriverWait(driver, 5).until(
-                lambda d: "DOMO" not in feed_item_element.find_element(By.CSS_SELECTOR, f"{current_selector_used} img.emojiImage").get_attribute("src")
+            # DOMO後の状態確認
+            WebDriverWait(feed_item_element, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "button.domo-done-button"))
             )
             logger.info(f"DOMO成功を確認しました (タイムラインアイテム: {activity_id_for_log})")
             time.sleep(delay_after_action)
             return True
+
         except TimeoutException:
-            logger.error(
-                f"DOMO失敗(Timeline): DOMO実行後、状態変化の確認でタイムアウト (Item: {activity_id_for_log}, セレクタ: '{current_selector_used}'). "
-            )
-            save_screenshot(driver, error_type="DOMO_ConfirmTimeout_Timeline", context_info=f"{activity_id_for_log}_selector_{current_selector_used.replace('.', '_').replace('#', '_')}")
-            time.sleep(delay_after_action)
+            logger.error(f"DOMO失敗(Timeline): DOMO処理のいずれかのステップでタイムアウト (Item: {activity_id_for_log})")
+            save_screenshot(driver, error_type="DOMO_TimelineProcessTimeout", context_info=activity_id_for_log)
             return False
 
     except Exception as e:
