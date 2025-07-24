@@ -403,8 +403,8 @@ def domo_activity_on_timeline(driver, feed_item_element, domo_button_selectors, 
             return True
 
         except TimeoutException:
-            logger.error(f"DOMO失敗(Timeline): DOMO処理のいずれかのステップでタイムアウト (Item: {activity_id_for_log})")
-            save_screenshot(driver, error_type="DOMO_TimelineProcessTimeout", context_info=activity_id_for_log)
+            # logger.error(f"DOMO失敗(Timeline): DOMO処理のいずれかのステップでタイムアウト (Item: {activity_id_for_log})")
+            # save_screenshot(driver, error_type="DOMO_TimelineProcessTimeout", context_info=activity_id_for_log)
             return False
 
     except Exception as e:
