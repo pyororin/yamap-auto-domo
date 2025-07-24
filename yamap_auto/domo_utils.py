@@ -25,6 +25,13 @@ import time # time モジュールをインポート
 
 logger = logging.getLogger(__name__) # このモジュール用のロガーを取得
 
+def get_shadow_root(driver, element):
+    return driver.execute_script('return arguments[0].shadowRoot', element)
+
+def click_element_in_shadow_dom(driver, shadow_root, selector):
+    element = shadow_root.find_element(By.CSS_SELECTOR, selector)
+    element.click()
+
 # --- グローバル定数 ---
 BASE_URL = "https://yamap.com" # yamap_auto_domo.py から移動
 TIMELINE_URL = f"{BASE_URL}/timeline" # yamap_auto_domo.py から移動
@@ -120,20 +127,16 @@ def domo_activity(driver, activity_url, base_url="https://yamap.com"): # base_ur
             ActionChains(driver).move_to_element(add_emoji_button).click().perform()
             logger.info("絵文字追加ボタンをクリックしました。")
 
-            # 絵文字ピッカーボタンをクリック
-            emoji_picker_button_selector = "button.emoji-picker-button"
-            emoji_picker_button = WebDriverWait(driver, 10).until(
-                EC.element_to_be_clickable((By.CSS_SELECTOR, emoji_picker_button_selector))
+            # 絵文字ピッカーのShadow Hostを取得
+            emoji_picker_host_selector = "yamap-emoji-picker"
+            emoji_picker_host = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, emoji_picker_host_selector))
             )
-            ActionChains(driver).move_to_element(emoji_picker_button).click().perform()
-            logger.info("絵文字ピッカーボタンをクリックしました。")
+            shadow_root = get_shadow_root(driver, emoji_picker_host)
 
-            # 「DOMO」絵文字をクリック
+            # Shadow DOM内の「DOMO」絵文字をクリック
             domo_emoji_selector = "button[title='DOMO']"
-            domo_emoji = WebDriverWait(driver, 10).until(
-                EC.element_to_be_clickable((By.CSS_SELECTOR, domo_emoji_selector))
-            )
-            ActionChains(driver).move_to_element(domo_emoji).click().perform()
+            click_element_in_shadow_dom(driver, shadow_root, domo_emoji_selector)
             logger.info("「DOMO」絵文字をクリックしました。")
 
             # DOMO後の状態確認
@@ -378,20 +381,16 @@ def domo_activity_on_timeline(driver, feed_item_element, domo_button_selectors, 
             ActionChains(driver).move_to_element(add_emoji_button).click().perform()
             logger.info("絵文字追加ボタンをクリックしました。")
 
-            # 絵文字ピッカーボタンをクリック
-            emoji_picker_button_selector = "button.emoji-picker-button"
-            emoji_picker_button = WebDriverWait(driver, 10).until(
-                EC.element_to_be_clickable((By.CSS_SELECTOR, emoji_picker_button_selector))
+            # 絵文字ピッカーのShadow Hostを取得
+            emoji_picker_host_selector = "yamap-emoji-picker"
+            emoji_picker_host = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, emoji_picker_host_selector))
             )
-            ActionChains(driver).move_to_element(emoji_picker_button).click().perform()
-            logger.info("絵文字ピッカーボタンをクリックしました。")
+            shadow_root = get_shadow_root(driver, emoji_picker_host)
 
-            # 「DOMO」絵文字をクリック
+            # Shadow DOM内の「DOMO」絵文字をクリック
             domo_emoji_selector = "button[title='DOMO']"
-            domo_emoji = WebDriverWait(driver, 10).until(
-                EC.element_to_be_clickable((By.CSS_SELECTOR, domo_emoji_selector))
-            )
-            ActionChains(driver).move_to_element(domo_emoji).click().perform()
+            click_element_in_shadow_dom(driver, shadow_root, domo_emoji_selector)
             logger.info("「DOMO」絵文字をクリックしました。")
 
             # DOMO後の状態確認
