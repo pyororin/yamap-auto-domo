@@ -93,6 +93,7 @@ def domo_activity(driver, activity_url, base_url="https://yamap.com"): # base_ur
 
         # 2. DOMOボタンの探索
         domo_button_selectors = [
+            "button.emoji-picker-button",  # 新しい絵文字ピッカーボタン
             "button[data-testid='ActivityDomoButton']",  # プライマリセレクタ
             "button#DomoActionButton"                    # セカンダリセレクタ
         ]
@@ -145,21 +146,28 @@ def domo_activity(driver, activity_url, base_url="https://yamap.com"): # base_ur
             # スクリーンショットは各種例外ハンドラで撮影されるため、ここでは不要
             return False
 
-        # 3. DOMO済みかどうかの判定
-        aria_label_before = domo_button.get_attribute("aria-label")
+        # 3. DOMO済みかどうかの判定 (新しいUIに合わせて変更)
+        # titleがDOMOではない絵文字が表示されている場合、DOMO済みと判断
         is_domoed = False
-
-        if aria_label_before and ("Domo済み" in aria_label_before or "domoed" in aria_label_before.lower() or "ドモ済み" in aria_label_before):
-            is_domoed = True
-            logger.info(f"既にDOMO済みです (aria-label='{aria_label_before}'): {activity_id_for_log}")
-        else:
-            try:
-                icon_span = domo_button.find_element(By.CSS_SELECTOR, "span[class*='DomoActionContainer__DomoIcon'], span.RidgeIcon")
-                if "is-active" in icon_span.get_attribute("class"):
-                    is_domoed = True
-                    logger.info(f"既にDOMO済みです (アイコン is-active 確認): {activity_id_for_log}")
-            except NoSuchElementException:
-                logger.debug("DOMOボタン内のis-activeアイコンspanが見つかりませんでした。aria-labelに依存します。")
+        try:
+            img_in_button = domo_button.find_element(By.CSS_SELECTOR, "img.emojiImage")
+            if "DOMO" not in img_in_button.get_attribute("src"):
+                is_domoed = True
+                logger.info(f"既にDOMO済みです (DOMO以外の絵文字が表示されています): {activity_id_for_log}")
+        except NoSuchElementException:
+            # 古いUIの判定ロジックも残す
+            aria_label_before = domo_button.get_attribute("aria-label")
+            if aria_label_before and ("Domo済み" in aria_label_before or "domoed" in aria_label_before.lower() or "ドモ済み" in aria_label_before):
+                is_domoed = True
+                logger.info(f"既にDOMO済みです (aria-label='{aria_label_before}'): {activity_id_for_log}")
+            else:
+                try:
+                    icon_span = domo_button.find_element(By.CSS_SELECTOR, "span[class*='DomoActionContainer__DomoIcon'], span.RidgeIcon")
+                    if "is-active" in icon_span.get_attribute("class"):
+                        is_domoed = True
+                        logger.info(f"既にDOMO済みです (アイコン is-active 確認): {activity_id_for_log}")
+                except NoSuchElementException:
+                    logger.debug("DOMO済みかどうかの判定ができませんでした。処理を続行します。")
 
         # 4. DOMO実行 (まだDOMOしていなければ)
         if not is_domoed:
@@ -168,41 +176,41 @@ def domo_activity(driver, activity_url, base_url="https://yamap.com"): # base_ur
             time.sleep(0.1)
             domo_button.click()
 
+            # 絵文字ピッカーが表示されるのを待つ
+            try:
+                emoji_picker_selector = "div.emoji-picker"
+                WebDriverWait(driver, 5).until(
+                    EC.visibility_of_element_located((By.CSS_SELECTOR, emoji_picker_selector))
+                )
+                logger.info("絵文字ピッカーが表示されました。")
+
+                # titleがDOMOの絵文字を探してクリック
+                domo_emoji_selector = "button[title='DOMO']"
+                domo_emoji = WebDriverWait(driver, 5).until(
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, domo_emoji_selector))
+                )
+                domo_emoji.click()
+                logger.info("「DOMO」絵文字をクリックしました。")
+
+            except TimeoutException:
+                logger.warning("絵文字ピッカーまたは「DOMO」絵文字が見つかりませんでした。DOMO処理を続行できません。")
+                return False
+
             action_delays = main_config.get("action_delays", {})
             delay_after_action = action_delays.get("after_domo_sec", 1.5)
 
+            # DOMO後の状態確認
             try:
+                # DOMO済みの状態（DOMO以外の絵文字が表示されている）になるのを待つ
                 WebDriverWait(driver, 5).until(
-                    lambda d: ("Domo済み" in (d.find_element(By.CSS_SELECTOR, current_selector_used).get_attribute("aria-label") or "")) or \
-                              ("is-active" in (d.find_element(By.CSS_SELECTOR, f"{current_selector_used} span[class*='DomoActionContainer__DomoIcon'], {current_selector_used} span.RidgeIcon").get_attribute("class") or ""))
+                    lambda d: "DOMO" not in d.find_element(By.CSS_SELECTOR, f"{current_selector_used} img.emojiImage").get_attribute("src")
                 )
-                aria_label_after = driver.find_element(By.CSS_SELECTOR, current_selector_used).get_attribute("aria-label")
-                logger.info(f"DOMO成功を確認しました: {activity_id_for_log} (aria-label: {aria_label_after}, 使用セレクタ: '{current_selector_used}')")
+                logger.info(f"DOMO成功を確認しました: {activity_id_for_log}")
                 time.sleep(delay_after_action)
                 return True
             except TimeoutException:
-                # タイムアウト時の詳細ログ
-                actual_aria_label = "取得失敗"
-                actual_icon_class = "取得失敗"
-                expected_aria_label_pattern = "Domo済み"
-                expected_icon_class_pattern = "is-active"
-                try:
-                    button_element_after_click = driver.find_element(By.CSS_SELECTOR, current_selector_used)
-                    actual_aria_label = button_element_after_click.get_attribute("aria-label") or "aria-labelなし"
-                    try:
-                        icon_span_after_click = button_element_after_click.find_element(By.CSS_SELECTOR, "span[class*='DomoActionContainer__DomoIcon'], span.RidgeIcon")
-                        actual_icon_class = icon_span_after_click.get_attribute("class") or "classなし"
-                    except NoSuchElementException:
-                        actual_icon_class = "アイコンspanなし"
-                except Exception as e_attr:
-                    logger.error(f"DOMO後の属性取得中にエラー: {type(e_attr).__name__} - {e_attr} (activity: {activity_id_for_log})")
-
-                logger.error(
-                    f"DOMO失敗: DOMO実行後、状態変化の確認でタイムアウト (Activity: {activity_id_for_log}, 使用セレクタ: '{current_selector_used}'). "
-                    f"期待状態: aria-labelに'{expected_aria_label_pattern}' OR アイコンクラスに'{expected_icon_class_pattern}'. "
-                    f"実際の状態: aria-label='{actual_aria_label}', icon_class='{actual_icon_class}'"
-                )
-                save_screenshot(driver, error_type="DOMO_ConfirmTimeout", context_info=f"{activity_id_for_log}_selector_{current_selector_used.replace('.', '_').replace('#', '_')}")
+                logger.error(f"DOMO失敗: DOMO実行後、状態変化の確認でタイムアウト (Activity: {activity_id_for_log})")
+                save_screenshot(driver, error_type="DOMO_ConfirmTimeout", context_info=activity_id_for_log)
                 time.sleep(delay_after_action)
                 return False
         else: # is_domoed is True
@@ -459,24 +467,28 @@ def domo_activity_on_timeline(driver, feed_item_element, domo_button_selectors, 
                 logger.error(f"DOMO失敗(Timeline): DOMOボタンがアイテム内で見つかりませんでした (item: {activity_id_for_log}, selectors: {domo_button_selectors})。")
             return False
 
-        # 2. DOMO済みかどうかの判定
-        aria_label_before = domo_button.get_attribute("aria-label")
+        # 2. DOMO済みかどうかの判定 (新しいUIに合わせて変更)
         is_domoed = False
-
-        if aria_label_before and ("Domo済み" in aria_label_before or "domoed" in aria_label_before.lower() or "ドモ済み" in aria_label_before):
-            is_domoed = True
-        else:
-            try:
-                # アイコンのクラスで判定 (提供されたHTML断片に基づく)
-                # button要素の直接の子または孫に span.RidgeIcon がある想定
-                icon_span = domo_button.find_element(By.CSS_SELECTOR, "span.RidgeIcon, span[class*='DomoActionContainer__DomoIcon']") # より汎用的に
-                if "is-active" in (icon_span.get_attribute("class") or ""):
-                    is_domoed = True
-            except NoSuchElementException:
-                logger.debug(f"DOMOボタン内のis-activeアイコンspanが見つかりませんでした (item: {activity_id_for_log})。aria-labelに依存します。")
+        try:
+            img_in_button = domo_button.find_element(By.CSS_SELECTOR, "img.emojiImage")
+            if "DOMO" not in img_in_button.get_attribute("src"):
+                is_domoed = True
+                logger.info(f"既にDOMO済みです (DOMO以外の絵文字が表示されています): {activity_id_for_log}")
+        except NoSuchElementException:
+            # 古いUIの判定ロジックも残す
+            aria_label_before = domo_button.get_attribute("aria-label")
+            if aria_label_before and ("Domo済み" in aria_label_before or "domoed" in aria_label_before.lower() or "ドモ済み" in aria_label_before):
+                is_domoed = True
+            else:
+                try:
+                    icon_span = domo_button.find_element(By.CSS_SELECTOR, "span.RidgeIcon, span[class*='DomoActionContainer__DomoIcon']") # より汎用的に
+                    if "is-active" in (icon_span.get_attribute("class") or ""):
+                        is_domoed = True
+                except NoSuchElementException:
+                    logger.debug(f"DOMOボタン内のis-activeアイコンspanが見つかりませんでした (item: {activity_id_for_log})。aria-labelに依存します。")
 
         if is_domoed:
-            logger.info(f"既にDOMO済みです (タイムラインアイテム: {activity_id_for_log}, aria-label='{aria_label_before}')")
+            logger.info(f"既にDOMO済みです (タイムラインアイテム: {activity_id_for_log})")
             return False # 既にDOMO済みなのでFalseを返して処理終了 (DOMOは実行していない)
 
         # 3. DOMO実行 (まだDOMOしていなければ)
@@ -487,17 +499,30 @@ def domo_activity_on_timeline(driver, feed_item_element, domo_button_selectors, 
             # 要素が画面内に表示されるようにスクロール (中央揃え)
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", domo_button)
             time.sleep(0.2) # スクロール後の描画待ち
-            # JavaScript経由のクリック(domo_button.click() や driver.execute_script("arguments[0].click();", domo_button))では
-            # DOMO後の状態変化が確認できなかったため、ActionChainsを使用する。
             ActionChains(driver).move_to_element(domo_button).click().perform()
             logger.debug(f"DOMOボタンクリック実行 (ActionChains経由) (item: {activity_id_for_log})。")
+
+            # 絵文字ピッカーが表示されるのを待つ
+            emoji_picker_selector = "div.emoji-picker"
+            WebDriverWait(driver, 5).until(
+                EC.visibility_of_element_located((By.CSS_SELECTOR, emoji_picker_selector))
+            )
+            logger.info("絵文字ピッカーが表示されました。")
+
+            # titleがDOMOの絵文字を探してクリック
+            domo_emoji_selector = "button[title='DOMO']"
+            domo_emoji = WebDriverWait(driver, 5).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, domo_emoji_selector))
+            )
+            domo_emoji.click()
+            logger.info("「DOMO」絵文字をクリックしました。")
+
         except Exception as e_click:
-            logger.error(f"DOMOボタンのクリック (ActionChains経由) に失敗しました (item: {activity_id_for_log}): {e_click}", exc_info=True)
-            save_screenshot(driver, error_type="DOMO_ClickError_Timeline_ActionChains", context_info=f"{activity_id_for_log}")
+            logger.error(f"DOMOボタンのクリックまたは絵文字の選択に失敗しました (item: {activity_id_for_log}): {e_click}", exc_info=True)
+            save_screenshot(driver, error_type="DOMO_ClickError_Timeline", context_info=f"{activity_id_for_log}")
             return False
 
         # 4. ページ遷移が発生したか確認
-        # (ActionChainsの使用により、意図しないページ遷移の問題は発生しにくくなったはずだが、安全のためにチェック処理は残す)
         time.sleep(0.5) # ページ遷移が発生する可能性を考慮した短い待機
         url_after_click = driver.current_url
         if url_after_click != url_before_click:
@@ -509,7 +534,6 @@ def domo_activity_on_timeline(driver, feed_item_element, domo_button_selectors, 
             save_screenshot(driver, error_type="UnexpectedPageTransition_DOMO_Timeline", context_info=f"{activity_id_for_log}_to_{url_after_click.split('/')[-1]}")
             driver.get(timeline_url) # 元のタイムラインに戻る
             try:
-                # タイムラインに戻った後、主要な要素（例：フィードアイテム）が再認識されるように少し待つ
                 WebDriverWait(driver, 10).until(
                     EC.presence_of_element_located((By.CSS_SELECTOR, "li.TimelineList__Feed"))
                 )
@@ -521,44 +545,14 @@ def domo_activity_on_timeline(driver, feed_item_element, domo_button_selectors, 
         # 5. DOMO後の状態変化確認 (ページ遷移がなかった場合のみ実行される)
         try:
             WebDriverWait(driver, 5).until(
-                lambda d: ("Domo済み" in (feed_item_element.find_element(By.CSS_SELECTOR, current_selector_used).get_attribute("aria-label") or "")) or \
-                          ("is-active" in (feed_item_element.find_element(By.CSS_SELECTOR, f"{current_selector_used} span.RidgeIcon, {current_selector_used} span[class*='DomoActionContainer__DomoIcon']").get_attribute("class") or ""))
+                lambda d: "DOMO" not in feed_item_element.find_element(By.CSS_SELECTOR, f"{current_selector_used} img.emojiImage").get_attribute("src")
             )
-
-            final_button_state = "N/A"
-            try:
-                button_after_action = feed_item_element.find_element(By.CSS_SELECTOR, current_selector_used)
-                aria_label_after = button_after_action.get_attribute("aria-label")
-                icon_class_after = "N/A"
-                try:
-                    icon_after = button_after_action.find_element(By.CSS_SELECTOR, "span.RidgeIcon, span[class*='DomoActionContainer__DomoIcon']")
-                    icon_class_after = icon_after.get_attribute("class")
-                except: pass
-                final_button_state = f"aria-label='{aria_label_after}', icon_class='{icon_class_after}'"
-            except Exception as e_log_state:
-                 logger.debug(f"DOMO後の状態取得中に軽微なエラー: {e_log_state}")
-
-            logger.info(f"DOMO成功を確認しました (タイムラインアイテム: {activity_id_for_log}, 最終状態: {final_button_state})")
+            logger.info(f"DOMO成功を確認しました (タイムラインアイテム: {activity_id_for_log})")
             time.sleep(delay_after_action)
             return True
         except TimeoutException:
-            actual_aria_label = "取得失敗"
-            actual_icon_class = "取得失敗"
-            try:
-                button_element_after_click = feed_item_element.find_element(By.CSS_SELECTOR, current_selector_used)
-                actual_aria_label = button_element_after_click.get_attribute("aria-label") or "aria-labelなし"
-                try:
-                    icon_span_after_click = button_element_after_click.find_element(By.CSS_SELECTOR, "span.RidgeIcon, span[class*='DomoActionContainer__DomoIcon']")
-                    actual_icon_class = icon_span_after_click.get_attribute("class") or "classなし"
-                except NoSuchElementException:
-                    actual_icon_class = "アイコンspanなし"
-            except Exception as e_attr_confirm:
-                logger.error(f"DOMO後の属性取得中(確認タイムアウト内)にエラー: {type(e_attr_confirm).__name__} (item: {activity_id_for_log})")
-
             logger.error(
                 f"DOMO失敗(Timeline): DOMO実行後、状態変化の確認でタイムアウト (Item: {activity_id_for_log}, セレクタ: '{current_selector_used}'). "
-                f"期待: aria-labelに'Domo済み' OR アイコンクラスに'is-active'. "
-                f"実際: aria-label='{actual_aria_label}', icon_class='{actual_icon_class}'"
             )
             save_screenshot(driver, error_type="DOMO_ConfirmTimeout_Timeline", context_info=f"{activity_id_for_log}_selector_{current_selector_used.replace('.', '_').replace('#', '_')}")
             time.sleep(delay_after_action)
