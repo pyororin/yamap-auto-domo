@@ -128,13 +128,15 @@ def domo_activity(driver, activity_url, base_url="https://yamap.com"): # base_ur
             ActionChains(driver).move_to_element(emoji_picker_button).click().perform()
             logger.info("絵文字ピッカーボタンをクリックしました。")
 
-            # 「DOMO」絵文字をクリック
-            domo_emoji_selector = "button[title='DOMO']"
-            domo_emoji = WebDriverWait(driver, 10).until(
-                EC.visibility_of_element_located((By.CSS_SELECTOR, domo_emoji_selector))
-            )
-            ActionChains(driver).move_to_element(domo_emoji).click().perform()
-            logger.info("「DOMO」絵文字をクリックしました。")
+            # JavaScriptを実行して「DOMO」絵文字をクリック
+            js_script = """
+            const picker = document.querySelector('yamap-emoji-picker');
+            const shadowRoot = picker.shadowRoot;
+            const domoButton = shadowRoot.querySelector('button[title="DOMO"]');
+            domoButton.click();
+            """
+            driver.execute_script(js_script)
+            logger.info("「DOMO」絵文字をJavaScriptでクリックしました。")
 
             # DOMO後の状態確認
             action_delays = main_config.get("action_delays", {})
@@ -386,13 +388,15 @@ def domo_activity_on_timeline(driver, feed_item_element, domo_button_selectors, 
             ActionChains(driver).move_to_element(emoji_picker_button).click().perform()
             logger.info("絵文字ピッカーボタンをクリックしました。")
 
-            # 「DOMO」絵文字をクリック
-            domo_emoji_selector = "button[title='DOMO']"
-            domo_emoji = WebDriverWait(driver, 10).until(
-                EC.visibility_of_element_located((By.CSS_SELECTOR, domo_emoji_selector))
-            )
-            ActionChains(driver).move_to_element(domo_emoji).click().perform()
-            logger.info("「DOMO」絵文字をクリックしました。")
+            # JavaScriptを実行して「DOMO」絵文字をクリック
+            js_script = """
+            const picker = document.querySelector('yamap-emoji-picker');
+            const shadowRoot = picker.shadowRoot;
+            const domoButton = shadowRoot.querySelector('button[title="DOMO"]');
+            domoButton.click();
+            """
+            driver.execute_script(js_script)
+            logger.info("「DOMO」絵文字をJavaScriptでクリックしました。")
 
             # DOMO後の状態確認
             WebDriverWait(feed_item_element, 10).until(
