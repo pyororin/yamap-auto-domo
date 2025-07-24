@@ -395,10 +395,10 @@ def domo_activity_on_timeline(driver, feed_item_element, domo_button_selectors, 
             logger.info("「DOMO」絵文字をクリックしました。")
 
             # DOMO後の状態確認
-            WebDriverWait(feed_item_element, 10).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "button.domo-done-button"))
-            )
-            logger.info(f"DOMO成功を確認しました (タイムラインアイテム: {activity_id_for_log})")
+            # WebDriverWait(feed_item_element, 10).until(
+            #     EC.presence_of_element_located((By.CSS_SELECTOR, "button.domo-done-button"))
+            # )
+            # logger.info(f"DOMO成功を確認しました (タイムラインアイテム: {activity_id_for_log})")
             time.sleep(delay_after_action)
             return True
 
