@@ -5,7 +5,7 @@ enable_follow_back: true
 enable_timeline_domo: true
 # true: タイムラインDOMO機能を有効にします。
 # false: タイムラインDOMO機能を無効にします。
-enable_search_and_follow: true
+enable_search_and_follow: false
 # true: 検索結果からのフォロー＆DOMO機能を有効にします。
 # false: 機能を無効にします。
 enable_domo_back_to_past_users: true
@@ -25,7 +25,7 @@ headless_mode: true
 # ブラウザをヘッドレスモードで実行するかどうか (true: ヘッドレス, false: 通常モード)
 # ヘッドレスモードではブラウザウィンドウは表示されませんが、バックグラウンドで動作します。デバッグ時は false が推奨されます。
 
-implicit_wait_sec: 5
+implicit_wait_sec: 4
 # Selenium WebDriverが要素を見つけるまでの暗黙的な最大待機時間 (秒単位)
 # ページ要素の読み込みが遅い場合に、この時間まで待機します。
 
@@ -96,7 +96,7 @@ follow_back_settings:
   # 一度のスクリプト実行でフォローバックする最大のユーザー数。
   # フォロワーリストの複数ページをチェックする場合、この合計数に達すると処理を停止します。
 
-  max_pages_for_follow_back: 10
+  max_pages_for_follow_back: 3
   # フォローバック対象者を探すために、フォロワーリストの何ページ目まで確認するかを指定します。
   # 例えば `5` を指定すると、最新のフォロワーから最大5ページ分遡って確認します。
 
@@ -116,7 +116,7 @@ follow_back_settings:
 
 timeline_domo_settings:
   # タイムラインDOMO機能に関する設定 (YAMAPのタイムライン上の活動記録に自動でDOMOする)
-  max_activities_to_domo_on_timeline: 20
+  max_activities_to_domo_on_timeline: 30
   # タイムライン上でDOMOする活動記録の最大数。
   # タイムラインの新しい投稿から順に、この数に達するまでDOMOを試みます。
 
@@ -248,7 +248,7 @@ unfollow_inactive_users_settings:
   delay_after_unfollow_action_sec: 3.0
   # アンフォロー操作を実行した後の待機時間 (秒単位)。UIの反映待ちや負荷軽減のため。
 
-  parallel_profile_page_workers: 2 # (追加) 非アクティブユーザーの最終活動日を取得する際の並列ワーカー数
+  parallel_profile_page_workers: 24 # (追加) 非アクティブユーザーの最終活動日を取得する際の並列ワーカー数
 
   enable_parallel_unfollow_action: true # (追加) アンフォローアクション自体の並列実行を有効にするか
   max_workers_unfollow_action: 24     # (追加) アンフォローアクションの最大ワーカー数
