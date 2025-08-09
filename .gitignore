@@ -212,4 +212,4 @@ yamap_auto/credentials.yaml
 logs/screenshots/
 logs/
 yamap_auto/credentials.yaml
-run_yamap.bat
+#run_yamap.bat
