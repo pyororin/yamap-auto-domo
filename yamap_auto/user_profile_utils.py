@@ -416,13 +416,19 @@ def get_last_activity_date(driver, user_profile_url):
         driver.get(user_profile_url)
         try:
             # プロフィールページの主要コンテナ（活動日記リストを含むエリア）を待つ
-            # 候補: 'main[role="main"]', 'div[data-testid="profile-screen"]', 'div.ProfileScreen'
-            profile_main_container_selector = "main[role='main']"
+            # 複数の候補セレクタで待機し、堅牢性を高める
+            container_selector_1 = "main[role='main']"
+            container_selector_2 = "div.ProfileScreen" # 新しいUI用のフォールバック候補
+            logger.debug(f"プロフィールページ主要コンテナの表示を待ちます (候補: '{container_selector_1}', '{container_selector_2}')")
             WebDriverWait(driver, profile_element_timeout).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, profile_main_container_selector))
+                EC.any_of(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, container_selector_1)),
+                    EC.presence_of_element_located((By.CSS_SELECTOR, container_selector_2))
+                )
             )
+            logger.debug("プロフィールページ主要コンテナの表示を確認しました。")
         except TimeoutException:
-            logger.warning(f"ユーザー ({user_id_log}) のプロフィールページ主要コンテナ ('{profile_main_container_selector}') の読み込みタイムアウト ({profile_element_timeout}秒)。最新活動日時取得失敗の可能性。")
+            logger.warning(f"ユーザー ({user_id_log}) のプロフィールページ主要コンテナの読み込みタイムアウト ({profile_element_timeout}秒)。最新活動日時取得失敗の可能性。")
             save_screenshot(driver, "ProfileLoadTimeout_GetDate", f"UID_{user_id_log}")
             return None
     else:
@@ -655,42 +661,36 @@ def get_my_following_users_profiles(driver, my_user_id, max_users_to_fetch=None,
             processed_pages += 1
             logger.info(f"現在 {len(all_users_data)} 件のユーザー情報を取得。")
 
-            # Pagination logic (Selenium)
-            next_button = None
-            for sel_idx, next_sel in enumerate(next_page_button_selector_candidates):
+            # Pagination logic (Selenium) - More robust to handle StaleElementReferenceException
+            next_button_clicked = False
+            for next_sel in next_page_button_selector_candidates:
                 try:
-                    candidate_button = driver.find_element(By.CSS_SELECTOR, next_sel)
-                    if candidate_button.is_displayed() and candidate_button.is_enabled():
-                        next_button = candidate_button
-                        logger.debug(f"「次へ」ボタンをセレクタ '{next_sel}' で発見。")
-                        break
-                except NoSuchElementException:
-                    logger.debug(f"「次へ」ボタン候補 '{next_sel}' は見つかりませんでした。({sel_idx+1}/{len(next_page_button_selector_candidates)})")
+                    next_button = driver.find_element(By.CSS_SELECTOR, next_sel)
+                    if next_button.is_displayed() and next_button.is_enabled():
+                        logger.info(f"「次へ」ボタンをセレクタ '{next_sel}' で発見。クリックします。")
+                        prev_url_for_transition_check = driver.current_url
+                        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", next_button)
+                        time.sleep(0.5)
+                        next_button.click()
 
-            if next_button:
-                logger.info("「次へ」ボタンをクリックします。")
-                prev_url_for_transition_check = driver.current_url
-                driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", next_button)
-                time.sleep(0.5)
-                next_button.click()
-                try:
-                    WebDriverWait(driver, 15).until(
-                        lambda d: d.current_url != prev_url_for_transition_check or \
-                                  EC.presence_of_element_located((By.CSS_SELECTOR, user_list_container_selector_selenium)) # Wait for new container
-                    )
-                    # Ensure the new container is actually different or updated if URL doesn't change
-                    # For simplicity, we wait for the container to be present again.
-                    WebDriverWait(driver, 10).until(
-                        EC.presence_of_element_located((By.CSS_SELECTOR, user_list_container_selector_selenium))
-                    )
-                    logger.info(f"次のページ ({driver.current_url}) へ遷移成功。")
-                    time.sleep(1.5)
-                except TimeoutException:
-                    logger.info("「次へ」ボタンクリック後、ページ遷移/内容更新の確認タイムアウト。最後のページかもしれません。")
-                    break
-            else:
-                logger.info("「次へ」ボタンが見つからないか、無効です。最後のページと判断します。")
-                break
+                        # Wait for transition, using staleness_of to handle re-rendering
+                        WebDriverWait(driver, 15).until(
+                            EC.staleness_of(list_container_element)
+                        )
+                        # Wait for the new list container to be ready
+                        WebDriverWait(driver, 10).until(
+                            EC.presence_of_element_located((By.CSS_SELECTOR, user_list_container_selector_selenium))
+                        )
+                        logger.info(f"次のページ ({driver.current_url}) へ遷移成功。")
+                        time.sleep(1.5)
+                        next_button_clicked = True
+                        break # Exit the for loop over selectors
+                except (NoSuchElementException, StaleElementReferenceException, TimeoutException) as e:
+                    logger.debug(f"「次へ」ボタン候補 '{next_sel}' の処理でエラー: {type(e).__name__}。次の候補を試します。")
+
+            if not next_button_clicked:
+                logger.info("クリック可能な「次へ」ボタンが全ての候補で見つかりませんでした。最後のページと判断します。")
+                break # Exit the while loop over pages
         except TimeoutException:
             logger.warning(f"{processed_pages + 1} ページ目のリストコンテナ要素の取得またはHTML取得でタイムアウト。処理を終了します。")
             break
