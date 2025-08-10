@@ -99,35 +99,28 @@ def get_my_activities_within_period(driver, user_profile_url, days_to_check):
     else:
         logger.info(f"既にプロフィールページ ({target_url_to_get}) または互換URLに滞在中です。")
 
-    activity_list_container_selector = "ul.css-qksbms"
-    activity_item_selector_in_container = "article[data-testid='activity-entry']"
+    activity_item_selector = "article[data-testid='activity-entry']"
 
-    logger.info(f"活動記録リストコンテナ ({activity_list_container_selector}) の表示を待ちます...")
+    logger.info(f"活動記録アイテム ({activity_item_selector}) の表示を待ちます...")
     try:
-        list_container_element = WebDriverWait(driver, 20).until(
-            EC.visibility_of_element_located((By.CSS_SELECTOR, activity_list_container_selector))
+        WebDriverWait(driver, 20).until(
+            EC.presence_of_all_elements_located((By.CSS_SELECTOR, activity_item_selector))
         )
-        logger.info(f"活動記録リストコンテナ ({activity_list_container_selector}) が表示されました。")
-
-        logger.info(f"リスト内の最初の活動記録アイテム ({activity_item_selector_in_container}) の表示を待ちます...")
-        WebDriverWait(list_container_element, 10).until(
-            EC.presence_of_all_elements_located((By.CSS_SELECTOR, f"li > {activity_item_selector_in_container}"))
-        )
-        logger.info(f"最初の活動記録アイテム ({activity_item_selector_in_container}) の表示を確認しました。")
-
-        activity_elements = list_container_element.find_elements(By.CSS_SELECTOR, f"li > {activity_item_selector_in_container}")
+        logger.info(f"活動記録アイテム ({activity_item_selector}) の表示を確認しました。")
+        activity_elements = driver.find_elements(By.CSS_SELECTOR, activity_item_selector)
 
     except TimeoutException:
-        logger.warning(f"活動記録リストコンテナまたは最初のアイテムの表示タイムアウト (最大30秒)。")
-        save_screenshot(driver, "ActivityListOrItemTimeoutNew", target_url_to_get.split('/')[-1])
+        logger.warning(f"活動記録アイテム ({activity_item_selector}) の表示タイムアウト (最大20秒)。")
+        save_screenshot(driver, "ActivityItemTimeout", target_url_to_get.split('/')[-1])
         return activities_within_period
     except NoSuchElementException:
-        logger.warning(f"活動記録リストコンテナ ({activity_list_container_selector}) が見つかりませんでした。")
-        save_screenshot(driver, "ActivityListContainerNotFoundNew", target_url_to_get.split('/')[-1])
+        logger.warning(f"活動記録アイテム ({activity_item_selector}) が見つかりませんでした。")
+        save_screenshot(driver, "ActivityItemNotFound", target_url_to_get.split('/')[-1])
         return activities_within_period
 
-    activity_link_selector_in_item = "h3.css-m9icgg > a.css-1pla16"
-    activity_date_selector_in_item = "p.css-1oi95vk > span.css-125iqyy"
+    # 脆いクラス名セレクタを、より汎用的な構造ベースのセレクタに変更
+    activity_link_selector_in_item = "h3 a"
+    activity_date_selector_in_item = "p span"
 
     logger.info(f"{len(activity_elements)} 件の活動記録を検出しました。")
 
