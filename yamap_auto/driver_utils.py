@@ -419,73 +419,70 @@ def create_driver_with_cookies(cookies, current_user_id, initial_page_for_cookie
             verification_details.append(f"URL_MISMATCH (Expected: {my_page_url}, Actual: {driver.current_url})")
             # URLが異なる場合は即時失敗とはせず、他の要素でログイン状態を確認する
 
-        # --- 確認ステップ2: 主要なログインインジケータ (ユーザーメニューボタン) ---
-        user_menu_button_selector = "button[aria-label*='ユーザーメニュー'], button[data-testid*='user-menu']"
-        # ヘッダーアバター画像セレクタ (alt属性確認用) - より具体的なセレクタに変更が必要な場合あり
-        header_avatar_selector = "header img[alt*='プロフィール画像'], header img[data-testid*='avatar']"
+        # --- 確認ステップ2: 主要なログインインジケータ (ヘッダーのアバター画像) ---
+        # 複数のセレクタ候補を試すことで、UIの変更に対する堅牢性を高める
+        header_avatar_selectors = [
+            "header img[data-testid*='avatar']",  # data-testid属性を持つimg要素 (最も堅牢)
+            "header img[alt*='プロフィール画像']", # alt属性に「プロフィール画像」を含むimg要素
+            ".UserAvatarImage--header .UserAvatarImage__Avatar", # 既存のセレクタ (フォールバック)
+            ".UserInfo__Toggle img" # ユーザートグルボタン内の画像
+        ]
+        avatar_found = False
+        verification_details.append("AVATAR_CHECK_STARTED")
 
         try:
-            user_menu_element = WebDriverWait(driver, 15).until( # 少し短縮
-                EC.presence_of_element_located((By.CSS_SELECTOR, user_menu_button_selector))
-            )
-            logger.info(f"主要ログイン確認要素 ({user_menu_button_selector}) の存在を確認。")
-            verification_details.append("USER_MENU_BTN_OK")
+            for i, selector in enumerate(header_avatar_selectors):
+                try:
+                    # presence_of_element_located は非表示要素も対象にするため、短めの待機時間で確認
+                    wait_time = 3 if i < len(header_avatar_selectors) - 1 else 7
+                    avatar_element = WebDriverWait(driver, wait_time).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                    )
+                    # 要素が見つかったら、表示されているかを確認
+                    if avatar_element and avatar_element.is_displayed():
+                        logger.info(f"主要ログイン確認要素としてヘッダーアバター画像 ({selector}) を確認。")
+                        my_page_login_ok = True
+                        avatar_found = True
+                        verification_details.append(f"AVATAR_OK (selector: {selector})")
+                        break # 発見したらループを抜ける
+                    else:
+                        logger.debug(f"アバターセレクタ候補 '{selector}' は見つかりましたが非表示です。")
+                except TimeoutException:
+                    logger.debug(f"アバターセレクタ候補 '{selector}' は見つかりませんでした。")
+                    continue # 次のセレクタへ
 
-            # --- 確認ステップ2a: アバター画像のalt属性確認 (ユーザーメニューボタンが見つかった場合) ---
+            if not avatar_found:
+                logger.warning(f"主要なログイン確認要素（ヘッダーアバター画像）が全ての候補セレクタで見つかりませんでした。")
+                verification_details.append("AVATAR_ALL_SELECTORS_FAILED")
+
+            # 以前のユーザーメニューボタンの確認は、アバターが見つからない場合のフォールバック情報としてログに残す
+            # これにより、アバターはないがメニューはある、という状況を把握できる
+            user_menu_button_selector = ".UserInfo__Toggle"
             try:
-                avatar_verified = False
-                avatar_elements = driver.find_elements(By.CSS_SELECTOR, header_avatar_selector)
-                if avatar_elements:
-                    for avatar_img in avatar_elements:
-                        if avatar_img.is_displayed(): # 表示されているもののみ対象
-                            alt_text = avatar_img.get_attribute("alt")
-                            if alt_text:
-                                # ユーザーIDが含まれているか、またはユーザー名（取得できれば）が含まれているか
-                                # ここでは current_user_id (数値ID) の一部が含まれているかで簡易的に確認
-                                if current_user_id in alt_text: # 完全一致または部分一致
-                                    logger.info(f"ヘッダーアバター画像のalt属性 ({alt_text}) にユーザーID ({current_user_id}) を確認。")
-                                    avatar_verified = True
-                                    verification_details.append(f"AVATAR_ALT_OK (alt: {alt_text})")
-                                    break
-                                else:
-                                    logger.debug(f"アバターalt属性 ({alt_text}) にユーザーID ({current_user_id}) が見つからず。")
-                            else:
-                                logger.debug("アバター画像のalt属性が空または取得できませんでした。")
-                        else:
-                            logger.debug("非表示のアバター画像をスキップ。")
-                else:
-                    logger.warning(f"ヘッダーアバター画像要素 ({header_avatar_selector}) が見つかりませんでした。")
+                # こちらは待機時間を短くして、存在確認のみ行う
+                driver.find_element(By.CSS_SELECTOR, user_menu_button_selector)
+                logger.info(f"補助情報: ユーザーメニューボタン ({user_menu_button_selector}) は存在します。")
+                verification_details.append("USER_MENU_BTN_EXISTS")
+            except NoSuchElementException:
+                logger.info(f"補助情報: ユーザーメニューボタン ({user_menu_button_selector}) も見つかりません。")
+                verification_details.append("USER_MENU_BTN_NOT_FOUND")
 
-                if avatar_verified:
-                    my_page_login_ok = True # ユーザーメニューとアバターaltでOK
-                else:
-                    logger.warning(f"ユーザーメニューボタンは存在しましたが、アバターalt属性でのユーザーID確認に失敗。")
-                    # この時点ではまだ失敗とせず、他の要素で補完する
+            if my_page_login_ok:
+                logger.info(f"ヘッダーアバターの存在によりログイン状態は良好と判断。")
 
-            except Exception as e_avatar:
-                logger.warning(f"アバターalt属性確認中にエラー: {e_avatar}", exc_info=True)
-                verification_details.append("AVATAR_ALT_CHECK_ERROR")
-
-            if my_page_login_ok: # アバター確認もOKならここで確定
-                 logger.info(f"ユーザーメニューボタンおよびアバターalt属性によりログイン状態は良好と判断。")
-
-        except TimeoutException:
-            logger.warning(f"主要なログイン確認要素 ({user_menu_button_selector}) が15秒以内に見つかりませんでした。")
-            verification_details.append("USER_MENU_BTN_TIMEOUT")
-        except Exception as e_user_menu:
-            logger.warning(f"ユーザーメニューボタン確認中に予期せぬエラー: {e_user_menu}", exc_info=True)
-            verification_details.append("USER_MENU_BTN_ERROR")
+        except Exception as e_avatar_check:
+            logger.warning(f"ヘッダーアバターの確認処理中に予期せぬエラー: {e_avatar_check}", exc_info=True)
+            verification_details.append("AVATAR_CHECK_EXCEPTION")
 
         # --- 確認ステップ3: 補助的なログインインジケータ (プロフィール編集ボタン) ---
-        # 主要な確認 (ユーザーメニュー＋アバター) でOKでなければ、こちらを試す
         if not my_page_login_ok:
-            profile_edit_button_selector = "a[href*='/profile/edit'], a[data-testid*='profile-edit']"
+            profile_edit_button_selector = "a[href*='/settings/profile']"
             logger.info(f"主要確認でNGだったため、セカンダリのログイン確認要素 ({profile_edit_button_selector}) の確認を試みます...")
             try:
-                edit_element = WebDriverWait(driver, 7).until( # 短めのタイムアウト
+                edit_element = WebDriverWait(driver, 7).until(
                     EC.presence_of_element_located((By.CSS_SELECTOR, profile_edit_button_selector))
                 )
-                my_page_login_ok = True # プロフィール編集ボタンがあればOKとみなす
+                my_page_login_ok = True
                 logger.info(f"セカンダリのプロフィール編集関連要素 ({profile_edit_button_selector}) の存在を確認。ログイン状態は良好と判断。")
                 verification_details.append("PROFILE_EDIT_BTN_OK")
             except TimeoutException:
