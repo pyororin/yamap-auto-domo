@@ -415,92 +415,92 @@ def get_last_activity_date(driver, user_profile_url):
         logger.debug(f"対象のユーザープロフィールページ ({user_profile_url}) に遷移します。")
         driver.get(user_profile_url)
         try:
-            WebDriverWait(driver, profile_element_timeout).until( # Use configured timeout - CORRECTED VARIABLE
-                EC.any_of(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, "a[data-testid='profile-tab-activities']")),
-                    EC.presence_of_element_located((By.CSS_SELECTOR, "h1[class*='UserProfileScreen_userName']")),
-                    EC.presence_of_element_located((By.CSS_SELECTOR, "h1.css-jctfiw")) # Profile name as a fallback
-                )
+            # プロフィールページの主要コンテナ（活動日記リストを含むエリア）を待つ
+            # 候補: 'main[role="main"]', 'div[data-testid="profile-screen"]', 'div.ProfileScreen'
+            profile_main_container_selector = "main[role='main']"
+            WebDriverWait(driver, profile_element_timeout).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, profile_main_container_selector))
             )
         except TimeoutException:
-            logger.warning(f"ユーザー ({user_id_log}) のプロフィールページ主要要素の読み込みタイムアウト ({profile_element_timeout}秒)。最新活動日時取得失敗の可能性。")
+            logger.warning(f"ユーザー ({user_id_log}) のプロフィールページ主要コンテナ ('{profile_main_container_selector}') の読み込みタイムアウト ({profile_element_timeout}秒)。最新活動日時取得失敗の可能性。")
             save_screenshot(driver, "ProfileLoadTimeout_GetDate", f"UID_{user_id_log}")
             return None
     else:
         logger.debug(f"既にユーザープロフィールページ ({user_profile_url}) 付近にいます。")
 
     try:
-        # 活動記録の日時情報が含まれる可能性のある要素のセレクタ
         wait_time_for_date_element = unfollow_settings.get("date_element_timeout_sec", profile_element_timeout)
-
         time_element = None
         parsed_date = None
 
-        # Priority 1: Try specific class selector "span.ActivityItem__Date"
-        primary_selector = "span.ActivityItem__Date"
-        logger.debug(f"Attempting to find date element with primary selector: {primary_selector}")
-        try:
-            WebDriverWait(driver, wait_time_for_date_element).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, primary_selector))
-            )
-            time_element = driver.find_element(By.CSS_SELECTOR, primary_selector)
-            logger.info(f"Found element with primary selector: {primary_selector}")
-        except (NoSuchElementException, TimeoutException):
-            logger.info(f"Primary selector {primary_selector} not found. Attempting fallback.")
+        # --- セレクタ候補リスト ---
+        # 優先順位順に、より堅牢なセレクタから試す
+        date_selectors = [
+            # 1. セマンティックな <time> タグ (最も理想的)
+            "article[data-testid='activity-entry'] time",
+            # 2. datetime属性を持つ要素 (次に理想的)
+            "article[data-testid='activity-entry'] [datetime]",
+            # 3. 以前のセレクタ (クラス名に依存するため脆弱)
+            "article[data-testid='activity-entry'] .css-125iqyy",
+        ]
 
-        # Priority 2: Try span with class starting with "css-" and date-like text
-        if not time_element:
-            secondary_selector_pattern = "span[class^='css-']"
-            logger.debug(f"Attempting to find date element with secondary selector pattern: {secondary_selector_pattern}")
+        time_element = None
+        for selector in date_selectors:
             try:
+                logger.debug(f"最新活動日時要素の探索を試行します (セレクタ: '{selector}')")
+                # Wait for the first activity entry to be present before trying to find the date within it
                 WebDriverWait(driver, wait_time_for_date_element).until(
-                    EC.presence_of_all_elements_located((By.CSS_SELECTOR, secondary_selector_pattern))
+                    EC.presence_of_element_located((By.CSS_SELECTOR, selector))
                 )
-                candidate_elements = driver.find_elements(By.CSS_SELECTOR, secondary_selector_pattern)
-                logger.info(f"Found {len(candidate_elements)} candidates with pattern '{secondary_selector_pattern}'. Checking text content.")
+                # find_element を使うことで、最初に見つかったものを取得 (最新の日記と仮定)
+                time_element = driver.find_element(By.CSS_SELECTOR, selector)
+                logger.info(f"最新活動日時要素をセレクタ '{selector}' で発見しました。")
+                break # 要素が見つかったらループを抜ける
+            except (NoSuchElementException, TimeoutException):
+                logger.info(f"セレクタ '{selector}' で最新活動日時要素が見つかりませんでした。次の候補を試します。")
+                continue
+
+        # 上記のセレクタで見つからなかった場合、テキストベースでのフォールバック検索
+        if not time_element:
+            logger.info("固定セレクタでの探索に失敗。テキストパターンによるフォールバック検索を開始します。")
+            # 活動日記エントリのコンテナ内で、日付らしいテキストを持つspanを探す
+            fallback_selector_pattern = "article[data-testid='activity-entry'] span"
+            try:
+                candidate_elements = WebDriverWait(driver, 5).until(
+                    EC.presence_of_all_elements_located((By.CSS_SELECTOR, fallback_selector_pattern))
+                )
+                logger.info(f"フォールバック検索: '{fallback_selector_pattern}' で {len(candidate_elements)} 件の候補を発見。")
                 for candidate in candidate_elements:
                     candidate_text = candidate.text.strip()
-                    # Check if text matches "YYYY.MM.DD (L)" or "YYYY.MM.DD" like patterns
-                    # This regex is a bit more flexible:
-                    # \b\d{4}\.\d{2}\.\d{2}\b(?:\s*\(.\))?
-                    # It matches YYYY.MM.DD optionally followed by (AnyChar)
-                    if re.match(r"\b\d{4}\.\d{2}\.\d{2}\b", candidate_text): # Basic check for YYYY.MM.DD
-                        logger.info(f"Candidate element with text '{candidate_text}' matches date pattern.")
-                        time_element = candidate # Found a likely candidate
-                        break
-                    else:
-                        logger.debug(f"Candidate text '{candidate_text}' did not match date pattern.")
-                if time_element:
-                    logger.info(f"Found date element using secondary selector pattern and text match.")
-                else:
-                    logger.info(f"No suitable element found with secondary selector pattern and text match.")
+                    # 日付フォーマット 'YYYY.MM.DD' or 'YYYY年MM月DD日' にマッチするか確認
+                    if re.match(r"^\d{4}\.\d{2}\.\d{2}", candidate_text) or re.match(r"^\d{4}年\d{1,2}月\d{1,2}日", candidate_text):
+                        logger.info(f"フォールバック検索: 日付パターンに一致するテキスト ('{candidate_text}') を持つ要素を発見。")
+                        time_element = candidate
+                        break # 最初に見つかったものを採用
             except (NoSuchElementException, TimeoutException):
-                logger.info(f"Secondary selector pattern {secondary_selector_pattern} not found or timed out.")
+                logger.info(f"フォールバック検索 ('{fallback_selector_pattern}') でも候補要素が見つかりませんでした。")
 
         if not time_element:
             logger.warning(f"ユーザー ({user_id_log}) の最新の活動日時要素が見つかりませんでした（全試行後）。")
             return None
 
-        # At this point, time_element should be the one we want to parse
-        # Primarily parse from text content
         date_text_content = time_element.text.strip()
         logger.debug(f"Processing element. Text content: '{date_text_content}'")
 
         if date_text_content:
             try:
-                # Format: "YYYY.MM.DD (DAYOFWEEK)" e.g., "2024.09.07 (土)"
-                # The part in parentheses can be ignored for date parsing.
-                if "." in date_text_content and "(" in date_text_content and ")" in date_text_content:
-                    date_part = date_text_content.split("(")[0].strip()
-                    dt_object = datetime.strptime(date_part, "%Y.%m.%d")
+                # Handle formats like "2025.08.08 (金)"
+                date_part = re.match(r"(\d{4}\.\d{2}\.\d{2})", date_text_content)
+                if date_part:
+                    dt_object = datetime.strptime(date_part.group(1), "%Y.%m.%d")
                     parsed_date = dt_object.date()
-                    logger.info(f"ユーザー ({user_id_log}) 最新活動日時 (テキスト YYYY.MM.DD (Day)): {parsed_date} (text: {date_text_content})")
+                    logger.info(f"ユーザー ({user_id_log}) 最新活動日時 (テキスト YYYY.MM.DD): {parsed_date} (text: {date_text_content})")
                     return parsed_date
-                # Format: "YYYY年MM月DD日"
+
+                # Handle formats like "YYYY年MM月DD日"
                 elif "年" in date_text_content and "月" in date_text_content and "日" in date_text_content:
-                    # Potentially also with (Day) at the end, handle that
-                    date_part = date_text_content.split("(")[0].strip()
-                    dt_object = datetime.strptime(date_part, "%Y年%m月%d日")
+                    date_part_jp = date_text_content.split("(")[0].strip()
+                    dt_object = datetime.strptime(date_part_jp, "%Y年%m月%d日")
                     parsed_date = dt_object.date()
                     logger.info(f"ユーザー ({user_id_log}) 最新活動日時 (テキスト YYYY年MM月DD日): {parsed_date} (text: {date_text_content})")
                     return parsed_date
