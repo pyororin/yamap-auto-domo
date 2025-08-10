@@ -101,32 +101,32 @@ logger = logging.getLogger(__name__)
 
 import shutil # ディレクトリ操作のために追加
 
-# --- ログディレクトリのクリーンアップ ---
-# スクリプトの実行ディレクトリの 'logs' サブディレクトリを対象とする
-# __file__ はこのスクリプトのフルパス
-# os.path.dirname(__file__) はこのスクリプトがあるディレクトリ (yamap_auto)
-# その親ディレクトリがリポジトリルートになる
-_SCRIPT_DIR = os.path.dirname(__file__)
-_REPO_ROOT = os.path.dirname(_SCRIPT_DIR) # リポジトリルートを想定
-LOGS_DIR_TO_CLEAR = os.path.join(_REPO_ROOT, "logs")
+# # --- ログディレクトリのクリーンアップ ---
+# # スクリプトの実行ディレクトリの 'logs' サブディレクトリを対象とする
+# # __file__ はこのスクリプトのフルパス
+# # os.path.dirname(__file__) はこのスクリプトがあるディレクトリ (yamap_auto)
+# # その親ディレクトリがリポジトリルートになる
+# _SCRIPT_DIR = os.path.dirname(__file__)
+# _REPO_ROOT = os.path.dirname(_SCRIPT_DIR) # リポジトリルートを想定
+# LOGS_DIR_TO_CLEAR = os.path.join(_REPO_ROOT, "logs")
 
-if os.path.exists(LOGS_DIR_TO_CLEAR):
-    logger.info(f"既存のログディレクトリ '{LOGS_DIR_TO_CLEAR}' の中身をクリアします...")
-    for item_name in os.listdir(LOGS_DIR_TO_CLEAR):
-        item_path = os.path.join(LOGS_DIR_TO_CLEAR, item_name)
-        try:
-            if os.path.isfile(item_path) or os.path.islink(item_path):
-                os.unlink(item_path)
-                logger.debug(f"  削除: {item_path} (ファイル/リンク)")
-            elif os.path.isdir(item_path):
-                shutil.rmtree(item_path)
-                logger.debug(f"  削除: {item_path} (ディレクトリ)")
-        except Exception as e_clear:
-            logger.warning(f"  ログディレクトリ内のアイテム '{item_path}' の削除に失敗しました: {e_clear}")
-    logger.info(f"ログディレクトリ '{LOGS_DIR_TO_CLEAR}' のクリーンアップ完了。")
-else:
-    logger.info(f"ログディレクトリ '{LOGS_DIR_TO_CLEAR}' は存在しないため、クリーンアップはスキップします。")
-# --- ログディレクトリのクリーンアップ完了 ---
+# if os.path.exists(LOGS_DIR_TO_CLEAR):
+#     logger.info(f"既存のログディレクトリ '{LOGS_DIR_TO_CLEAR}' の中身をクリアします...")
+#     for item_name in os.listdir(LOGS_DIR_TO_CLEAR):
+#         item_path = os.path.join(LOGS_DIR_TO_CLEAR, item_name)
+#         try:
+#             if os.path.isfile(item_path) or os.path.islink(item_path):
+#                 os.unlink(item_path)
+#                 logger.debug(f"  削除: {item_path} (ファイル/リンク)")
+#             elif os.path.isdir(item_path):
+#                 shutil.rmtree(item_path)
+#                 logger.debug(f"  削除: {item_path} (ディレクトリ)")
+#         except Exception as e_clear:
+#             logger.warning(f"  ログディレクトリ内のアイテム '{item_path}' の削除に失敗しました: {e_clear}")
+#     logger.info(f"ログディレクトリ '{LOGS_DIR_TO_CLEAR}' のクリーンアップ完了。")
+# else:
+#     logger.info(f"ログディレクトリ '{LOGS_DIR_TO_CLEAR}' は存在しないため、クリーンアップはスキップします。")
+# # --- ログディレクトリのクリーンアップ完了 ---
 
 
 # --- 設定情報の読み込み (driver_utils経由) ---
@@ -410,6 +410,23 @@ def main():
             return
 
         if perform_login(driver, YAMAP_EMAIL, YAMAP_PASSWORD, MY_USER_ID):
+            # --- Jules's Verification Code ---
+            logger.info("--- START: Jules's Verification Code ---")
+
+            target_user_url = f"https://yamap.com/users/{MY_USER_ID}"
+            logger.info(f"Attempting to get last activity date for user: {target_user_url}")
+
+            last_activity = get_last_activity_date(driver, target_user_url)
+
+            if last_activity:
+                logger.info(f"SUCCESS: Successfully fetched last activity date: {last_activity}")
+            else:
+                logger.error("FAILURE: Could not fetch last activity date.")
+
+            logger.info("--- END: Jules's Verification Code ---")
+            # --- End of Jules's Verification Code ---
+            return
+
             shared_cookies = get_shared_cookies(driver)
             summary = execute_main_tasks(driver, MY_USER_ID, shared_cookies)
             logger.info("全ての有効な処理が完了しました。")
