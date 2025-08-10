@@ -119,9 +119,9 @@ def get_latest_activity_url(driver, user_profile_url):
         #    YAMAPのUI変更に対応するため、複数のセレクタ候補を試行します。
         #    通常、プロフィールページの活動日記リストの最初のアイテムが最新です。
         activity_link_selectors = [
-            "article[data-testid='activity-entry'] a[href^='/activities/']", # 推奨される構造
-            "a[data-testid='activity-card-link']",                           # 以前の構造・フォールバック
-            ".ActivityCard_card__link__XXXXX a[href^='/activities/']"        # 特定のクラス名 (変わりやすいので注意)
+            "div.ProfileActivities__Activity a",                             # New robust selector
+            "article[data-testid='activity-entry'] a[href^='/activities/']", # Keep old one as fallback
+            "a[data-testid='activity-card-link']",                           # Keep old one as fallback
         ]
 
         # configから活動日記リンクの待機時間を読み込み
@@ -436,12 +436,12 @@ def get_last_activity_date(driver, user_profile_url):
         # --- セレクタ候補リスト ---
         # 優先順位順に、より堅牢なセレクタから試す
         date_selectors = [
-            # 1. セマンティックな <time> タグ (最も理想的)
+            # 1. New robust selector
+            "div.ProfileActivities__Activity time",
+            # 2. New robust selector with datetime attribute
+            "div.ProfileActivities__Activity [datetime]",
+            # 3. Keep old one as fallback
             "article[data-testid='activity-entry'] time",
-            # 2. datetime属性を持つ要素 (次に理想的)
-            "article[data-testid='activity-entry'] [datetime]",
-            # 3. 以前のセレクタ (クラス名に依存するため脆弱)
-            "article[data-testid='activity-entry'] .css-125iqyy",
         ]
 
         time_element = None
@@ -464,7 +464,7 @@ def get_last_activity_date(driver, user_profile_url):
         if not time_element:
             logger.info("固定セレクタでの探索に失敗。テキストパターンによるフォールバック検索を開始します。")
             # 活動日記エントリのコンテナ内で、日付らしいテキストを持つspanを探す
-            fallback_selector_pattern = "article[data-testid='activity-entry'] span"
+            fallback_selector_pattern = "div.ProfileActivities__Activity span"
             try:
                 candidate_elements = WebDriverWait(driver, 5).until(
                     EC.presence_of_all_elements_located((By.CSS_SELECTOR, fallback_selector_pattern))
