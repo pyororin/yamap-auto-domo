@@ -120,6 +120,7 @@ def get_latest_activity_url(driver, user_profile_url):
         #    通常、プロフィールページの活動日記リストの最初のアイテムが最新です。
         activity_link_selectors = [
             "div.ProfileActivities__Activity a",                             # New robust selector
+            "[data-testid='activity-card'] a",                               # New guessed selector
             "article[data-testid='activity-entry'] a[href^='/activities/']", # Keep old one as fallback
             "a[data-testid='activity-card-link']",                           # Keep old one as fallback
         ]
@@ -444,9 +445,11 @@ def get_last_activity_date(driver, user_profile_url):
         date_selectors = [
             # 1. New robust selector
             "div.ProfileActivities__Activity time",
-            # 2. New robust selector with datetime attribute
+            # 2. New guessed selector
+            "[data-testid='activity-card'] time",
+            # 3. New robust selector with datetime attribute
             "div.ProfileActivities__Activity [datetime]",
-            # 3. Keep old one as fallback
+            # 4. Keep old one as fallback
             "article[data-testid='activity-entry'] time",
         ]
 
