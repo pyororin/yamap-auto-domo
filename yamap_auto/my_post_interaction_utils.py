@@ -99,7 +99,7 @@ def get_my_activities_within_period(driver, user_profile_url, days_to_check):
     else:
         logger.info(f"既にプロフィールページ ({target_url_to_get}) または互換URLに滞在中です。")
 
-    activity_item_selector = "article[data-testid='activity-entry']"
+    activity_item_selector = "div.ProfileActivities__Activity"
 
     logger.info(f"活動記録アイテム ({activity_item_selector}) の表示を待ちます...")
     try:
@@ -119,8 +119,8 @@ def get_my_activities_within_period(driver, user_profile_url, days_to_check):
         return activities_within_period
 
     # 脆いクラス名セレクタを、より汎用的な構造ベースのセレクタに変更
-    activity_link_selector_in_item = "h3 a"
-    activity_date_selector_in_item = "p span"
+    activity_link_selector_in_item = "a"
+    activity_date_selector_in_item = "time"
 
     logger.info(f"{len(activity_elements)} 件の活動記録を検出しました。")
 
@@ -133,21 +133,35 @@ def get_my_activities_within_period(driver, user_profile_url, days_to_check):
 
     for item_idx, item_article_element in enumerate(activity_elements):
         try:
-            date_element = item_article_element.find_element(By.CSS_SELECTOR, activity_date_selector_in_item)
             activity_date = None
-            date_str_text = date_element.text.strip()
+            try:
+                # First, try to get date from <time> element's datetime attribute
+                date_element = item_article_element.find_element(By.CSS_SELECTOR, activity_date_selector_in_item)
+                datetime_str = date_element.get_attribute("datetime")
+                if datetime_str:
+                    # Handle ISO format with 'Z' for UTC
+                    if datetime_str.endswith('Z'):
+                        # Python's fromisoformat doesn't handle 'Z' before 3.11
+                        # so we manually remove it and add timezone info.
+                        dt_object = datetime.fromisoformat(datetime_str.replace('Z', '+00:00'))
+                    else:
+                        dt_object = datetime.fromisoformat(datetime_str)
+                    activity_date = dt_object
+            except (NoSuchElementException, ValueError) as e:
+                 logger.warning(f"活動記録 {item_idx+1}: <time> タグのdatetime属性からの日付取得に失敗: {e}。テキストからの解析を試みます。")
 
-            if date_str_text:
+            # Fallback to text parsing if attribute fails or doesn't exist
+            if not activity_date:
                 try:
-                    date_text_main_part = date_str_text.split('(')[0].strip()
-                    activity_date = datetime.strptime(date_text_main_part, "%Y.%m.%d")
-                    logger.debug(f"活動記録 {item_idx+1}: テキスト日付 '{date_str_text}' (解析対象: '{date_text_main_part}') -> {activity_date.strftime('%Y-%m-%d')}")
-                except ValueError:
-                     logger.warning(f"活動記録 {item_idx+1}: テキスト日付形式 ({date_str_text}) も不明です。スキップします。")
+                    # Re-find the element if it wasn't found before or to get text
+                    date_element = item_article_element.find_element(By.CSS_SELECTOR, activity_date_selector_in_item)
+                    date_str_text = date_element.text.strip()
+                    if date_str_text:
+                        date_text_main_part = date_str_text.split('(')[0].strip()
+                        activity_date = datetime.strptime(date_text_main_part, "%Y.%m.%d")
+                except (NoSuchElementException, ValueError) as e:
+                     logger.warning(f"活動記録 {item_idx+1}: テキストからの日付解析にも失敗: {e}。スキップします。")
                      continue
-            else:
-                logger.warning(f"活動記録 {item_idx+1}: 日付情報が取得できませんでした。スキップします。")
-                continue
 
             if not activity_date:
                 logger.warning(f"活動記録 {item_idx+1}: 有効な日付が特定できませんでした。スキップします。")
@@ -213,7 +227,7 @@ def get_domo_users_from_activity(driver, activity_url):
 
     driver.get(activity_url)
     # Attempt to wait for a general activity page container
-    activity_page_container_selector = "div.ActivitiesId" # 新しいセレクタ案
+    activity_page_container_selector = "div.ActivityDetailTabLayout" # 新しいセレクタ案
     activity_title_selector = "h1.ActivityDetailTabLayout__Title" # これは div.ActivitiesId の内部にある想定
 
     try:
