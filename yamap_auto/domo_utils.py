@@ -10,6 +10,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException, StaleElementReferenceException
 from selenium.webdriver.common.action_chains import ActionChains
 
+import os
 from .driver_utils import get_main_config, save_screenshot
 
 logger = logging.getLogger(__name__)
@@ -142,3 +143,108 @@ def domo_timeline_activities(driver):
 
     logger.info(f"<<< タイムラインDOMO機能完了。合計 {domoed_count} 件の活動記録にDOMOしました。")
     return domoed_count
+
+def domo_activity(driver, activity_url, base_url_for_log=None):
+    """
+    指定された活動記録URLのページに直接アクセスし、DOMOを実行します。
+    この関数は search_utils など、特定の活動にDOMOしたい場合に使用されます。
+    """
+    activity_id_for_log = activity_url.split('/')[-1] if activity_url else "N/A"
+    log_prefix = f"[DOMO_PAGE][{activity_id_for_log}]"
+    logger.info(f"{log_prefix} 活動記録ページ ({activity_url}) にDOMOを実行します。")
+
+    if not activity_url:
+        logger.error(f"{log_prefix} activity_urlが提供されませんでした。")
+        return False
+
+    current_url = driver.current_url
+    if activity_url not in current_url:
+        logger.info(f"{log_prefix} ページ ({activity_url}) へ遷移します。")
+        driver.get(activity_url)
+        try:
+            # ページ読み込み待機: 活動記録のタイトルが表示されるまで
+            WebDriverWait(driver, 20).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "h1[data-testid='activity-title']"))
+            )
+            logger.info(f"{log_prefix} ページ読み込み完了。")
+        except TimeoutException:
+            logger.error(f"{log_prefix} ページ読み込みタイムアウト。")
+            save_screenshot(driver, "DOMO_PageLoadTimeout", activity_id_for_log)
+            return False
+
+    try:
+        # 1. 既にリアクション済みか確認
+        try:
+            # .viewer-has-reacted クラスを持つボタンがあれば、リアクション済み
+            driver.find_element(By.CSS_SELECTOR, "button.emoji-button.viewer-has-reacted")
+            logger.info(f"{log_prefix} 既にリアクション済みのためスキップします。")
+            return False # 既にDOMO済みなので成功ではないが、エラーでもない
+        except NoSuchElementException:
+            # リアクション済みでなければOK
+            pass
+
+        # 2. 絵文字追加ボタン(+)をクリック
+        # セレクタ候補: [data-testid='add-reaction-button'], button.emoji-add-button
+        add_emoji_button_selectors = [
+            "button[data-testid='add-reaction-button']",
+            "button.emoji-add-button"
+        ]
+        add_emoji_button = None
+        for selector in add_emoji_button_selectors:
+            try:
+                add_emoji_button = driver.find_element(By.CSS_SELECTOR, selector)
+                if add_emoji_button.is_displayed():
+                    logger.info(f"{log_prefix} 絵文字追加ボタン(+)をセレクタ '{selector}' で発見。")
+                    break
+            except NoSuchElementException:
+                continue
+
+        if not add_emoji_button:
+            logger.error(f"{log_prefix} 絵文字追加ボタン(+)が見つかりませんでした。")
+            save_screenshot(driver, "DOMO_AddButtonNotFound", activity_id_for_log)
+            return False
+
+        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", add_emoji_button)
+        time.sleep(0.5)
+        add_emoji_button.click()
+        logger.info(f"{log_prefix} 絵文字追加ボタン(+)をクリックしました。")
+
+        # 3. DOMO絵文字をクリック
+        # セレクタ候補: button[title='DOMO'], button[data-testid='domo-emoji']
+        domo_emoji_selector = "button[title='DOMO']"
+        domo_emoji = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, domo_emoji_selector))
+        )
+        domo_emoji.click()
+        logger.info(f"{log_prefix} DOMOボタンをクリックしました。")
+
+        # 成功したかどうかの確認
+        try:
+            WebDriverWait(driver, 5).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "button.emoji-button.viewer-has-reacted"))
+            )
+            logger.info(f"{log_prefix} DOMO成功を確認。")
+            return True
+        except TimeoutException:
+            logger.warning(f"{log_prefix} DOMO後の確認に失敗。成功した可能性はあります。")
+            return False # 確認できなかったのでFalse
+
+    except (NoSuchElementException, TimeoutException) as e:
+        logger.error(f"{log_prefix} DOMO処理中にエラーが発生しました: {type(e).__name__}")
+        save_screenshot(driver, "DOMO_ActionFailed", activity_id_for_log)
+        # HTMLも保存する
+        try:
+            html_source = driver.page_source
+            debug_html_dir = "logs/debug_html"
+            os.makedirs(debug_html_dir, exist_ok=True)
+            filename = f"DOMO_ActionFailed_{activity_id_for_log}_{time.strftime('%Y%m%d-%H%M%S')}.html"
+            with open(os.path.join(debug_html_dir, filename), "w", encoding="utf-8") as f:
+                f.write(html_source)
+            logger.info(f"{log_prefix} デバッグ用のHTMLを保存しました: {filename}")
+        except Exception as e_html:
+            logger.error(f"{log_prefix} デバッグ用HTMLの保存に失敗: {e_html}")
+        return False
+    except Exception as e:
+        logger.error(f"{log_prefix} 予期せぬエラー: {e}", exc_info=True)
+        save_screenshot(driver, "DOMO_UnexpectedError", activity_id_for_log)
+        return False

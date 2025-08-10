@@ -62,10 +62,8 @@ from .user_profile_utils import (
 )
 # domo_utils から必要なものをインポート
 from .domo_utils import (
-    domo_activity,
     domo_timeline_activities,
-    domo_timeline_activities_parallel,
-    # domo_activity_task は domo_utils 内部でのみ使用されるため、ここではインポート不要
+    # domo_activity and domo_timeline_activities_parallel were removed in a refactoring.
 )
 # follow_utils から必要なものをインポート
 from .follow_utils import (
@@ -336,17 +334,13 @@ def execute_main_tasks(driver, user_id, shared_cookies):
         logger.info("フォローバック機能は設定で無効です。")
 
     # タイムラインDOMO機能
-    if main_config.get("enable_timeline_domo", False): # ★修正: main_config から直接取得
+    if main_config.get("enable_timeline_domo", False):
         start_time = time.time()
-        timeline_domo_count = 0
-        if PARALLEL_PROCESSING_SETTINGS.get("enable_parallel_processing", False) and shared_cookies:
-            logger.info("タイムラインDOMO機能 (並列処理) を呼び出します。")
-            timeline_domo_count = domo_timeline_activities_parallel(driver, shared_cookies, user_id)
-        else:
-            if PARALLEL_PROCESSING_SETTINGS.get("enable_parallel_processing", False) and not shared_cookies:
-                logger.warning("並列処理が有効ですがCookie共有ができなかったため、タイムラインDOMOは逐次実行されます。")
-            logger.info("タイムラインDOMO機能 (逐次処理) を呼び出します。")
-            timeline_domo_count = domo_timeline_activities(driver)
+        # 並列処理はリファクタリングで削除されたため、常に逐次処理を呼び出す
+        if PARALLEL_PROCESSING_SETTINGS.get("enable_parallel_processing", False):
+             logger.warning("並列処理は現在サポートされていません。タイムラインDOMOは逐次実行されます。")
+        logger.info("タイムラインDOMO機能 (逐次処理) を呼び出します。")
+        timeline_domo_count = domo_timeline_activities(driver)
         summary_counts['timeline_domo'] = timeline_domo_count if isinstance(timeline_domo_count, int) else 0
         end_time = time.time()
         logger.info(f"タイムラインDOMO機能の処理時間: {end_time - start_time:.2f}秒。成功数: {summary_counts['timeline_domo']}")
@@ -410,23 +404,6 @@ def main():
             return
 
         if perform_login(driver, YAMAP_EMAIL, YAMAP_PASSWORD, MY_USER_ID):
-            # --- Jules's Verification Code ---
-            logger.info("--- START: Jules's Verification Code ---")
-
-            target_user_url = f"https://yamap.com/users/{MY_USER_ID}"
-            logger.info(f"Attempting to get last activity date for user: {target_user_url}")
-
-            last_activity = get_last_activity_date(driver, target_user_url)
-
-            if last_activity:
-                logger.info(f"SUCCESS: Successfully fetched last activity date: {last_activity}")
-            else:
-                logger.error("FAILURE: Could not fetch last activity date.")
-
-            logger.info("--- END: Jules's Verification Code ---")
-            # --- End of Jules's Verification Code ---
-            return
-
             shared_cookies = get_shared_cookies(driver)
             summary = execute_main_tasks(driver, MY_USER_ID, shared_cookies)
             logger.info("全ての有効な処理が完了しました。")
