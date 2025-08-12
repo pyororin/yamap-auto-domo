@@ -88,10 +88,14 @@ def get_my_activities_within_period(driver, user_profile_url, days_to_check):
         logger.info(f"プロフィールページ ({target_url_to_get}) にアクセスします。")
         driver.get(target_url_to_get)
         try:
+            logger.debug(f"プロフィールページの主要要素（活動記録タブ or ユーザー名）の表示を待ちます...")
             WebDriverWait(driver, 15).until(
-                EC.url_matches(f"^{target_url_to_get}(?:/|\\?.*)?$")
+                EC.any_of(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "a[data-testid='profile-tab-activities']")),
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "h1[class*='UserProfileScreen_userName']"))
+                )
             )
-            logger.info(f"プロフィールページ ({target_url_to_get}) の読み込みを確認しました。")
+            logger.info(f"プロフィールページ ({target_url_to_get}) の主要要素の読み込みを確認しました。")
         except TimeoutException:
             logger.warning(f"プロフィールページ ({target_url_to_get}) の読み込み確認タイムアウト。")
             save_screenshot(driver, "ProfilePageLoadTimeout", target_url_to_get.split('/')[-1])
@@ -99,23 +103,30 @@ def get_my_activities_within_period(driver, user_profile_url, days_to_check):
     else:
         logger.info(f"既にプロフィールページ ({target_url_to_get}) または互換URLに滞在中です。")
 
-    activity_item_selector = "div.ProfileActivities__Activity"
+    activity_item_selectors = [
+        "div.ProfileActivities__Activity",
+        "[data-testid='activity-card']",
+        "article[data-testid='activity-entry']"
+    ]
+    activity_elements = []
 
-    logger.info(f"活動記録アイテム ({activity_item_selector}) の表示を待ちます...")
-    try:
-        WebDriverWait(driver, 20).until(
-            EC.presence_of_all_elements_located((By.CSS_SELECTOR, activity_item_selector))
-        )
-        logger.info(f"活動記録アイテム ({activity_item_selector}) の表示を確認しました。")
-        activity_elements = driver.find_elements(By.CSS_SELECTOR, activity_item_selector)
+    for selector in activity_item_selectors:
+        logger.info(f"活動記録アイテム ({selector}) の表示を試行します...")
+        try:
+            WebDriverWait(driver, 7).until(
+                EC.presence_of_all_elements_located((By.CSS_SELECTOR, selector))
+            )
+            activity_elements = driver.find_elements(By.CSS_SELECTOR, selector)
+            if activity_elements:
+                logger.info(f"活動記録アイテムをセレクタ '{selector}' で発見しました。")
+                break
+        except TimeoutException:
+            logger.warning(f"セレクタ '{selector}' で活動記録アイテムが見つかりませんでした (タイムアウト)。")
+            continue
 
-    except TimeoutException:
-        logger.warning(f"活動記録アイテム ({activity_item_selector}) の表示タイムアウト (最大20秒)。")
-        save_screenshot(driver, "ActivityItemTimeout", target_url_to_get.split('/')[-1])
-        return activities_within_period
-    except NoSuchElementException:
-        logger.warning(f"活動記録アイテム ({activity_item_selector}) が見つかりませんでした。")
-        save_screenshot(driver, "ActivityItemNotFound", target_url_to_get.split('/')[-1])
+    if not activity_elements:
+        logger.error("全てのセレクタ候補で活動記録アイテムが見つかりませんでした。処理を中断します。")
+        save_screenshot(driver, "ActivityItemTimeoutOrNotFound", target_url_to_get.split('/')[-1])
         return activities_within_period
 
     # 脆いクラス名セレクタを、より汎用的な構造ベースのセレクタに変更
