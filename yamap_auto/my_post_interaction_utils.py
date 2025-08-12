@@ -262,50 +262,48 @@ def get_domo_users_from_activity(driver, activity_url):
         save_screenshot(driver, "ActivityPageLoadGenericError_NewSel", activity_id_for_log) # スクリーンショットファイル名変更
         return domo_users
 
-    # DOMOしたユーザー一覧へ遷移するボタンを探す (クラス名とテキスト内容で判断)
-    domo_button_xpath = "//button[contains(@class, 'ActivityToolBar__Button') and contains(normalize-space(), '人')]"
+    # DOMO(リアクション)したユーザー一覧へ遷移するリンクを探す
+    # ユーザー提供のHTML: <a ... href=".../reactions..." class="ActivityToolBar__ReactionLink">...</a>
+    # この情報に基づき、hrefとclassの両方で探すことで、より堅牢なセレクタにする
+    reaction_link_xpath = "//a[contains(@class, 'ActivityToolBar__ReactionLink') and contains(@href, '/reactions')]"
     try:
-        logger.info(f"DOMOしたユーザー一覧へのボタンを探しています (XPath: {domo_button_xpath})...")
-        domo_button = WebDriverWait(driver, 10).until(
-            EC.element_to_be_clickable((By.XPATH, domo_button_xpath))
+        logger.info(f"DOMO(リアクション)したユーザー一覧へのリンクを探しています (XPath: {reaction_link_xpath})...")
+        domo_button = WebDriverWait(driver, 15).until(
+            EC.element_to_be_clickable((By.XPATH, reaction_link_xpath))
         )
         button_text_for_log = domo_button.text.strip()
-        logger.info(f"DOMOしたユーザー一覧へのボタン ('{button_text_for_log}') を発見。")
+        logger.info(f"DOMO(リアクション)一覧へのリンク ('{button_text_for_log}') を発見。")
 
-        # DOMO数をパース
+        # DOMO数をパース (新しい形式 "166件" に対応)
         domo_count = 0
         try:
-            # "人" を取り除き、数値に変換
-            domo_count_str = button_text_for_log.replace("人", "").strip()
-            if domo_count_str.isdigit(): # "コメントする" など他のテキストでないことを確認
+            # "件" を取り除き、数値に変換
+            domo_count_str = button_text_for_log.replace("件", "").strip()
+            if domo_count_str.isdigit():
                 domo_count = int(domo_count_str)
             else:
-                # "人" を含むが数値ではない場合 (例: "コメントする" のような想定外のボタンを拾った場合)
-                # 基本的にXPathで `contains(normalize-space(), '人')` を指定しているので、
-                # 純粋な数字+"人" の形式を期待している。
-                logger.warning(f"DOMOボタンのテキスト ('{button_text_for_log}') からDOMO数をパースできませんでした。DOMO数0として扱います。")
-                domo_count = 0 # 安全のため0人扱い
+                logger.warning(f"DOMOリンクのテキスト ('{button_text_for_log}') からDOMO数をパースできませんでした。DOMO数0として扱います。")
+                domo_count = 0
 
         except ValueError:
-            logger.warning(f"DOMOボタンのテキスト ('{button_text_for_log}') からDOMO数をパース中にエラー。DOMO数0として扱います。")
-            domo_count = 0 # パース失敗時も0人扱い
+            logger.warning(f"DOMOリンクのテキスト ('{button_text_for_log}') からDOMO数をパース中にエラー。DOMO数0として扱います。")
+            domo_count = 0
 
         if domo_count == 0:
-            logger.info(f"DOMOユーザー数が見つかったボタンテキスト ('{button_text_for_log}') から0人と判断されたため、DOMOユーザー一覧の取得処理をスキップします。")
-            return domo_users # 空のリストを返す
+            logger.info(f"DOMOユーザー数が見つかったリンクテキスト ('{button_text_for_log}') から0人と判断されたため、DOMOユーザー一覧の取得処理をスキップします。")
+            return domo_users
 
-        # DOMO数が0より大きい場合のみクリックと待機処理を行う
-        logger.info(f"DOMOユーザー数が {domo_count} 人のため、ボタンをクリックします。")
+        logger.info(f"DOMOユーザー数が {domo_count} 人のため、リンクをクリックします。")
         domo_button.click()
 
-        # DOMOユーザー一覧ページへの遷移/表示を待機
-        # 最初のユーザーリンクが表示されることを期待する
-        domo_list_page_indicator_selector = "a.DomoUserListItem__UserLink"
+        # DOMOユーザー一覧ページへの遷移/表示を待機 (新しいセレクタ)
+        # 最初のユーザーリンクが表示されるか、URLが変わることを期待
+        domo_list_page_indicator_selector = "a[href^='/users/']" # ユーザープロファイルへのリンク
 
-        logger.info(f"DOMOユーザー一覧の表示を待ちます (セレクタ: {domo_list_page_indicator_selector})...")
+        logger.info(f"DOMOユーザー一覧の表示を待ちます (セレクタ: {domo_list_page_indicator_selector} または URLに /reactions)...")
         WebDriverWait(driver, 15).until(
             EC.any_of(
-                EC.url_contains("/domos"), # URLでの確認も残す
+                EC.url_contains("/reactions"), # URLでの確認
                 EC.presence_of_element_located((By.CSS_SELECTOR, domo_list_page_indicator_selector))
             )
         )
@@ -323,20 +321,16 @@ def get_domo_users_from_activity(driver, activity_url):
 
     # --- ここからDOMOユーザー一覧ページでの処理 ---
     # ユーザー提供のHTMLに基づいたセレクタ
-    # <button data-v-a51e5818="" data-v-5bf08ddc="" class="DomoUserListModal__ReadMore BaseButton is-size-m is-variant-outline" data-v-70a616f8="">
-    # <a data-v-5eca6d0a="" href="/users/3462839" class="DomoUserListItem__UserLink">
-    #   <div data-v-69308071="" data-v-5eca6d0a="" class="DomoUserListItem__UserAvatar RidgeUserAvatarImage RidgeUserAvatarImage--size40">
-    #     <img data-v-69308071="" src="..." alt="mako" ...>
-    #   </div>
-    # </a>
-    # 親要素の特定が難しいため、DomoUserListItem__UserLink を持つ要素を直接探す
+    # 新しいHTML構造に基づいたセレクタ
+    # ユーザーリストは動的にロードされるため、より汎用的なセレクタを使用
     user_list_container_selector = "body" # 広めに取っておき、個別のユーザーリンクを探す
-    user_link_selector_specific = "a.DomoUserListItem__UserLink" # ユーザープロファイルへのリンク
-    # ユーザー名は img の alt 属性から取得する想定
-    user_avatar_image_selector_in_link = "img.RidgeUserAvatarImage__Avatar"
+    user_link_selector_specific = "a[href^='/users/']" # ユーザープロファイルへのリンク
+    # ユーザー名は img の alt 属性か、リンクのテキストから取得する想定
+    user_avatar_image_selector_in_link = "img" # リンク内のimgタグ
 
-    # 「もっと見る」ボタンのセレクタ
-    read_more_button_selector = "button.DomoUserListModal__ReadMore.BaseButton.is-size-m.is-variant-outline"
+    # 「もっと見る」ボタンのセレクタ (新しいクラス名に更新が必要な可能性がある)
+    # HTMLソースからは 'css-1s5vn8j' のような動的クラスが確認された。テキスト内容で探す方が堅牢。
+    read_more_button_selector = "//button[contains(normalize-space(), 'もっと見る')]"
 
     processed_profile_urls = set() # 既に処理したプロフィールURLを記録
 
@@ -366,20 +360,30 @@ def get_domo_users_from_activity(driver, activity_url):
                         profile_url = BASE_URL + profile_url
 
                     if "/users/" in profile_url and profile_url not in processed_profile_urls:
-                        user_name = "N/A" # デフォルト名
+                        processed_profile_urls.add(profile_url) # Add to set early to prevent re-processing
+                        new_users_found_in_this_iteration +=1
+
+                        user_name = ""
                         try:
                             # リンク内のアバター画像を探し、altテキストからユーザー名を取得
                             avatar_img = link_el.find_element(By.CSS_SELECTOR, user_avatar_image_selector_in_link)
                             user_name = avatar_img.get_attribute("alt")
-                            if not user_name: # altが空の場合もあるかもしれない
-                                user_name = f"User_{profile_url.split('/')[-1]}" # IDから仮名を生成
                         except NoSuchElementException:
-                            logger.warning(f"プロフィール ({profile_url}) のアバター画像または名前が見つかりません。")
-                            user_name = f"User_{profile_url.split('/')[-1]}" # IDから仮名を生成
+                            # 画像が見つからない場合、リンクのテキストをユーザー名として試す
+                            user_name = link_el.text.strip()
 
-                        domo_users.append({"name": user_name, "profile_url": profile_url})
-                        processed_profile_urls.add(profile_url)
-                        new_users_found_in_this_iteration +=1
+                        if not user_name:
+                            # それでも名前が空の場合 (altもテキストも空)、IDから仮名を生成
+                            logger.warning(f"ユーザー名が特定できませんでした ({profile_url})。IDから仮名を生成します。")
+                            user_name = f"User_{profile_url.split('/')[-1]}"
+
+                        # ユーザー名が "N/A" や空文字列でない、かつ意味のある名前であることを確認
+                        if user_name and user_name != "N/A" and not user_name.startswith("User_"):
+                            domo_users.append({"name": user_name, "profile_url": profile_url})
+                        else:
+                            logger.debug(f"  ユーザー名が有効でないためスキップ: '{user_name}' ({profile_url})")
+                            continue # domo_users には追加しない
+
                         logger.debug(f"  DOMOユーザー発見: {user_name} ({profile_url})")
                     elif profile_url in processed_profile_urls:
                         logger.debug(f"  DOMOユーザー ({profile_url}) は既にリストに追加済みです。")
@@ -394,7 +398,8 @@ def get_domo_users_from_activity(driver, activity_url):
 
         # 「もっと見る」ボタンを探してクリック
         try:
-            read_more_button = driver.find_element(By.CSS_SELECTOR, read_more_button_selector)
+            # セレクタをXPathに変更したため、By.XPATHを使用
+            read_more_button = driver.find_element(By.XPATH, read_more_button_selector)
             if read_more_button.is_displayed() and read_more_button.is_enabled():
                 logger.info("「もっと見る」ボタンを発見。クリックします。")
                 # ボタンが画面内にないとクリックできないことがあるため、スクロールする
