@@ -92,7 +92,8 @@ def get_my_activities_within_period(driver, user_profile_url, days_to_check):
             WebDriverWait(driver, 15).until(
                 EC.any_of(
                     EC.presence_of_element_located((By.CSS_SELECTOR, "a[data-testid='profile-tab-activities']")),
-                    EC.presence_of_element_located((By.CSS_SELECTOR, "h1[class*='UserProfileScreen_userName']"))
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "h1[class*='UserProfileScreen_userName']")),
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "article[data-testid='activity-entry']")) # for own profile
                 )
             )
             logger.info(f"プロフィールページ ({target_url_to_get}) の主要要素の読み込みを確認しました。")
@@ -144,55 +145,57 @@ def get_my_activities_within_period(driver, user_profile_url, days_to_check):
 
     for item_idx, item_article_element in enumerate(activity_elements):
         try:
+            # --- Robust Date Parsing ---
             activity_date = None
+            # First, try to find a <time> element and parse its datetime attribute
             try:
-                # First, try to get date from <time> element's datetime attribute
-                date_element = item_article_element.find_element(By.CSS_SELECTOR, activity_date_selector_in_item)
-                datetime_str = date_element.get_attribute("datetime")
+                time_el = item_article_element.find_element(By.TAG_NAME, "time")
+                datetime_str = time_el.get_attribute("datetime")
                 if datetime_str:
-                    # Handle ISO format with 'Z' for UTC
                     if datetime_str.endswith('Z'):
-                        # Python's fromisoformat doesn't handle 'Z' before 3.11
-                        # so we manually remove it and add timezone info.
-                        dt_object = datetime.fromisoformat(datetime_str.replace('Z', '+00:00'))
+                        activity_date = datetime.fromisoformat(datetime_str.replace('Z', '+00:00'))
                     else:
-                        dt_object = datetime.fromisoformat(datetime_str)
-                    activity_date = dt_object
-            except (NoSuchElementException, ValueError) as e:
-                 logger.warning(f"活動記録 {item_idx+1}: <time> タグのdatetime属性からの日付取得に失敗: {e}。テキストからの解析を試みます。")
+                        activity_date = datetime.fromisoformat(datetime_str)
+            except (NoSuchElementException, ValueError):
+                pass # If <time> not found or attr is invalid, proceed to span search
 
-            # Fallback to text parsing if attribute fails or doesn't exist
+            # If date not found, search all <span> elements within the card
             if not activity_date:
-                try:
-                    # Re-find the element if it wasn't found before or to get text
-                    date_element = item_article_element.find_element(By.CSS_SELECTOR, activity_date_selector_in_item)
-                    date_str_text = date_element.text.strip()
-                    if date_str_text:
-                        date_text_main_part = date_str_text.split('(')[0].strip()
-                        activity_date = datetime.strptime(date_text_main_part, "%Y.%m.%d")
-                except (NoSuchElementException, ValueError) as e:
-                     logger.warning(f"活動記録 {item_idx+1}: テキストからの日付解析にも失敗: {e}。スキップします。")
-                     continue
+                candidate_spans = item_article_element.find_elements(By.TAG_NAME, "span")
+                for span in candidate_spans:
+                    date_text = span.text.strip()
+                    if not date_text:
+                        continue
+                    try:
+                        date_part_match = re.match(r"(\d{4}\.\d{2}\.\d{2})", date_text)
+                        if date_part_match:
+                            activity_date = datetime.strptime(date_part_match.group(1), "%Y.%m.%d")
+                            break
+                        elif "年" in date_text and "月" in date_text and "日" in date_text:
+                            date_part_jp = date_text.split("(")[0].strip()
+                            activity_date = datetime.strptime(date_part_jp, "%Y年%m月%d日")
+                            break
+                    except ValueError:
+                        continue
 
             if not activity_date:
-                logger.warning(f"活動記録 {item_idx+1}: 有効な日付が特定できませんでした。スキップします。")
+                logger.warning(f"活動記録アイテム {item_idx+1}: 有効な日付が特定できませんでした。スキップします。")
                 continue
 
-            logger.debug(f"活動記録 {item_idx+1}: 最終的な解析日付 '{activity_date.strftime('%Y-%m-%d')}'")
+            logger.debug(f"活動記録 {item_idx+1}: 解析日付 '{activity_date.strftime('%Y-%m-%d')}'")
 
+            # --- Date Check and URL Extraction ---
             if activity_date.date() >= cutoff_date.date():
-                activity_url = None
                 try:
                     link_element = item_article_element.find_element(By.CSS_SELECTOR, activity_link_selector_in_item)
                     activity_url_path = link_element.get_attribute("href")
 
                     if activity_url_path:
+                        activity_url = activity_url_path
                         if activity_url_path.startswith("/"):
                             activity_url = BASE_URL + activity_url_path
-                        elif activity_url_path.startswith(BASE_URL):
-                            activity_url = activity_url_path
 
-                        if activity_url and "/activities/" in activity_url:
+                        if "/activities/" in activity_url:
                             activity_id_for_log = activity_url.split('/')[-1].split('?')[0]
                             logger.info(f"  対象期間内の活動記録を発見: {activity_id_for_log} (日付: {activity_date.strftime('%Y-%m-%d')})")
                             activities_within_period.append(activity_url)
@@ -203,20 +206,10 @@ def get_my_activities_within_period(driver, user_profile_url, days_to_check):
                 except NoSuchElementException:
                     logger.warning(f"  活動記録アイテム {item_idx+1}: リンク要素 ({activity_link_selector_in_item}) が見つかりません。")
             else:
-                log_activity_id = f"アイテムインデックス {item_idx+1}"
-                try:
-                    if 'activity_url_path' in locals() and activity_url_path and "/activities/" in activity_url_path:
-                        log_activity_id = activity_url_path.split('/')[-1].split('?')[0]
-                except Exception:
-                    pass
-                logger.info(f"活動記録 {log_activity_id} (日付: {activity_date.strftime('%Y-%m-%d')}) は対象期間外です。これ以降の投稿も期間外とみなし処理を終了。")
+                logger.info(f"活動記録 (日付: {activity_date.strftime('%Y-%m-%d')}) は対象期間外です。これ以降の投稿も期間外とみなし処理を終了。")
                 break
-        except NoSuchElementException as e_nse_item:
-            logger.warning(f"活動記録アイテム {item_idx+1} 内で必須要素 (日付等) が見つかりません: {e_nse_item}。スキップします。")
         except Exception as e_item_process:
             logger.error(f"活動記録アイテム {item_idx+1} の処理中に予期せぬエラー: {e_item_process}", exc_info=True)
-        except Exception as e_outer_list:
-            logger.error(f"活動記録リストの処理のどこかで予期せぬエラー: {e_outer_list}", exc_info=True)
 
     logger.info(f"取得した対象期間内の活動記録URL数: {len(activities_within_period)} 件")
     return activities_within_period
