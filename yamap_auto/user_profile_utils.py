@@ -416,20 +416,16 @@ def get_last_activity_date(driver, user_profile_url):
         logger.debug(f"対象のユーザープロフィールページ ({user_profile_url}) に遷移します。")
         driver.get(user_profile_url)
         try:
-            # プロフィールページの主要コンテナ（活動日記リストを含むエリア）を待つ
-            # 複数の候補セレクタで待機し、堅牢性を高める
-            container_selector_1 = "main[role='main']"
-            container_selector_2 = "div.ProfileScreen" # 新しいUI用のフォールバック候補
-            logger.debug(f"プロフィールページ主要コンテナの表示を待ちます (候補: '{container_selector_1}', '{container_selector_2}')")
+            logger.debug(f"プロフィールページの主要要素（活動記録タブ or ユーザー名）の表示を待ちます...")
             WebDriverWait(driver, profile_element_timeout).until(
                 EC.any_of(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, container_selector_1)),
-                    EC.presence_of_element_located((By.CSS_SELECTOR, container_selector_2))
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "a[data-testid='profile-tab-activities']")),
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "h1[class*='UserProfileScreen_userName']"))
                 )
             )
-            logger.debug("プロフィールページ主要コンテナの表示を確認しました。")
+            logger.debug("プロフィールページの主要要素の表示を確認しました。")
         except TimeoutException:
-            logger.warning(f"ユーザー ({user_id_log}) のプロフィールページ主要コンテナの読み込みタイムアウト ({profile_element_timeout}秒)。最新活動日時取得失敗の可能性。")
+            logger.warning(f"ユーザー ({user_id_log}) のプロフィールページ主要要素の読み込みタイムアウト ({profile_element_timeout}秒)。最新活動日時取得失敗の可能性。")
             save_screenshot(driver, "ProfileLoadTimeout_GetDate", f"UID_{user_id_log}")
             return None
     else:

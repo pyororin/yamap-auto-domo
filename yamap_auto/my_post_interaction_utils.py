@@ -88,10 +88,14 @@ def get_my_activities_within_period(driver, user_profile_url, days_to_check):
         logger.info(f"プロフィールページ ({target_url_to_get}) にアクセスします。")
         driver.get(target_url_to_get)
         try:
+            logger.debug(f"プロフィールページの主要要素（活動記録タブ or ユーザー名）の表示を待ちます...")
             WebDriverWait(driver, 15).until(
-                EC.url_matches(f"^{target_url_to_get}(?:/|\\?.*)?$")
+                EC.any_of(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "a[data-testid='profile-tab-activities']")),
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "h1[class*='UserProfileScreen_userName']"))
+                )
             )
-            logger.info(f"プロフィールページ ({target_url_to_get}) の読み込みを確認しました。")
+            logger.info(f"プロフィールページ ({target_url_to_get}) の主要要素の読み込みを確認しました。")
         except TimeoutException:
             logger.warning(f"プロフィールページ ({target_url_to_get}) の読み込み確認タイムアウト。")
             save_screenshot(driver, "ProfilePageLoadTimeout", target_url_to_get.split('/')[-1])
