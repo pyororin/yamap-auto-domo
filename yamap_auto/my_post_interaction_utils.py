@@ -5,6 +5,7 @@
 import time
 import logging
 from datetime import datetime, timedelta
+import re
 
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
