@@ -439,13 +439,13 @@ def get_last_activity_date(driver, user_profile_url):
         # --- セレクタ候補リスト ---
         # 優先順位順に、より堅牢なセレクタから試す
         date_selectors = [
-            # 1. New robust selector
+            # Based on user-provided HTML (2025-08-12)
+            "p.css-1oi95vk > span:first-child",
+            "div.css-1s4vgyd span.css-125iqyy",
+            # Original selectors as fallbacks
             "div.ProfileActivities__Activity time",
-            # 2. New guessed selector
             "[data-testid='activity-card'] time",
-            # 3. New robust selector with datetime attribute
             "div.ProfileActivities__Activity [datetime]",
-            # 4. Keep old one as fallback
             "article[data-testid='activity-entry'] time",
         ]
 
@@ -469,7 +469,7 @@ def get_last_activity_date(driver, user_profile_url):
         if not time_element:
             logger.info("固定セレクタでの探索に失敗。テキストパターンによるフォールバック検索を開始します。")
             # 活動日記エントリのコンテナ内で、日付らしいテキストを持つspanを探す
-            fallback_selector_pattern = "div.ProfileActivities__Activity span"
+            fallback_selector_pattern = "span" # 広範囲だが、日付フォーマットにマッチするspanを探すための最終手段
             try:
                 candidate_elements = WebDriverWait(driver, 5).until(
                     EC.presence_of_all_elements_located((By.CSS_SELECTOR, fallback_selector_pattern))
