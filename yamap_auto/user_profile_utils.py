@@ -432,112 +432,55 @@ def get_last_activity_date(driver, user_profile_url):
         logger.debug(f"既にユーザープロフィールページ ({user_profile_url}) 付近にいます。")
 
     try:
-        wait_time_for_date_element = unfollow_settings.get("date_element_timeout_sec", profile_element_timeout)
-        time_element = None
-        parsed_date = None
+        # 1. Find the first activity link on the page, which is the most stable anchor.
+        logger.debug("最新活動記録のリンクをXPathで探索します: //a[starts-with(@href, '/activities/')]")
+        first_activity_link = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.XPATH, "//a[starts-with(@href, '/activities/')]"))
+        )
+        logger.info("最新活動記録のリンクを発見しました。")
 
-        # --- セレクタ候補リスト ---
-        # 優先順位順に、より堅牢なセレクタから試す
-        date_selectors = [
-            # Based on user-provided HTML (2025-08-12)
-            "p.css-1oi95vk > span:first-child",
-            "div.css-1s4vgyd span.css-125iqyy",
-            # Original selectors as fallbacks
-            "div.ProfileActivities__Activity time",
-            "[data-testid='activity-card'] time",
-            "div.ProfileActivities__Activity [datetime]",
-            "article[data-testid='activity-entry'] time",
-        ]
+        # 2. From the link, find the parent container and then all spans within it.
+        # This is robust against class name changes.
+        # The XPath finds the closest ancestor that is a div, which is likely the "card" container.
+        activity_card = first_activity_link.find_element(By.XPATH, "./ancestor::div[1]")
+        logger.debug("活動記録カードのコンテナ要素を取得しました。")
 
-        time_element = None
-        for selector in date_selectors:
-            try:
-                logger.debug(f"最新活動日時要素の探索を試行します (セレクタ: '{selector}')")
-                # Wait for the first activity entry to be present before trying to find the date within it
-                WebDriverWait(driver, wait_time_for_date_element).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, selector))
-                )
-                # find_element を使うことで、最初に見つかったものを取得 (最新の日記と仮定)
-                time_element = driver.find_element(By.CSS_SELECTOR, selector)
-                logger.info(f"最新活動日時要素をセレクタ '{selector}' で発見しました。")
-                break # 要素が見つかったらループを抜ける
-            except (NoSuchElementException, TimeoutException):
-                logger.info(f"セレクタ '{selector}' で最新活動日時要素が見つかりませんでした。次の候補を試します。")
+        candidate_spans = activity_card.find_elements(By.TAG_NAME, "span")
+        logger.info(f"カード内から {len(candidate_spans)} 個のspan要素候補を検出。日付テキストを探索します。")
+
+        # 3. Loop through the spans and find the one that contains the date.
+        for span in candidate_spans:
+            date_text = span.text.strip()
+            if not date_text:
                 continue
 
-        # 上記のセレクタで見つからなかった場合、テキストベースでのフォールバック検索
-        if not time_element:
-            logger.info("固定セレクタでの探索に失敗。テキストパターンによるフォールバック検索を開始します。")
-            # 活動日記エントリのコンテナ内で、日付らしいテキストを持つspanを探す
-            fallback_selector_pattern = "span" # 広範囲だが、日付フォーマットにマッチするspanを探すための最終手段
             try:
-                candidate_elements = WebDriverWait(driver, 5).until(
-                    EC.presence_of_all_elements_located((By.CSS_SELECTOR, fallback_selector_pattern))
-                )
-                logger.info(f"フォールバック検索: '{fallback_selector_pattern}' で {len(candidate_elements)} 件の候補を発見。")
-                for candidate in candidate_elements:
-                    candidate_text = candidate.text.strip()
-                    # 日付フォーマット 'YYYY.MM.DD' or 'YYYY年MM月DD日' にマッチするか確認
-                    if re.match(r"^\d{4}\.\d{2}\.\d{2}", candidate_text) or re.match(r"^\d{4}年\d{1,2}月\d{1,2}日", candidate_text):
-                        logger.info(f"フォールバック検索: 日付パターンに一致するテキスト ('{candidate_text}') を持つ要素を発見。")
-                        time_element = candidate
-                        break # 最初に見つかったものを採用
-            except (NoSuchElementException, TimeoutException):
-                logger.info(f"フォールバック検索 ('{fallback_selector_pattern}') でも候補要素が見つかりませんでした。")
-
-        if not time_element:
-            logger.warning(f"ユーザー ({user_id_log}) の最新の活動日時要素が見つかりませんでした（全試行後）。")
-            return None
-
-        date_text_content = time_element.text.strip()
-        logger.debug(f"Processing element. Text content: '{date_text_content}'")
-
-        if date_text_content:
-            try:
-                # Handle formats like "2025.08.08 (金)"
-                date_part = re.match(r"(\d{4}\.\d{2}\.\d{2})", date_text_content)
-                if date_part:
-                    dt_object = datetime.strptime(date_part.group(1), "%Y.%m.%d")
+                # Handle "YYYY.MM.DD (Day)" format
+                date_part_match = re.match(r"(\d{4}\.\d{2}\.\d{2})", date_text)
+                if date_part_match:
+                    dt_object = datetime.strptime(date_part_match.group(1), "%Y.%m.%d")
                     parsed_date = dt_object.date()
-                    logger.info(f"ユーザー ({user_id_log}) 最新活動日時 (テキスト YYYY.MM.DD): {parsed_date} (text: {date_text_content})")
+                    logger.info(f"ユーザー ({user_id_log}) 最新活動日時 (テキスト YYYY.MM.DD): {parsed_date} (from text: '{date_text}')")
                     return parsed_date
 
-                # Handle formats like "YYYY年MM月DD日"
-                elif "年" in date_text_content and "月" in date_text_content and "日" in date_text_content:
-                    date_part_jp = date_text_content.split("(")[0].strip()
+                # Handle "YYYY年MM月DD日" format
+                elif "年" in date_text and "月" in date_text and "日" in date_text:
+                    date_part_jp = date_text.split("(")[0].strip()
                     dt_object = datetime.strptime(date_part_jp, "%Y年%m月%d日")
                     parsed_date = dt_object.date()
-                    logger.info(f"ユーザー ({user_id_log}) 最新活動日時 (テキスト YYYY年MM月DD日): {parsed_date} (text: {date_text_content})")
+                    logger.info(f"ユーザー ({user_id_log}) 最新活動日時 (テキスト YYYY年MM月DD日): {parsed_date} (from text: '{date_text}')")
                     return parsed_date
-                else:
-                    logger.warning(f"日時テキスト '{date_text_content}' が期待形式と不一致。")
-            except ValueError as e_text_parse:
-                logger.warning(f"日時テキスト '{date_text_content}' のパースエラー: {e_text_parse}。datetime属性を試行。")
+            except ValueError:
+                # Not a date, continue to the next span
+                continue
 
-        # Fallback to datetime attribute if text parsing failed or text was empty
-        if not parsed_date:
-            datetime_str = time_element.get_attribute("datetime")
-            if datetime_str:
-                logger.debug(f"Attempting to parse datetime attribute '{datetime_str}' as fallback.")
-                try:
-                    if datetime_str.endswith('Z'):
-                        dt_object = datetime.strptime(datetime_str[:-1], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
-                    else:
-                        dt_object = datetime.fromisoformat(datetime_str)
-                    parsed_date = dt_object.date()
-                    logger.info(f"ユーザー ({user_id_log}) 最新活動日時 (datetime attr fallback): {parsed_date} (attr: {datetime_str})")
-                    return parsed_date
-                except ValueError as ve_fallback:
-                    logger.warning(f"datetime属性 '{datetime_str}' のフォールバックパース失敗: {ve_fallback}.")
-            else:
-                logger.debug("datetime属性も空または存在しません。")
+        # If no span in the first card contained a valid date
+        logger.warning(f"ユーザー ({user_id_log}) の最新活動記録カード内で日付形式のテキストが見つかりませんでした。")
+        return None
 
-        if not parsed_date:
-            logger.error(f"ユーザー ({user_id_log}) の最新活動日時を特定できませんでした。Text: '{date_text_content}', Datetime attr: '{time_element.get_attribute('datetime')}'")
-            return None
-
-        return parsed_date # Should ideally be caught by earlier returns
-
+    except TimeoutException:
+        logger.warning(f"ユーザー ({user_id_log}) のプロフィールページで活動記録リンクが見つかりませんでした。")
+        return None
     except Exception as e:
         logger.error(f"ユーザー ({user_id_log}) の最新活動日時取得中に予期せぬエラー。", exc_info=True)
         return None
