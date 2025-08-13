@@ -85,14 +85,13 @@ def _domo_an_activity(driver, feed_item_element):
 def domo_timeline_activities(driver):
     """
     タイムライン上の活動記録にDOMOする機能（逐次処理版）。
-    設定に従い、タイムライン上の活動に順次DOMOします。
+    DOMの変更に強い方法で、タイムライン上の活動に順次DOMOします。
     """
     logger.info(">>> タイムラインDOMO機能を開始します...")
     driver.get(TIMELINE_URL)
 
-    max_domo = TIMELINE_DOMO_SETTINGS.get("max_activities_to_domo_on_timeline", 10)
+    max_domo = TIMELINE_DOMO_SETTINGS.get("max_activities_to_domo_on_timeline", 5)
     domoed_count = 0
-    processed_activities = set()
 
     try:
         WebDriverWait(driver, 20).until(
@@ -101,39 +100,57 @@ def domo_timeline_activities(driver):
         logger.info("タイムラインのフィードアイテム群を発見。")
         time.sleep(TIMELINE_DOMO_SETTINGS.get("wait_after_feed_load_sec", 2.0))
 
+        # 1. Collect all unique activity URLs first.
+        activity_urls = []
         feed_items = driver.find_elements(By.CSS_SELECTOR, "li.TimelineList__Feed")
-        logger.info(f"タイムラインから {len(feed_items)} 件のフィードアイテムを検出しました。")
+        for item in feed_items:
+            try:
+                activity_link_element = item.find_element(By.CSS_SELECTOR, "a[href*='/activities/']")
+                url = activity_link_element.get_attribute('href')
+                if url and url not in activity_urls:
+                    activity_urls.append(url)
+            except NoSuchElementException:
+                logger.debug("活動記録ではないフィードアイテムをスキップします。")
+                continue
 
-        for i, item in enumerate(feed_items):
+        logger.info(f"タイムラインから {len(activity_urls)} 件のユニークな活動記録URLを検出しました。")
+
+        # 2. Iterate over the collected URLs.
+        for i, activity_url in enumerate(activity_urls):
             if domoed_count >= max_domo:
                 logger.info(f"DOMOの上限 ({max_domo}件) に達しました。")
                 break
 
+            activity_id = activity_url.split('/')[-1]
+            logger.info(f"処理中 ({i+1}/{len(activity_urls)}): activity_id={activity_id}")
+
             try:
-                # Get a unique identifier for the activity to avoid re-processing
-                activity_link_element = item.find_element(By.CSS_SELECTOR, "a[href*='/activities/']")
-                activity_url = activity_link_element.get_attribute('href')
+                # 3. Find the feed item again using a partial href match for robustness.
+                link_selector = f"a[href*='/{activity_id}']"
 
-                if activity_url in processed_activities:
-                    continue
-                processed_activities.add(activity_url)
+                activity_link_element = WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, link_selector))
+                )
 
-                if _domo_an_activity(driver, item):
+                driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", activity_link_element)
+                time.sleep(1)
+
+                feed_item = activity_link_element.find_element(By.XPATH, "./ancestor::li[contains(@class, 'TimelineList__Feed')]")
+
+                if _domo_an_activity(driver, feed_item):
                     domoed_count += 1
 
-                # Wait a bit before processing the next item
                 time.sleep(TIMELINE_DOMO_SETTINGS.get("delay_between_item_processing_sec", 0.5))
 
-            except StaleElementReferenceException:
-                logger.warning(f"フィードアイテム {i+1} の処理中に StaleElementReferenceException が発生しました。DOMが変更されたため、このアイテムをスキップします。")
-                feed_items = driver.find_elements(By.CSS_SELECTOR, "li.TimelineList__Feed") # Re-fetch items
+            except (NoSuchElementException, TimeoutException):
+                logger.warning(f"ID {activity_id} のフィードアイテムが見つからないか、タイムアウトしました。スキップします。")
                 continue
-            except NoSuchElementException:
-                # Not an activity item, just a moment or other feed type
-                logger.debug(f"フィードアイテム {i+1} は活動記録ではないためスキップします。")
+            except StaleElementReferenceException:
+                logger.warning(f"ID {activity_id} の処理中に予期せぬ StaleElementReferenceException が発生しました。スキップします。")
                 continue
             except Exception as e:
-                logger.error(f"フィードアイテム {i+1} の処理中に予期せぬエラー: {e}", exc_info=True)
+                logger.error(f"ID {activity_id} の処理中に予期せぬエラー: {e}", exc_info=True)
+                continue
 
     except TimeoutException:
         logger.warning("タイムライン活動記録の読み込みでタイムアウトしました。")
