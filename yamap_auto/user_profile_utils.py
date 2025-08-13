@@ -416,26 +416,25 @@ def get_last_activity_date(driver, user_profile_url):
         logger.debug(f"対象のユーザープロフィールページ ({user_profile_url}) に遷移します。")
         driver.get(user_profile_url)
         try:
-            # Instead of waiting for a generic profile element, directly wait for the
-            # first activity link, which is what we need anyway. This is more robust
-            # against UI changes in other parts of the profile page.
-            logger.debug(f"プロフィールページの最新活動記録リンクの表示を待ちます...")
+            # Wait for a specific activity card link to appear, to avoid matching
+            # general links like '/activities/new' in the header.
+            logger.debug(f"プロフィールページの活動日記カード内リンクの表示を待ちます...")
             WebDriverWait(driver, profile_element_timeout).until(
-                EC.presence_of_element_located((By.XPATH, "//a[starts-with(@href, '/activities/')]"))
+                EC.presence_of_element_located((By.XPATH, "//div/h3/a[starts-with(@href, '/activities/')]"))
             )
-            logger.debug("プロフィールページの最新活動記録リンクの表示を確認しました。")
+            logger.debug("プロフィールページの活動日記カード内リンクの表示を確認しました。")
         except TimeoutException:
-            logger.warning(f"ユーザー ({user_id_log}) のプロフィールページで最新活動記録リンクの読み込みタイムアウト ({profile_element_timeout}秒)。")
-            save_screenshot(driver, "ProfileActivityLinkTimeout_GetDate", f"UID_{user_id_log}")
+            logger.warning(f"ユーザー ({user_id_log}) のプロフィールページで活動日記カードの読み込みタイムアウト ({profile_element_timeout}秒)。")
+            save_screenshot(driver, "ProfileActivityCardTimeout_GetDate", f"UID_{user_id_log}")
             return None
     else:
         logger.debug(f"既にユーザープロフィールページ ({user_profile_url}) 付近にいます。")
 
     try:
-        # 1. Find the first activity link on the page, which is the most stable anchor.
-        logger.debug("最新活動記録のリンクをXPathで探索します: //a[starts-with(@href, '/activities/')]")
+        # 1. Find the first activity link on the page using the more specific selector.
+        logger.debug("最新活動記録のリンクをXPathで探索します: //div/h3/a[starts-with(@href, '/activities/')]")
         first_activity_link = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.XPATH, "//a[starts-with(@href, '/activities/')]"))
+            EC.presence_of_element_located((By.XPATH, "//div/h3/a[starts-with(@href, '/activities/')]"))
         )
         logger.info("最新活動記録のリンクを発見しました。")
 
