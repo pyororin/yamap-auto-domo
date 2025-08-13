@@ -86,7 +86,8 @@ def domo_activity(driver, activity_url, base_url_for_log=None):
         logger.info(f"{log_prefix} DOMOボタンを(JSで)クリックしました。")
 
         # Verify success
-        WebDriverWait(driver, 5).until(
+        logger.info(f"{log_prefix} DOMO成功の確認待機を開始... (最大15秒)")
+        WebDriverWait(driver, 15).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "button.emoji-button.viewer-has-reacted[data-emoji-key='domo']"))
         )
         logger.info(f"{log_prefix} DOMO成功を確認。")
