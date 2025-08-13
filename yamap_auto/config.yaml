@@ -1,22 +1,28 @@
 # === 機能の有効化/無効化 ===
-enable_follow_back: true
 # true: フォローバック機能を有効にします。
 # false: フォローバック機能を無効にします。
-enable_timeline_domo: true
+enable_follow_back: true
+
 # true: タイムラインDOMO機能を有効にします。
 # false: タイムラインDOMO機能を無効にします。
-enable_search_and_follow: false
+enable_timeline_domo: true
+
 # true: 検索結果からのフォロー＆DOMO機能を有効にします。
 # false: 機能を無効にします。
-enable_domo_back_to_past_users: true
+enable_search_and_follow: false
+
 # true: 過去記事DOMOユーザーへの最新記事DOMO返し機能を有効にします。
 # false: この機能を無効にします。
-enable_unfollow_inactive: true
+enable_domo_back_to_past_users: true
+
 # true: 非アクティブかつ非相互フォローユーザーのアンフォロー機能を有効にします。
 # false: この機能を無効にします。
-enable_parallel_processing: true
+enable_unfollow_inactive: true
+
 # true: 並列処理を有効にします (現在はタイムラインDOMO機能が対象)。
 # false: 並列処理を無効にし、全ての処理を逐次実行します。
+enable_parallel_processing: true
+
 
 # === 全体的な設定 ===
 # スクリプト全体の基本的な動作モードや待機時間を設定します。
@@ -154,7 +160,7 @@ search_and_follow_settings:
 
   delay_after_pagination_sec: 3.0
   # 検索結果のページネーション（「次へ」ボタンクリックなど）を実行した後の待機時間 (秒単位)。
-  # 新しいページのコンテンツが完全に読み込まれるのを待つために使用されます。
+  # 新しいページのコンテンツが完全に読み込まれるのを待つために使用します。
 
   enable_parallel_search_follow: true
   # true: 検索＆フォロー機能のユーザー処理部分（プロフィール確認、フォロー、DOMO）を並列化します。
