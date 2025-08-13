@@ -1,7 +1,7 @@
 # === 機能の有効化/無効化 ===
 # true: フォローバック機能を有効にします。
 # false: フォローバック機能を無効にします。
-enable_follow_back: true
+enable_follow_back: false
 
 # true: タイムラインDOMO機能を有効にします。
 # false: タイムラインDOMO機能を無効にします。
@@ -13,15 +13,15 @@ enable_search_and_follow: false
 
 # true: 過去記事DOMOユーザーへの最新記事DOMO返し機能を有効にします。
 # false: この機能を無効にします。
-enable_domo_back_to_past_users: true
+enable_domo_back_to_past_users: false
 
 # true: 非アクティブかつ非相互フォローユーザーのアンフォロー機能を有効にします。
 # false: この機能を無効にします。
-enable_unfollow_inactive: true
+enable_unfollow_inactive: false
 
 # true: 並列処理を有効にします (現在はタイムラインDOMO機能が対象)。
 # false: 並列処理を無効にし、全ての処理を逐次実行します。
-enable_parallel_processing: true
+enable_parallel_processing: false
 
 
 # === 全体的な設定 ===
@@ -122,7 +122,7 @@ follow_back_settings:
 
 timeline_domo_settings:
   # タイムラインDOMO機能に関する設定 (YAMAPのタイムライン上の活動記録に自動でDOMOする)
-  max_activities_to_domo_on_timeline: 100
+  max_activities_to_domo_on_timeline: 5
   # タイムライン上でDOMOする活動記録の最大数。
   # タイムラインの新しい投稿から順に、この数に達するまでDOMOを試みます。
 
