@@ -449,8 +449,9 @@ def get_last_activity_date(driver, user_profile_url):
         logger.info(f"カード内から {len(candidate_spans)} 個のspan要素候補を検出。日付テキストを探索します。")
 
         # 3. Loop through the spans and find the one that contains the date.
-        for span in candidate_spans:
+        for i, span in enumerate(candidate_spans):
             date_text = span.text.strip()
+            logger.debug(f"Span候補 #{i+1}/{len(candidate_spans)} のテキストを検査: '{date_text}'")
             if not date_text:
                 continue
 
@@ -476,6 +477,12 @@ def get_last_activity_date(driver, user_profile_url):
 
         # If no span in the first card contained a valid date
         logger.warning(f"ユーザー ({user_id_log}) の最新活動記録カード内で日付形式のテキストが見つかりませんでした。")
+        # For debugging, log the HTML of the card that failed parsing
+        try:
+            card_html = activity_card.get_attribute('outerHTML')
+            logger.debug(f"デバッグ用: 日付が見つからなかった活動記録カードのHTML:\n{card_html[:1000]}...")
+        except Exception as e_html:
+            logger.debug(f"デバッグ用HTMLの取得中にエラー: {e_html}")
         return None
 
     except TimeoutException:
