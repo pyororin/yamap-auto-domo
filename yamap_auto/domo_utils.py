@@ -162,60 +162,72 @@ def domo_activity(driver, activity_url, base_url_for_log=None):
         logger.info(f"{log_prefix} ページ ({activity_url}) へ遷移します。")
         driver.get(activity_url)
         try:
-            # ページ読み込み待機: 活動記録のタイトルが表示されるまで
-            WebDriverWait(driver, 20).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "h1[data-testid='activity-title']"))
+            # ページ読み込み待機：より堅牢なセレクタに変更
+            # 1. 主要なコンテナが表示されるのを待つ
+            # 2. その後、インタラクション対象のボタンが表示されるのを待つ
+            WebDriverWait(driver, 25).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "div.ActivityDetailTabLayout, [data-testid='activity-detail-layout']"))
             )
-            logger.info(f"{log_prefix} ページ読み込み完了。")
+            logger.info(f"{log_prefix} 主要コンテナの表示を確認。")
+
+            # 絵文字ボタンが表示されるまで追加で待機
+            # ユーザー提供HTML: <button ... aria-label="絵文字をおくる" class="... emoji-add-button ...">
+            add_emoji_button_selector = "button[aria-label='絵文字をおくる']"
+            WebDriverWait(driver, 15).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, add_emoji_button_selector))
+            )
+            logger.info(f"{log_prefix} 絵文字追加ボタンのクリック準備完了。ページ読み込み完了と判断。")
+
         except TimeoutException:
-            logger.error(f"{log_prefix} ページ読み込みタイムアウト。")
-            save_screenshot(driver, "DOMO_PageLoadTimeout", activity_id_for_log)
+            logger.error(f"{log_prefix} ページ読み込みまたは絵文字ボタン表示タイムアウト。")
+            save_screenshot(driver, "DOMO_PageLoadOrButtonTimeout", activity_id_for_log)
             return False
 
     try:
-        # 1. 既にリアクション済みか確認
+        # 1. 既にリアクション済みか確認 (セレクタを更新)
         try:
-            # .viewer-has-reacted クラスを持つボタンがあれば、リアクション済み
-            driver.find_element(By.CSS_SELECTOR, "button.emoji-button.viewer-has-reacted")
+            # リアクションするとボタンの data-testid が変わる可能性がある。より汎用的なセレクタで確認。
+            driver.find_element(By.CSS_SELECTOR, "button[data-testid='viewer-reaction-button']")
             logger.info(f"{log_prefix} 既にリアクション済みのためスキップします。")
-            return False # 既にDOMO済みなので成功ではないが、エラーでもない
+            return False
         except NoSuchElementException:
-            # リアクション済みでなければOK
-            pass
+            pass # OK
 
         # 2. 絵文字追加ボタン(+)をクリック
-        # セレクタ候補: [data-testid='add-reaction-button'], button.emoji-add-button
-        add_emoji_button_selectors = [
-            "button[data-testid='add-reaction-button']",
-            "button.emoji-add-button"
-        ]
-        add_emoji_button = None
-        for selector in add_emoji_button_selectors:
-            try:
-                add_emoji_button = driver.find_element(By.CSS_SELECTOR, selector)
-                if add_emoji_button.is_displayed():
-                    logger.info(f"{log_prefix} 絵文字追加ボタン(+)をセレクタ '{selector}' で発見。")
-                    break
-            except NoSuchElementException:
-                continue
-
-        if not add_emoji_button:
-            logger.error(f"{log_prefix} 絵文字追加ボタン(+)が見つかりませんでした。")
-            save_screenshot(driver, "DOMO_AddButtonNotFound", activity_id_for_log)
+        # ページ読み込み待機でセレクタは検証済みなので、ここでは確定で探しに行く
+        add_emoji_button_selector = "button[aria-label='絵文字をおくる']"
+        try:
+            add_emoji_button = driver.find_element(By.CSS_SELECTOR, add_emoji_button_selector)
+            # クリック前に画面内にスクロール
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", add_emoji_button)
+            time.sleep(0.7) # スクロール後の安定待ち
+            add_emoji_button.click()
+        except NoSuchElementException:
+             # このエラーは発生しづらいはずだが、念のため
+            logger.error(f"{log_prefix} 絵文字追加ボタン({add_emoji_button_selector})が見つかりませんでした。")
+            save_screenshot(driver, "DOMO_AddButtonNotFound_AfterWait", activity_id_for_log)
             return False
-
-        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", add_emoji_button)
-        time.sleep(0.5)
-        add_emoji_button.click()
         logger.info(f"{log_prefix} 絵文字追加ボタン(+)をクリックしました。")
 
         # 3. DOMO絵文字をクリック
-        # セレクタ候補: button[title='DOMO'], button[data-testid='domo-emoji']
-        domo_emoji_selector = "button[title='DOMO']"
-        domo_emoji = WebDriverWait(driver, 10).until(
-            EC.element_to_be_clickable((By.CSS_SELECTOR, domo_emoji_selector))
-        )
-        domo_emoji.click()
+        # セレクタをより堅牢な data-emoji-key に変更
+        domo_emoji_selector = "button[data-emoji-key='domo']"
+        try:
+            domo_emoji = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, domo_emoji_selector))
+            )
+            # ActionChainsを使用してクリックすることで、通常のclick()が失敗するケースに対応
+            ActionChains(driver).move_to_element(domo_emoji).click().perform()
+        except TimeoutException:
+            logger.error(f"{log_prefix} DOMO絵文字ボタン ({domo_emoji_selector}) の待機タイムアウト。")
+            save_screenshot(driver, "DOMO_EmojiButtonTimeout", activity_id_for_log)
+            # リカバリのため、開いている可能性のあるピッカーを閉じる試み
+            try:
+                # bodyをクリックするか、閉じるボタンを探す
+                driver.find_element(By.CSS_SELECTOR, "body").click()
+            except Exception:
+                pass
+            return False
         logger.info(f"{log_prefix} DOMOボタンをクリックしました。")
 
         # 成功したかどうかの確認
