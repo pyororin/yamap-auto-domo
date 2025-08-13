@@ -416,17 +416,17 @@ def get_last_activity_date(driver, user_profile_url):
         logger.debug(f"対象のユーザープロフィールページ ({user_profile_url}) に遷移します。")
         driver.get(user_profile_url)
         try:
-            logger.debug(f"プロフィールページの主要要素（活動記録タブ or ユーザー名）の表示を待ちます...")
+            # Instead of waiting for a generic profile element, directly wait for the
+            # first activity link, which is what we need anyway. This is more robust
+            # against UI changes in other parts of the profile page.
+            logger.debug(f"プロフィールページの最新活動記録リンクの表示を待ちます...")
             WebDriverWait(driver, profile_element_timeout).until(
-                EC.any_of(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, "a[data-testid='profile-tab-activities']")),
-                    EC.presence_of_element_located((By.CSS_SELECTOR, "h1[class*='UserProfileScreen_userName']"))
-                )
+                EC.presence_of_element_located((By.XPATH, "//a[starts-with(@href, '/activities/')]"))
             )
-            logger.debug("プロフィールページの主要要素の表示を確認しました。")
+            logger.debug("プロフィールページの最新活動記録リンクの表示を確認しました。")
         except TimeoutException:
-            logger.warning(f"ユーザー ({user_id_log}) のプロフィールページ主要要素の読み込みタイムアウト ({profile_element_timeout}秒)。最新活動日時取得失敗の可能性。")
-            save_screenshot(driver, "ProfileLoadTimeout_GetDate", f"UID_{user_id_log}")
+            logger.warning(f"ユーザー ({user_id_log}) のプロフィールページで最新活動記録リンクの読み込みタイムアウト ({profile_element_timeout}秒)。")
+            save_screenshot(driver, "ProfileActivityLinkTimeout_GetDate", f"UID_{user_id_log}")
             return None
     else:
         logger.debug(f"既にユーザープロフィールページ ({user_profile_url}) 付近にいます。")
