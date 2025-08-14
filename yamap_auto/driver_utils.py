@@ -123,6 +123,9 @@ def get_driver_options():
 
     options = webdriver.ChromeOptions()
 
+    # Enable browser logging
+    options.set_capability('goog:loggingPrefs', {'browser': 'ALL'})
+
     # ヘッドレスモード設定 (config.yaml のルートレベルから取得)
     if main_conf.get("headless_mode", True): # デフォルトTrueに変更
         logger.info("ヘッドレスモードで起動します。")
