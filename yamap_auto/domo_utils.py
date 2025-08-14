@@ -124,16 +124,28 @@ def domo_activity(driver, activity_url, base_url_for_log=None):
         )
         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", add_emoji_button)
         time.sleep(0.5)
-        driver.execute_script("arguments[0].click();", add_emoji_button) # JS click
-        logger.info(f"{log_prefix} 絵文字追加ボタン(+)を(JSで)クリックしました。")
+        driver.execute_script("arguments[0].click();", add_emoji_button)
+        logger.info(f"{log_prefix} 絵文字追加ボタン(+)をクリックしました。")
 
-        # Click the DOMO emoji in the picker
-        domo_emoji_selector = "button[data-emoji-key='domo']"
-        domo_emoji = WebDriverWait(driver, 10).until(
-            EC.element_to_be_clickable((By.CSS_SELECTOR, domo_emoji_selector))
-        )
-        ActionChains(driver).move_to_element(domo_emoji).click().perform() # ActionChains click
-        logger.info(f"{log_prefix} DOMOボタンをクリックしました。")
+        try:
+            # Wait for the emoji picker to appear and click the DOMO emoji
+            emoji_picker_selector = "div[aria-label='絵文字ピッカー']"
+            WebDriverWait(driver, 10).until(
+                EC.visibility_of_element_located((By.CSS_SELECTOR, emoji_picker_selector))
+            )
+            logger.info(f"{log_prefix} 絵文字ピッカーが表示されました。")
+
+            domo_emoji_selector = "button[data-emoji-key='domo']"
+            domo_emoji = WebDriverWait(driver, 5).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, domo_emoji_selector))
+            )
+            ActionChains(driver).move_to_element(domo_emoji).click().perform()
+            logger.info(f"{log_prefix} DOMOボタンをクリックしました。")
+
+        except TimeoutException:
+            logger.warning(f"{log_prefix} 絵文字ピッカーの表示に失敗したか、DOMO絵文字が見つかりませんでした。ウェブサイトのJSエラーの可能性があります。この活動はスキップします。")
+            save_screenshot(driver, "DomoPicker_Timeout", activity_id_for_log)
+            return False
 
         # Verify success with an increased timeout
         logger.info(f"{log_prefix} DOMO成功の確認待機を開始... (最大15秒)")
