@@ -31,7 +31,7 @@ headless_mode: true
 # ブラウザをヘッドレスモードで実行するかどうか (true: ヘッドレス, false: 通常モード)
 # ヘッドレスモードではブラウザウィンドウは表示されませんが、バックグラウンドで動作します。デバッグ時は false が推奨されます。
 
-implicit_wait_sec: 4
+implicit_wait_sec: 3
 # Selenium WebDriverが要素を見つけるまでの暗黙的な最大待機時間 (秒単位)
 # ページ要素の読み込みが遅い場合に、この時間まで待機します。
 
@@ -67,7 +67,7 @@ action_delays:
   # DOMO操作を実行した後に挿入される共通の待機時間 (秒単位)
   # DOMO後のUI反映や次のアクションへの移行をスムーズにするために使用されます。
 
-  wait_for_activity_link_sec: 7
+  wait_for_activity_link_sec: 6
   # ユーザープロフィールページなどで、最新の活動日記へのリンクが表示されるまでの最大待機時間 (秒単位)
   # ページコンテンツの動的な読み込みに対応するために使用されます。
 
@@ -98,11 +98,11 @@ parallel_processing_settings:
 
 follow_back_settings:
   # フォローバック機能に関する設定 (自分をフォローしてくれたユーザーを自動でフォローバックする)
-  max_users_to_follow_back: 20
+  max_users_to_follow_back: 100
   # 一度のスクリプト実行でフォローバックする最大のユーザー数。
   # フォロワーリストの複数ページをチェックする場合、この合計数に達すると処理を停止します。
 
-  max_pages_for_follow_back: 3
+  max_pages_for_follow_back: 10
   # フォローバック対象者を探すために、フォロワーリストの何ページ目まで確認するかを指定します。
   # 例えば `5` を指定すると、最新のフォロワーから最大5ページ分遡って確認します。
 
@@ -185,7 +185,7 @@ search_and_follow_settings:
 
 # === 新機能: 過去記事DOMOユーザーへの最新記事DOMO返し設定 ===
 new_feature_domo_back_to_past_domo_users:
-  max_days_to_check_past_activities: 7
+  max_days_to_check_past_activities: 14
   # DOMO返しのためにチェックする自分の過去記事の期間（日数）。
 
   max_past_activities_to_process: 10
@@ -229,7 +229,7 @@ new_feature_domo_back_to_past_domo_users:
   # 並列DOMO返し時、各ワーカースレッドが1ユーザーの一連の処理を完了した後に挿入される遅延時間 (秒単位)。
 
   # --- 逐次処理時の遅延 ---
-  delay_between_domo_back_action_sec: 3.0 # 逐次処理時のアクション間遅延
+  delay_between_domo_back_action_sec: 2.0 # 逐次処理時のアクション間遅延
   # `enable_parallel_domo_back` が false の場合、各ユーザーへのDOMO返しアクション間の遅延時間 (秒単位)。
 
 # === 新機能: 非アクティブかつ非相互フォローユーザーのアンフォロー設定 ===
