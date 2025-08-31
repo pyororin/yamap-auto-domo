@@ -4,6 +4,7 @@
 selenium
 PyYAML
 beautifulsoup4
+playwright
 # Cloud Functions Python 3.x ランタイムには標準で含まれていることが多いですが、
 # 明示的にバージョンを指定したい場合や、特定のバージョンが必要な場合は記載します。
 # google-cloud-functions
