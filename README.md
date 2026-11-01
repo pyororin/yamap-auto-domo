@@ -1,120 +1,129 @@
-# YAMAP 自動操作スクリプト
+# YAMAP Auto DOMO
 
-## 概要
+[YAMAP](https://yamap.com) 上の定型作業(フォローバック、タイムラインへの DOMO、検索からのフォロー、DOMO返し、非アクティブユーザーの整理)を、Selenium(Headless Chrome)で自動化する Python スクリプトです。動作は `yamap_auto/config.yaml` と環境変数で制御します。
 
-このリポジトリは、YAMAP ([https://yamap.com](https://yamap.com)) のウェブサイト上で特定の操作を自動化するPythonスクリプト群です。
-Selenium WebDriver (Headless Chrome) を使用し、設定ファイル (`yamap_auto/config.yaml`) と環境変数を通じて、柔軟な自動操作を実現します。
+> [!WARNING]
+> 非公式の個人ツールです。利用は自己責任で、YAMAP の利用規約を必ず確認してください。詳細は「[注意事項](#注意事項)」を参照してください。
 
-### 主な機能
+## 特長
 
-*   **ログイン**: スクリプト実行時にYAMAPへ自動ログインします。
-*   **フォローバック**: 自分をフォローしてくれたユーザーを自動でフォローバックします。
-*   **タイムラインDOMO**: タイムライン上の活動記録へ自動でDOMO（いいね）します。
-*   **検索＆フォロー**: 活動記録の検索結果を巡回し、特定の条件に合うユーザーを自動でフォロー＆DOMOします。
-*   **DOMO返し**: 自分の過去の投稿にDOMOをくれたユーザーの最新投稿にDOMOを返します。条件に応じてフォローも可能です。
-*   **非アクティブユーザー整理**: 長期間活動がなく、かつ自分をフォローしていないユーザーのフォローを解除します。
+- **ログイン**: 環境変数の認証情報で YAMAP に自動ログイン
+- **フォローバック**: 自分をフォローしたユーザーをフォローバック
+- **タイムライン DOMO**: タイムライン上の活動記録へ DOMO
+- **検索&フォロー**: 活動記録の検索結果を巡回し、フォロワー数・フォロー/フォロワー比率の条件を満たすユーザーをフォローして DOMO
+- **DOMO返し**: 自分の過去記事に DOMO したユーザーの最新記事へ DOMO(条件付きでフォローも)
+- **非アクティブユーザー整理**: 一定期間活動がなく、かつフォローバックされていないユーザーのフォローを解除
+- **機能ごとの ON/OFF、並列処理、待機時間、上限数** を設定ファイルで調整可能
+- 実行後に件数サマリーをログ出力
 
-**⚠️ 注意事項**
-*   **自己責任での利用**: 自動操作はYAMAPの利用規約を遵守する範囲で使用してください。このスクリプトの使用によって生じたいかなる損害についても、開発者は責任を負いません。
-*   **アカウント制限のリスク**: 過度な頻度での実行や、並列処理数の設定によっては、YAMAPサーバーへの負荷増大や、アカウントの一時的な利用制限に繋がる可能性があります。設定は慎重に行ってください。
+## 技術スタック
 
----
+| 区分 | 内容 |
+| --- | --- |
+| 言語 | Python 3 |
+| ブラウザ操作 | Selenium WebDriver(Chrome / ChromeDriver) |
+| 設定 | PyYAML |
+| HTML解析 | BeautifulSoup4 |
+| 補助 | Playwright(`yamap_auto2/` の実験的ログイン確認スクリプトのみ。requirements.txt には含まれません) |
 
-## 実行環境
+## 動作要件
 
-### 1. ローカル環境での実行
+- Python 3.8 以上
+- Google Chrome と、そのバージョンに合う ChromeDriver(PATH に配置、または `config.yaml` の `chromedriver_path` で指定)
+- YAMAP アカウント
 
-#### 必要なもの
-*   Python 3.8以上
-*   Google Chrome
-*   ChromeDriver (使用するChromeのバージョンに合ったもの)
+## セットアップ
 
-#### セットアップ
-1.  **ChromeDriverの準備**:
-    お使いのGoogle Chromeのバージョンを確認し、対応する[ChromeDriver](https://chromedriver.chromium.org/downloads)をダウンロードしてください。ダウンロードした`chromedriver` (または`chromedriver.exe`)を、このプロジェクトのルートディレクトリに配置するか、システムのPATHが通ったディレクトリに配置してください。
+```bash
+git clone <このリポジトリのURL>
+cd yamap-auto-domo
+pip install -r requirements.txt
+```
 
-2.  **依存ライブラリのインストール**:
-    ```bash
-    pip install -r requirements.txt
-    ```
+1. 環境変数を設定します(名前のみ記載。値は各自で設定してください)。
+   - `YAMAP_LOGIN_ID`: ログイン用メールアドレス
+   - `YAMAP_LOGIN_PASSWORD`: ログイン用パスワード
+   - `YAMAP_USER_ID`: 自分の YAMAP ユーザーID(`yamap_auto_domo.py` が参照)
+   - `USER_ID`: 同じく自分のユーザーID(`driver_utils.py` の `get_credentials` が参照)
+   - `YAMAP_CONFIG_FILE`(任意): 設定ファイルのパスを上書き
+2. `yamap_auto/config.yaml` を編集して、有効にする機能と上限を決めます。
 
-3.  **認証情報の設定**:
-    YAMAPへのログインに必要な以下の情報を、環境変数として設定します。
-    - `YAMAP_LOGIN_ID`: YAMAPのログインに使用するメールアドレス
-    - `YAMAP_LOGIN_PASSWORD`: YAMAPのログインに使用するパスワード
-    - `USER_ID`: あなたのYAMAPユーザーID（プロフィールページのURL末尾の数字など）
+## 使い方
 
-    **設定例 (.bashrc, .zshrc など):**
-    ```bash
-    export YAMAP_LOGIN_ID="your_email@example.com"
-    export YAMAP_LOGIN_PASSWORD="your_***REMOVED_PASSWORD***"
-    export USER_ID="1234567"
-    ```
-    設定後は、ターミナルを再起動するか `source ~/.bashrc` などを実行して環境変数を読み込んでください。
+```bash
+python -m yamap_auto.yamap_auto_domo
+# または
+python yamap_auto/yamap_auto_domo.py
+```
 
-4.  **設定ファイルの編集**:
-    `yamap_auto/config.yaml` を開き、各機能の有効/無効や動作条件を好みに合わせて編集します。詳細は後述の「設定ファイル (`config.yaml`)」セクションを参照してください。
+Windows 用の `run_yamap.bat` も同梱していますが、環境変数の設定部分は自分の環境に合わせて書き換えてください(認証情報を直接書いてコミットしないこと)。
 
-5.  **スクリプトの実行**:
-    ```bash
-    python yamap_auto/yamap_auto_domo.py
-    ```
+### 処理の流れ
 
-### 2. Docker環境での実行 (推奨)
+```mermaid
+flowchart LR
+    A[WebDriver初期化] --> B[ログイン]
+    B --> C[Cookie取得]
+    C --> D[有効な機能を順次実行]
+    D --> D1[フォローバック]
+    D --> D2[タイムラインDOMO]
+    D --> D3[検索&フォロー]
+    D --> D4[DOMO返し]
+    D --> D5[非アクティブ整理]
+    D1 & D2 & D3 & D4 & D5 --> E[サマリー出力・終了]
+```
 
-Dockerを使用することで、ローカル環境のOSやライブラリバージョンに依存せず、安定した実行環境を構築できます。
+### Cloud Functions 用エントリポイント
 
-(Dockerfileやdocker-compose.ymlの準備が必要です。現状は未提供ですが、将来的にサポート予定です。)
+`main.py` に Google Cloud Functions 向けの `handler(event, context)` があり、`yamap_auto_domo.main()` を呼び出します(デプロイ設定は同梱していません)。
 
----
+## 設定(`yamap_auto/config.yaml`)
 
-## 設定ファイル (`config.yaml`)
+| キー | 内容 |
+| --- | --- |
+| `enable_follow_back` / `enable_timeline_domo` / `enable_search_and_follow` / `enable_domo_back_to_past_users` / `enable_unfollow_inactive` | 各機能の ON/OFF |
+| `enable_parallel_processing`, `parallel_processing_settings` | 並列処理(`max_workers`, `use_cookie_sharing`, 遅延) |
+| `headless_mode`, `implicit_wait_sec` | ブラウザ表示・暗黙待機 |
+| `webdriver_settings` | `execution_environment`(`local` / `docker_container`), `chromedriver_path`, `chrome_binary_location`, `user_agent` |
+| `action_delays` | DOMO/フォロー後などの待機秒数 |
+| `follow_back_settings` | フォローバック上限、確認ページ数、並列設定 |
+| `timeline_domo_settings` | タイムラインで DOMO する最大件数 |
+| `search_and_follow_settings` | 検索URL、処理ページ数、最小フォロワー数、フォロー比率閾値 など |
+| `new_feature_domo_back_to_past_domo_users` | DOMO返しの対象期間・件数・フォロー有無 |
+| `unfollow_inactive_users_settings` | 非アクティブ判定日数、1回の最大解除数、フォローバック確認 |
 
-スクリプトの全機能は `yamap_auto/config.yaml` ファイルで制御します。主要な設定項目は以下の通りです。
+> [!NOTE]
+> 同梱の `config.yaml` は `execution_environment: "docker_container"` で、並列ワーカー数も大きめ(24)です。ローカル実行時は `local` に変更し、ワーカー数は 2〜5 程度から試してください(設定ファイル内のコメントも同様の推奨です)。
 
-### 機能の有効化/無効化
-ファイルの先頭にある `enable_...` 系のフラグ (`true`/`false`) で、各機能を個別にON/OFFできます。
-- `enable_follow_back`: フォローバック機能
-- `enable_timeline_domo`: タイムラインDOMO機能
-- `enable_search_and_follow`: 検索＆フォロー機能
-- `enable_domo_back_to_past_users`: DOMO返し機能
-- `enable_unfollow_inactive`: 非アクティブユーザー整理機能
-- `enable_parallel_processing`: 一部の機能（タイムラインDOMOなど）での並列処理
+## 構成
 
-### WebDriver設定
-- `headless_mode`: `true`にするとブラウザ非表示で実行します。デバッグ時は`false`が便利です。
-- `webdriver_settings`: `execution_environment` を `local` または `docker_container` に設定します。
+```
+.
+├── main.py                    # Cloud Functions エントリポイント
+├── yamap_auto/
+│   ├── yamap_auto_domo.py     # メイン(ログイン〜各機能の実行〜サマリー)
+│   ├── config.yaml            # 動作設定
+│   ├── driver_utils.py        # WebDriver・設定・認証情報の読み込み
+│   ├── follow_back_utils.py / follow_utils.py / unfollow_utils.py
+│   ├── domo_utils.py / search_utils.py / my_post_interaction_utils.py
+│   ├── user_profile_utils.py
+│   └── logging_utils.py
+├── yamap_auto2/               # Playwright によるログイン確認の実験コード
+├── debug_domo_finder.py / debug_emoji_click.py  # デバッグ用
+├── docs/debugging_guide.md
+├── requirements.txt
+└── run_yamap.bat
+```
 
-### 並列処理設定 (`parallel_processing_settings`)
-- **`max_workers`**: 並列処理の最大スレッド数を指定します。**値を大きくしすぎるとアカウント制限のリスクが高まります。**最初は`2`や`3`で試すことを強く推奨します。
-- 各機能（フォローバック、検索＆フォローなど）にも個別の並列処理設定 (`enable_parallel_...`, `max_workers_...`) があり、より詳細な制御が可能です。
+## 制限事項
 
-### 各機能の詳細設定
-- **`follow_back_settings`**: フォローバックする上限数や、確認するフォロワーリストのページ数を設定します。
-- **`search_and_follow_settings`**: フォロー対象とするユーザーの条件（フォロワー数、フォロー/フォロワー比率）などを細かく設定できます。
-- **`new_feature_domo_back_to_past_domo_users`**: DOMO返しを行う対象期間や、フォローを試みるかなどを設定します。
-- **`unfollow_inactive_users_settings`**: 「非アクティブ」と見なす日数や、一度に整理する最大人数を設定します。
+- Dockerfile / docker-compose は同梱していません。
+- YAMAP のサイト構造変更により、セレクタ修正が必要になる場合があります(`NoSuchElementException` / `TimeoutException` が出た場合)。
+- 自動テストはありません。
 
----
+## 注意事項
 
-## 将来の展望
-
-- **Google Cloud Functionsでの定期実行**:
-  現在、このスクリプトをGoogle Cloud Functionsにデプロイし、Cloud Schedulerで定期実行する改修を計画しています。これにより、手動でスクリプトを起動する必要がなくなります。
-
----
-
-## トラブルシューティング
-
-- **`モジュールが見つかりません` (ModuleNotFoundError)**:
-  `pip install -r requirements.txt` を正しく実行したか確認してください。
-- **`WebDriverException: 'chromedriver' executable needs to be in PATH`**:
-  ChromeDriverが正しく配置されていないか、PATHが通っていません。「セットアップ」の項目を確認してください。
-- **要素が見つからないエラー (NoSuchElementException, TimeoutException)**:
-  YAMAPのサイト構造が変更された可能性があります。スクリプト内のCSSセレクタやXPathの修正が必要になる場合があります。
-
----
-
-## 免責事項
-
-このスクリプトの使用によって生じたいかなる損害についても、開発者は責任を負いません。自己責任において利用してください。YAMAPの利用規約を遵守し、節度ある利用を心がけてください。
+- 本ツールは YAMAP の公式ツールではありません。自動操作は **YAMAP の利用規約に抵触する可能性** があります。最新の規約を確認し、**自己責任** で使用してください。
+- 本ツールの使用により生じたいかなる損害(アカウント制限・停止を含む)についても、作者は責任を負いません。
+- 並列数や実行頻度を高くしすぎると、サーバー負荷やアカウント制限のリスクが高まります。**過度な頻度での実行は避けて** ください。
+- 認証情報は環境変数などで管理し、リポジトリにコミットしないでください。
